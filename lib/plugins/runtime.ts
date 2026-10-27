@@ -7,7 +7,7 @@ export function createPluginExtension(manifest: PluginManifest, cwd: string, too
   policyContext?: (ctx: ExtensionContext) => string | undefined,
   options: { registerHidden?: boolean } = {}): InlineExtension {
   return {
-    name: `pi-web-plugin-${manifest.id}`, hidden: true,
+    name: `brabbler-plugin-${manifest.id}`, hidden: true,
     factory(pi) {
       let unsubscribe: (() => void) | undefined;
       let registered = false;
@@ -40,7 +40,7 @@ export function createPluginExtension(manifest: PluginManifest, cwd: string, too
         // Preserve Pi's system/tool anchors instead of the ordinary context hook's
         // merged-head restoration. No policy snapshot enters persisted history.
         pi.on("context_with_system", (event, ctx) => {
-          const customType = `pi-web:plugin-policy:${manifest.id}`;
+          const customType = `brabbler:plugin-policy:${manifest.id}`;
           const messages = event.messages.filter((message) => !(message.role === "custom" && message.customType === customType));
           let content: string | undefined;
           try { if (readPluginSettings(manifest, cwd).enabled) content = policyContext(ctx); }
@@ -56,7 +56,7 @@ export function createPluginExtension(manifest: PluginManifest, cwd: string, too
             while (true) {
               const sibling = messages[index];
               if (sibling?.role !== "custom" || typeof sibling.customType !== "string"
-                || !sibling.customType.startsWith("pi-web:plugin-policy:")) break;
+                || !sibling.customType.startsWith("brabbler:plugin-policy:")) break;
               index++;
             }
             messages.splice(index, 0, { role: "custom", customType, content, display: false, timestamp: 0 });

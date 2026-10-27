@@ -5,7 +5,7 @@ import { writePrivateFileAtomicSync } from "./atomic-file";
 import { isTitleLanguage, type TitleLanguage } from "./title-language-options";
 
 export function getTitleLanguagePath(agentDir = getAgentDir()): string {
-  return join(agentDir, "pi-web", "title-settings.json");
+  return join(agentDir, "brabbler", "title-settings.json");
 }
 
 export interface TitleModelSelection {

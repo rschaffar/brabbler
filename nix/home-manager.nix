@@ -2,17 +2,17 @@
 { config, lib, pkgs, ... }:
 let
   inherit (lib) mkEnableOption mkIf mkOption types;
-  cfg = config.services.pi-web;
+  cfg = config.services.brabbler;
 in
 {
-  options.services.pi-web = {
-    enable = mkEnableOption "the Pi Web user service";
+  options.services.brabbler = {
+    enable = mkEnableOption "the Brabbler user service";
 
     package = mkOption {
       type = types.package;
       default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
-      defaultText = lib.literalExpression "inputs.pi-web.packages.${pkgs.stdenv.hostPlatform.system}.default";
-      description = "Pi Web package, optionally overridden to match a separately packaged Pi CLI.";
+      defaultText = lib.literalExpression "inputs.brabbler.packages.${pkgs.stdenv.hostPlatform.system}.default";
+      description = "Brabbler package, optionally overridden to match a separately packaged Pi CLI.";
     };
     hostname = mkOption {
       type = types.strMatching "[A-Za-z0-9.:_-]+";
@@ -27,7 +27,7 @@ in
     allowedHosts = mkOption {
       type = types.listOf (types.strMatching "[A-Za-z0-9.:_-]+");
       default = [ ];
-      description = "Hostnames accepted by Pi Web, for example the reverse proxy's public hostname.";
+      description = "Hostnames accepted by Brabbler, for example the reverse proxy's public hostname.";
     };
     agentDir = mkOption {
       type = types.str;
@@ -37,7 +37,7 @@ in
     environmentFile = mkOption {
       type = types.nullOr types.str;
       default = null;
-      example = "/run/secrets/pi-web-env";
+      example = "/run/secrets/brabbler-env";
       description = "Runtime-only systemd environment file for secrets; never store secret values in Nix options.";
     };
     environment = mkOption {
@@ -50,8 +50,8 @@ in
 
   config = mkIf cfg.enable {
     home.packages = [ cfg.package ];
-    systemd.user.services.pi-web = {
-      Unit.Description = "Pi Web";
+    systemd.user.services.brabbler = {
+      Unit.Description = "Brabbler";
       Service = {
         Type = "simple";
         ExecStart = "${lib.getExe cfg.package} --hostname ${cfg.hostname} --port ${toString cfg.port} --no-open";
@@ -64,10 +64,10 @@ in
         WorkingDirectory = "%h";
         Environment = [
           "PI_CODING_AGENT_DIR=${cfg.agentDir}"
-          "PI_WEB_SKIP_VERSION_CHECK=1"
+          "BRABBLER_SKIP_VERSION_CHECK=1"
         ] ++ lib.mapAttrsToList (name: value: "${name}=${value}") cfg.environment
           ++ lib.optional (cfg.allowedHosts != [ ])
-            "PI_WEB_ALLOWED_HOSTS=${lib.concatStringsSep "," cfg.allowedHosts}";
+            "BRABBLER_ALLOWED_HOSTS=${lib.concatStringsSep "," cfg.allowedHosts}";
       } // lib.optionalAttrs (cfg.environmentFile != null) { EnvironmentFile = cfg.environmentFile; };
       Install.WantedBy = [ "default.target" ];
     };

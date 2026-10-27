@@ -13,7 +13,7 @@ const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
 const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
 const request = (params) => GET(new NextRequest(`http://localhost/api/git/explorer?${new URLSearchParams(params)}`));
 function fixture(t) {
-  const parent = mkdtempSync(join(tmpdir(), "pi-web-explorer-route-"));
+  const parent = mkdtempSync(join(tmpdir(), "brabbler-explorer-route-"));
   t.after(() => rmSync(parent, { recursive: true, force: true }));
   const cwd = join(parent, "repo");
   git(parent, "init", "-q", "-b", "main", cwd);

@@ -143,7 +143,7 @@ for (const pinned of [false, true]) test(`tools: existing disk/live ${pinned ? "
   if (pinned) row.toolNames = ["read", "grep", "find", "ls"];
   await f.mountReady(f.existingOptions());
   assert.equal(f.current.toolPreset, pinned ? "read-only" : "configured");
-  assert.equal(f.view.window.localStorage.getItem("pi-tool-preset"), "none");
+  assert.equal(f.view.window.localStorage.getItem("brabbler-tool-preset"), "none");
   await f.run("existing prompt does not reapply tools", value => value.handleSend("literal persisted selection"));
   assert.deepEqual(f.requests.find(command("prompt")).body, { type: "prompt", message: "literal persisted selection" });
   assert.equal(f.requests.some(command("set_tools")), false);
@@ -157,7 +157,7 @@ test("tools: concrete change pins exact read-only list and publishes current liv
   assert.deepEqual(f.requests.find(command("set_tools")).body, { type: "set_tools", toolNames: ["read", "grep", "find", "ls"] });
   assert.equal(f.current.sessionIdRef.current, f.savedId);
   assert.equal(f.current.toolPreset, "read-only");
-  assert.equal(f.view.window.localStorage.getItem("pi-tool-preset"), "read-only");
+  assert.equal(f.view.window.localStorage.getItem("brabbler-tool-preset"), "read-only");
 });
 
 for (const sameId of [true, false]) test(`tools: recreated ${sameId ? "same" : "different"} ID drives actual subsequent commands and selected reconnect`, options, async t => {
@@ -169,7 +169,7 @@ for (const sameId of [true, false]) test(`tools: recreated ${sameId ? "same" : "
   const operation = await f.start("configured retracts pin and rebuilds", value => value.handleToolPresetChange("configured"));
   await gate.entered.promise;
   assert.deepEqual(gate.request.body, { type: "set_tools" });
-  assert.equal(f.view.window.localStorage.getItem("pi-tool-preset"), "configured");
+  assert.equal(f.view.window.localStorage.getItem("brabbler-tool-preset"), "configured");
   const after = f.requests.length;
   await f.finish(operation, () => gate.resolve(ok({ sessionId: nextId, recreated: true })));
   assert.equal(original.readyState, 2);

@@ -33,7 +33,7 @@ function isDroppableEvent(event: AgentEventLike): boolean {
 }
 
 function resolveBacklogLimitBytes(): number {
-  const raw = Number(process.env.PI_WEB_SSE_BACKLOG_LIMIT_BYTES);
+  const raw = Number(process.env.BRABBLER_SSE_BACKLOG_LIMIT_BYTES);
   return Number.isFinite(raw) && raw >= 64 * 1024 ? raw : DEFAULT_BACKLOG_LIMIT_BYTES;
 }
 
@@ -43,8 +43,8 @@ function logBackpressure(sessionId: string, queuedBytes: number, limitBytes: num
   lastBackpressureLogAt = now;
   const queued = `${Math.round(queuedBytes / 1024)} KB`;
   console.warn(closing
-    ? `[pi-web] Agent event stream for ${sessionId} closed: client backlog ${queued} exceeds ${Math.round(limitBytes / 1024)} KB; it reconnects and re-snapshots.`
-    : `[pi-web] Agent event stream for ${sessionId} is behind (${queued} queued): dropping rebuildable deltas (${droppedEvents} so far).`);
+    ? `[brabbler] Agent event stream for ${sessionId} closed: client backlog ${queued} exceeds ${Math.round(limitBytes / 1024)} KB; it reconnects and re-snapshots.`
+    : `[brabbler] Agent event stream for ${sessionId} is behind (${queued} queued): dropping rebuildable deltas (${droppedEvents} so far).`);
 }
 
 /**
@@ -61,7 +61,7 @@ function logBackpressure(sessionId: string, queuedBytes: number, limitBytes: num
  * graphs, each with its own copy of this module; a plain module-level Set
  * would be two disconnected registries. Symbol.for + globalThis shares one.
  */
-const CLOSER_REGISTRY: symbol = Symbol.for("pi-web.agentEventStreamClosers");
+const CLOSER_REGISTRY: symbol = Symbol.for("brabbler.agentEventStreamClosers");
 type StreamCloser = (closeController: boolean | "error") => void;
 const activeStreamClosers: Set<StreamCloser> =
   ((globalThis as Record<symbol, Set<StreamCloser>>)[CLOSER_REGISTRY] ??= new Set<StreamCloser>());
@@ -115,7 +115,7 @@ export function createAgentEventStreamConnection(
         unsubscribe = null;
         if (abortHandler) req.signal.removeEventListener("abort", abortHandler);
         if (closeController === "error") {
-          try { controller.error(reason ?? new Error("pi-web server shutting down")); } catch { /* already closed */ }
+          try { controller.error(reason ?? new Error("brabbler server shutting down")); } catch { /* already closed */ }
         } else if (closeController) {
           try { controller.close(); } catch { /* stream already closed */ }
         }
@@ -141,7 +141,7 @@ export function createAgentEventStreamConnection(
         }
         if (queuedBytes > backlogLimitBytes) {
           logBackpressure(sessionId, queuedBytes, backlogLimitBytes, droppedEvents, true);
-          cleanup("error", new Error(`pi-web agent event stream closed: client backlog exceeded ${Math.round(backlogLimitBytes / 1024)} KB`));
+          cleanup("error", new Error(`brabbler agent event stream closed: client backlog exceeded ${Math.round(backlogLimitBytes / 1024)} KB`));
           return;
         }
         try {

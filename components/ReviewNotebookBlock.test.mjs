@@ -10,7 +10,7 @@ const block = { version: 1, kind: "source", id: "factory", title: "Authenticate 
 function render(source, props = {}) {
   return renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(MarkdownBody, props, source)));
 }
-const fence = value => "```pi-review\n" + JSON.stringify(value) + "\n```";
+const fence = value => "```brabbler-review\n" + JSON.stringify(value) + "\n```";
 test("ordinary opt-in Markdown renders an inert collapsed source stop; other consumers and streaming stay literal", () => {
   const source = fence(block);
   const active = render(source, { enableReviewBlocks: true });

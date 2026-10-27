@@ -2,7 +2,7 @@ import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import { isModelSpeed, type ModelSpeed } from "./model-speed";
 import type { SessionEntry } from "./types";
 
-export const SESSION_MODEL_SPEED_TYPE = "pi-web:model-speed";
+export const SESSION_MODEL_SPEED_TYPE = "brabbler:model-speed";
 
 /** Session-wide, not branch-local: the latest valid snapshot wins. */
 export function readSessionModelSpeed(entries: readonly SessionEntry[]): ModelSpeed {

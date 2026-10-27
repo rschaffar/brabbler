@@ -12,16 +12,16 @@ const store = '/nix/store/[a-z0-9]{32}-[^/]+';
 
 export function validateServiceRegistry(registry) {
   assert.equal(registry?.version, 1);
-  assert.equal(registry.kind, 'pi-web-service-registry');
-  assert.match(registry.package ?? '', new RegExp(`^${store}/lib/node_modules/@agegr/pi-web$`));
-  const root = registry.package.slice(0, -'/lib/node_modules/@agegr/pi-web'.length);
-  assert.equal(registry.launcher, `${root}/bin/pi-web`);
+  assert.equal(registry.kind, 'brabbler-service-registry');
+  assert.match(registry.package ?? '', new RegExp(`^${store}/lib/node_modules/brabbler$`));
+  const root = registry.package.slice(0, -'/lib/node_modules/brabbler'.length);
+  assert.equal(registry.launcher, `${root}/bin/brabbler`);
   assert.match(registry.shell ?? '', new RegExp(`^${store}/bin/bash$`));
-  assert.match(registry.service?.controller ?? '', new RegExp(`^${store}/bin/pi-web-deployment-control$`));
+  assert.match(registry.service?.controller ?? '', new RegExp(`^${store}/bin/brabbler-deployment-control$`));
   assert.deepEqual(registry, {
-    version: 1, kind: 'pi-web-service-registry', package: registry.package, launcher: registry.launcher, shell: registry.shell,
+    version: 1, kind: 'brabbler-service-registry', package: registry.package, launcher: registry.launcher, shell: registry.shell,
     resources: { ...serviceResources }, service: {
-      user: 't0', uid: 1000, home: '/home/t0', port: 30141, unit: 'pi-web.service',
+      user: 't0', uid: 1000, home: '/home/t0', port: 30141, unit: 'brabbler.service',
       envFile: '/home/t0/service.env', fixture: '/home/t0/fixtures', agentDir: '/home/t0/fixtures/agent',
       evidence: '/home/t0/evidence', controller: registry.service.controller,
     },
@@ -32,7 +32,7 @@ export function validateServiceRegistry(registry) {
 export function createServicePlan(registry) {
   validateServiceRegistry(registry);
   return {
-    version: 1, kind: 'pi-web-service-plan', registry: structuredClone(registry), checks: [...serviceChecks],
+    version: 1, kind: 'brabbler-service-plan', registry: structuredClone(registry), checks: [...serviceChecks],
     session: { id: 'vm-service-smoke', name: 'VM durable service session',
       file: `${registry.service.agentDir}/sessions/smoke/2026-10-15T00-00-00-000Z_vm-service-smoke.jsonl` },
     terminal: { id: '0123456789abcdef0123456789abcdef', cols: 91, rows: 27 },
@@ -43,16 +43,16 @@ export function createServicePlan(registry) {
 export function serviceEnvironment(registry) {
   validateServiceRegistry(registry);
   return {
-    HOME: registry.service.home, PI_CODING_AGENT_DIR: registry.service.agentDir, PI_WEB_SKIP_VERSION_CHECK: '1',
+    HOME: registry.service.home, PI_CODING_AGENT_DIR: registry.service.agentDir, BRABBLER_SKIP_VERSION_CHECK: '1',
     PI_OFFLINE: '1', NODE_ENV: 'production', SHELL: registry.shell,
-    PI_WEB_SERVICE_UNIT: 'unit-value', PI_WEB_SERVICE_FILE: 'runtime file $literal',
-    PI_WEB_SERVICE_OVERRIDE: 'runtime-file-wins', PI_WEB_SERVICE_RUNTIME: '/run/user/1000',
+    BRABBLER_SERVICE_UNIT: 'unit-value', BRABBLER_SERVICE_FILE: 'runtime file $literal',
+    BRABBLER_SERVICE_OVERRIDE: 'runtime-file-wins', BRABBLER_SERVICE_RUNTIME: '/run/user/1000',
   };
 }
 
 export function serviceCgroup(group) {
   assert.equal(typeof group, 'string');
-  assert.match(group, /^\/user\.slice\/user-1000\.slice\/user@1000\.service\/(?:[A-Za-z0-9_.@:-]+\/)*pi-web\.service$/);
+  assert.match(group, /^\/user\.slice\/user-1000\.slice\/user@1000\.service\/(?:[A-Za-z0-9_.@:-]+\/)*brabbler\.service$/);
   assert.equal(group.trim(), group);
   assert.ok(!group.split('/').some(part => part === '.' || part === '..'));
   return group;
@@ -73,7 +73,7 @@ function sessionProof(snapshot, plan) {
 }
 
 export function validateWorkspace(workspace, registry) {
-  assert.match(workspace?.path ?? '', /^\/home\/t0\/pi-cwd-[0-9]{8}$/);
+  assert.match(workspace?.path ?? '', /^\/home\/t0\/brabbler-cwd-[0-9]{8}$/);
   assert.deepEqual(workspace, { path: workspace.path, uid: registry.service.uid, mode: '0700', physical: true });
   return workspace;
 }
@@ -108,7 +108,7 @@ export function validateServiceEvidence(receipt, plan) {
     const registry = plan.registry, service = registry.service;
     assert.deepEqual(Object.keys(receipt ?? {}).sort(), ['version', 'kind', 'plan', 'passed', 'checks', 'proof', 'clientsSettled',
       'settlement', 'collectionProbe', 'artifactsCollected', 'artifacts', 'errors', 'elapsedSeconds'].sort());
-    assert.equal(receipt.version, 1); assert.equal(receipt.kind, 'pi-web-service-evidence'); assert.deepEqual(receipt.plan, plan);
+    assert.equal(receipt.version, 1); assert.equal(receipt.kind, 'brabbler-service-evidence'); assert.deepEqual(receipt.plan, plan);
     assert.equal(typeof receipt.passed, 'boolean');
     assert.equal(receipt.clientsSettled, true); assert.equal(receipt.collectionProbe, true); assert.equal(receipt.artifactsCollected, true);
     assert.ok(Number.isFinite(receipt.elapsedSeconds) && receipt.elapsedSeconds >= 0);
@@ -147,7 +147,7 @@ export function validateServiceEvidence(receipt, plan) {
       assert.deepEqual(Object.keys(permissions).sort(), ['environment', 'uid', 'umask', 'cwd', 'launcherScript', 'paths', 'deniedReads'].sort());
       assert.deepEqual(permissions.environment, serviceEnvironment(registry));
       assert.equal(permissions.uid, service.uid); assert.equal(permissions.umask, '0077');
-      assert.equal(permissions.cwd, service.home); assert.equal(permissions.launcherScript, `${registry.package}/bin/pi-web.js`);
+      assert.equal(permissions.cwd, service.home); assert.equal(permissions.launcherScript, `${registry.package}/bin/brabbler.js`);
       const expectedPaths = Object.fromEntries([
         ['home', service.home, '0700'], ['fixture', service.fixture, '0700'], ['agent', service.agentDir, '0700'],
         ['evidence', service.evidence, '0700'], ['environment', service.envFile, '0600'], ['session', plan.session.file, '0600'],
@@ -173,7 +173,7 @@ export function validateServiceEvidence(receipt, plan) {
       assert.deepEqual(Object.keys(pty).sort(), ['id', 'tty', 'uid', 'cwd', 'environment', 'cols', 'rows', 'pid', 'controlGroup', 'alive', 'leftRunning'].sort());
       assert.equal(pty.id, plan.terminal.id); assert.match(pty.tty, /^\/dev\/pts\/[0-9]+$/);
       assert.equal(pty.uid, service.uid); assert.equal(pty.cwd, proof.write.workspace.path);
-      assert.deepEqual(pty.environment, Object.fromEntries(['PI_WEB_SERVICE_UNIT', 'PI_WEB_SERVICE_FILE', 'PI_WEB_SERVICE_OVERRIDE']
+      assert.deepEqual(pty.environment, Object.fromEntries(['BRABBLER_SERVICE_UNIT', 'BRABBLER_SERVICE_FILE', 'BRABBLER_SERVICE_OVERRIDE']
         .map(key => [key, serviceEnvironment(registry)[key]])));
       assert.equal(pty.cols, plan.terminal.cols); assert.equal(pty.rows, plan.terminal.rows);
       assert.match(pty.pid, /^[1-9][0-9]*$/); assert.equal(pty.alive, true); assert.equal(pty.leftRunning, true);

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
 import { createJiti } from "jiti";
-const root = mkdtempSync(join(tmpdir(), "pi-web-scoped-trust-route-"));
+const root = mkdtempSync(join(tmpdir(), "brabbler-scoped-trust-route-"));
 const previous = process.env.PI_CODING_AGENT_DIR;
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 after(() => { if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous; rmSync(root, { recursive: true, force: true }); });

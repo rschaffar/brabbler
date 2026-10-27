@@ -1,10 +1,10 @@
-const STORAGE_KEY = "pi-thinking-expanded";
+const STORAGE_KEY = "brabbler-thinking-expanded";
 let fallback = false;
 let unsaved = false;
 
 // Broadcast so already-mounted ThinkingBlock instances update when the
 // preference changes in the settings panel.
-export const THINKING_EXPANDED_EVENT = "pi-thinking-expanded-changed";
+export const THINKING_EXPANDED_EVENT = "brabbler-thinking-expanded-changed";
 
 export function isThinkingExpandedByDefault(): boolean {
   if (typeof window === "undefined") return false;

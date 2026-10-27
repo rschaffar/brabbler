@@ -3,7 +3,7 @@ import type { ITheme } from "@xterm/xterm";
 /** The terminal's own light/dark choice, apart from the app theme. */
 export type TerminalTheme = "dark" | "light";
 
-export const TERMINAL_THEME_STORAGE_KEY = "pi-web:terminal-theme";
+export const TERMINAL_THEME_STORAGE_KEY = "brabbler:terminal-theme";
 export const TERMINAL_THEME_DEFAULT: TerminalTheme = "dark";
 
 export function parseTerminalTheme(raw: string | null): TerminalTheme {

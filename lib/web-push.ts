@@ -39,17 +39,18 @@ function stateFilePath(): string {
   return join(getAgentDir(), "web-push.json");
 }
 
-/**
- * VAPID subject must be a valid `mailto:` or `https:` URL. Apple's push
- * service rejects requests whose subject is not a syntactically valid URL
- * (e.g. the previously used `mailto:pi-web@localhost`, which Apple answers
- * with 403 BadJwtToken), so default to the project homepage and let operators
- * override it via PI_WEB_PUSH_SUBJECT.
- */
+/** An independent installation must supply its operator's real VAPID contact. */
 export function vapidSubject(): string {
-  const configured = process.env.PI_WEB_PUSH_SUBJECT?.trim();
-  if (configured) return configured;
-  return "https://github.com/agegr/pi-web";
+  const configured = process.env.BRABBLER_PUSH_SUBJECT?.trim();
+  if (!configured) throw new Error("Set BRABBLER_PUSH_SUBJECT to an operator contact URL before enabling Web Push");
+  let url: URL;
+  try { url = new URL(configured); }
+  catch { throw new Error("BRABBLER_PUSH_SUBJECT must be a valid mailto: or https: URL"); }
+  if ((url.protocol !== "https:" && url.protocol !== "mailto:")
+    || (url.protocol === "mailto:" && !/^[^@\s]+@[^@\s]+$/.test(url.pathname))) {
+    throw new Error("BRABBLER_PUSH_SUBJECT must be a mailto: or https: URL with an operator contact");
+  }
+  return configured;
 }
 
 // Ask the push service to deliver immediately. Lower urgencies let idle
@@ -143,7 +144,7 @@ export function createWebPushNotifier(environment: WebPushEnvironment): WebPushN
         title: sessionName ?? localeText(locale, "sessionComplete"),
         body: localeText(locale, "taskFinished"),
         url: `/?session=${encodeURIComponent(sessionId)}`,
-        tag: `pi-session-complete:${sessionId}`,
+        tag: `brabbler-session-complete:${sessionId}`,
       });
 
       let pruned = false;
@@ -168,14 +169,14 @@ export function createWebPushNotifier(environment: WebPushEnvironment): WebPushN
 }
 
 declare global {
-  var __piWebPushNotifier: Promise<WebPushNotifier> | undefined;
+  var __brabblerPushNotifier: Promise<WebPushNotifier> | undefined;
 }
 
 function getNotifier(): Promise<WebPushNotifier> {
-  if (!globalThis.__piWebPushNotifier) {
-    globalThis.__piWebPushNotifier = Promise.resolve().then(() => createWebPushNotifier(getDefaultEnvironment()));
+  if (!globalThis.__brabblerPushNotifier) {
+    globalThis.__brabblerPushNotifier = Promise.resolve().then(() => createWebPushNotifier(getDefaultEnvironment()));
   }
-  return globalThis.__piWebPushNotifier;
+  return globalThis.__brabblerPushNotifier;
 }
 
 export function getVapidPublicKey(): Promise<string> {

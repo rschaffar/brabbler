@@ -1,7 +1,7 @@
 // Public xterm/fit boundary only. React, appearance stores and extra-key controls
 // remain the application modules. The symbol is installed before graph import.
 const port = () => {
-  const value = globalThis[Symbol.for('pi-web:test-terminal-port')];
+  const value = globalThis[Symbol.for('brabbler:test-terminal-port')];
   if (!value) throw new Error('xterm admitted outside its owned client fixture');
   value.admit();
   return value;

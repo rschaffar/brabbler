@@ -5,12 +5,12 @@ import { useSyncExternalStore } from "react";
 export const CHAT_CONTENT_WIDTH_DEFAULT = 820;
 export const CHAT_CONTENT_WIDTH_MIN = 820;
 export const CHAT_CONTENT_WIDTH_MAX = 2000;
-export const CHAT_CONTENT_WIDTH_STORAGE_KEY = "pi-chat-content-width";
-export const CHAT_CONTENT_FULL_WIDTH_STORAGE_KEY = "pi-chat-content-full-width";
+export const CHAT_CONTENT_WIDTH_STORAGE_KEY = "brabbler-chat-content-width";
+export const CHAT_CONTENT_FULL_WIDTH_STORAGE_KEY = "brabbler-chat-content-full-width";
 export const CHAT_CONTENT_FONT_SIZE_DEFAULT = 14;
 export const CHAT_CONTENT_FONT_SIZE_MIN = 12;
 export const CHAT_CONTENT_FONT_SIZE_MAX = 24;
-export const CHAT_CONTENT_FONT_SIZE_STORAGE_KEY = "pi-chat-content-font-size";
+export const CHAT_CONTENT_FONT_SIZE_STORAGE_KEY = "brabbler-chat-content-font-size";
 
 interface ChatAppearance {
   width: number;

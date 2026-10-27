@@ -1,10 +1,10 @@
 # Shared project acceptance
 
-The **Acceptance** toolbar button opens the selected checkout's project queue, even without an open conversation. Pi Web owns configured jobs independently of chats. Closing the panel, navigating, session Stop/Pause or cancelling a status wait does **not** cancel an already-admitted job. Use **Cancel acceptance run** explicitly.
+The **Acceptance** toolbar button opens the selected checkout's project queue, even without an open conversation. Brabbler owns configured jobs independently of chats. Closing the panel, navigating, session Stop/Pause or cancelling a status wait does **not** cancel an already-admitted job. Use **Cancel acceptance run** explicitly.
 
 ## Enable the optional plugin
 
-Acceptance is a **bundled plugin, disabled by default**. Choose **Settings → Plugins → Acceptance → Enabled** to enable it globally for this Pi Web agent directory. There is one master switch, not per-project/worktree/session enablement. It uses the existing bundled-plugin settings; no external package or new plugin framework is installed. The user-owned override lives in `pi-web/plugins/acceptance/settings.json` under the active agent directory. Tools must never change their own enablement or permissions.
+Acceptance is a **bundled plugin, disabled by default**. Choose **Settings → Plugins → Acceptance → Enabled** to enable it globally for this Brabbler agent directory. There is one master switch, not per-project/worktree/session enablement. It uses the existing bundled-plugin settings; no external package or new plugin framework is installed. The user-owned override lives in `brabbler/plugins/acceptance/settings.json` under the active agent directory. Tools must never change their own enablement or permissions.
 
 Disabling withdraws model tool declarations/callability, refuses model and browser run requests, cancels pending approvals and cancels locally owned jobs that have not started. The disable transition is latched across asynchronous capture/verification and rapid re-enable; cancelled jobs are never automatically resumed. Jobs whose supervisor has already started continue normally, with the existing ownership/settlement rules. Disabling is not a process Stop or settlement certificate. A failing session-exposure refresh is diagnosed separately and cannot prevent other subscribers from receiving the saved disable transition.
 
@@ -14,7 +14,7 @@ Enabled ordinary coding sessions receive the tools live. Extension-enabled child
 
 ## Configure a project
 
-Expand **Configure project profiles**, edit the JSON array and choose **Save profiles**. Configuration is private under the active agent directory's `pi-web/acceptance/settings.json`, not executable configuration discovered from a repository. Tools cannot configure profiles or their own permissions. Nothing is configured or launched automatically merely by opening a project.
+Expand **Configure project profiles**, edit the JSON array and choose **Save profiles**. Configuration is private under the active agent directory's `brabbler/acceptance/settings.json`, not executable configuration discovered from a repository. Tools cannot configure profiles or their own permissions. Nothing is configured or launched automatically merely by opening a project.
 
 Each profile has exactly these fields:
 
@@ -33,13 +33,13 @@ Each profile has exactly these fields:
 ]
 ```
 
-- `argv` is an argument vector, not a shell command. Programs run in the captured source directory. Use `PI_WEB_ACCEPTANCE_RUNTIME` for writable output and caches, not source-relative build output. Profiles execute trusted code as the Pi Web OS user: this coordinator is **not** an OS sandbox. Choose a sandboxed project runner where required.
+- `argv` is an argument vector, not a shell command. Programs run in the captured source directory. Use `BRABBLER_ACCEPTANCE_RUNTIME` for writable output and caches, not source-relative build output. Profiles execute trusted code as the Brabbler OS user: this coordinator is **not** an OS sandbox. Choose a sandboxed project runner where required.
 - `inputs` are existing literal relative file/directory roots. Nested roots cannot overlap. Included trees admit new source files too. Symlinks, special files, cross-device entries, unsafe names and privileged modes refuse. Dot/private/generated/credential names and secret-key/log suffixes are excluded; `.github`, `.gitignore` and the exact maintained `.agents/skills/writing-plans` subtree are deliberate exceptions. Exclusion is not a secret-content detector. Review every declared tree before capture; code/docs can contain sensitive content too.
 - `coverage` is a **profile declaration**, not independent verification. `full` means the configured runner is responsible for complete acceptance and its evidence. A zero exit status does not make an arbitrary command prove browser, deployment or host permission checks.
 - `cpus` / `memoryMiB` are conservative admission estimates. The coordinator also requires 1 GiB memory headroom, respects observed CPU affinity/cgroup CPU and memory headroom, and never increases test deadlines. It does not impose cgroups or resize a running job.
 - `permission` is `ask`, `allow` or `deny` for model requests. Ask shows the exact recipe, inputs and budget; Allow removes that prompt, not applicable user/repository instructions. Browser **Run** is its own explicit request. Deny refuses both paths. An agent must never alter configuration to authorize itself.
 
-**Use Pi Web Nix template** fills, but does not save or execute, this repository's complete fresh `nix run --no-write-lock-file .#test -- all --workers 4 --jobs 4` profile. Other repositories need their own declared inputs and runner. Production builds remain inside isolated Nix builders; no installed host service is used. The template does not widen the current runner's worker limits.
+**Use Brabbler Nix template** fills, but does not save or execute, this repository's complete fresh `nix run --no-write-lock-file .#test -- all --workers 4 --jobs 4` profile. Other repositories need their own declared inputs and runner. Production builds remain inside isolated Nix builders; no installed host service is used. The template does not widen the current runner's worker limits.
 
 The global plugin switch is separate from per-profile Ask/Allow/Deny. An Allow profile cannot override a disabled plugin. Initial execution is Linux-only. The minimal environment is versioned and captured with the request: frozen PATH, `LANG=C.UTF-8`, `NODE_ENV=test`, and private HOME/XDG/TMP/agent directories. Host passwords, provider accounts, proxies, SSH agents, Node/QEMU options and arbitrary ambient environment variables are not forwarded. PATH/argv are frozen values, not a guarantee that arbitrary non-pinned executables or their transitive toolchains cannot change. A pinned runner must establish its toolchain evidence.
 
@@ -55,7 +55,7 @@ Chat-only sessions and subagents whose extension/resource rules omit these tools
 
 ## Queue and input identity
 
-One coordinator owns one heavy execution slot across **all projects using this Pi Web agent directory**. Resource-sufficient jobs dispatch FIFO; an insufficient head job remains queued rather than silently receiving fewer workers. Other Pi Web instances using different agent directories, terminals and shell-launched commands are outside this cooperative budget.
+One coordinator owns one heavy execution slot across **all projects using this Brabbler agent directory**. Resource-sufficient jobs dispatch FIFO; an insufficient head job remains queued rather than silently receiving fewer workers. Other Brabbler instances using different agent directories, terminals and shell-launched commands are outside this cooperative budget.
 
 Registered linked worktrees share a physical common-Git-directory identity (including replacement identity where available); plain directories are individually scoped. Project grouping alone never grants path access or trust, and sidebar metadata is not admission authority.
 

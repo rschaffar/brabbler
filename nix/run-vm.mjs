@@ -24,7 +24,7 @@ export async function runVM(source, system, args) {
   const runtime = directoryIdentity(env.XDG_RUNTIME_DIR);
   const controller = new AbortController();
   const handlers = Object.fromEntries(['SIGINT', 'SIGTERM'].map(sig => [sig, () => controller.abort(sig)]));
-  const report = { version: 1, kind: 'pi-web-service-run', source, system, budget, fresh: true, root,
+  const report = { version: 1, kind: 'brabbler-service-run', source, system, budget, fresh: true, root,
     cleanup: { status: 'retained', reason: 'Execution/evidence not yet established' }, startedAt: new Date().toISOString() };
   const save = () => fs.writeFileSync(path.join(root, 'run.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
   for (const [sig, handler] of Object.entries(handlers)) process.on(sig, handler);
@@ -48,7 +48,7 @@ export async function runVM(source, system, args) {
       { cwd: root, env, signal: controller.signal, graceMs: 45_000, logPath: path.join(root, 'driver.log') });
     try {
       const evidence = validateServiceEvidence(JSON.parse(fs.readFileSync(path.join(root, 'artifacts/acceptance.json'), 'utf8')), report.plan);
-      validateServiceArtifacts(path.join(root, 'artifacts/guest/pi-web-evidence'), evidence.artifacts);
+      validateServiceArtifacts(path.join(root, 'artifacts/guest/brabbler-evidence'), evidence.artifacts);
       report.evidence = evidence;
     } catch (error) { report.error = error.message; }
     report.status = report.execution.code === 0 && report.execution.settled && !report.execution.interrupted && report.evidence?.passed ? 'passed' : 'failed';

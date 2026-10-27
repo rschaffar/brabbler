@@ -316,7 +316,7 @@ export async function checkFilePanel(page, filePath) {
     return el.getBoundingClientRect().width;
   });
   const storedWidths = () => page.evaluate(() => [
-    localStorage.getItem("pi-sidebar-width"), localStorage.getItem("pi-right-panel-width"),
+    localStorage.getItem("brabbler-sidebar-width"), localStorage.getItem("brabbler-right-panel-width"),
   ]);
   const toggle = panel.getByRole("button", { name: "Expand file panel", exact: true });
   if (page.viewportSize().width <= 640) {

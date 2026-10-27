@@ -1,5 +1,5 @@
 {
-  "name": "@pi-web/test-support",
+  "name": "@brabbler/test-support",
   "version": "1.0.0",
   "private": true,
   "type": "module",

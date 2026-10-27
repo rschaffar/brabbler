@@ -10,6 +10,7 @@ on 2026-10-27.
 
 | Plan | Remaining scope |
 | --- | --- |
+| [Brabbler rename](2026-10-27_brabbler-rename-plan.md) | Clean application-identity break, maintained docs and exact-candidate acceptance. Live migration, deployment URL and separate NixOS consumer changes remain outside this change. |
 | [Multi-provider accounts](2026-09-25_multi-provider-accounts-plan.md) | Account-scoped real OAuth/device completion, cancellation and provider refresh evidence, plus explicit isolation-review disposition; implementation is integrated. Synthetic browser authorization is not live-provider proof. |
 | [Claude CLI sessions](2026-09-26_claude-cli-sessions-plan.md) | Backend/policy/protocol work is not delivered on main. Retained feature branches are not integration evidence. |
 | [Explorer fullscreen](2026-10-13_git-explorer-fullscreen-plan.md) | Dedicated already-paginated history/graph and unsupported/non-Git fullscreen browser cases, including expand/restore state retention. |

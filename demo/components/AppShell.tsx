@@ -107,7 +107,7 @@ export function AppShell() {
   const [quoteSelectionEnabled, setQuoteSelectionEnabled] = useState(false);
   useEffect(() => {
     try {
-      setQuoteSelectionEnabled(localStorage.getItem("pi-quote-selection-enabled") === "true");
+      setQuoteSelectionEnabled(localStorage.getItem("brabbler-quote-selection-enabled") === "true");
     } catch {
       // Browser storage is best-effort.
     }
@@ -115,7 +115,7 @@ export function AppShell() {
   const handleQuoteSelectionChange = useCallback((enabled: boolean) => {
     setQuoteSelectionEnabled(enabled);
     try {
-      localStorage.setItem("pi-quote-selection-enabled", String(enabled));
+      localStorage.setItem("brabbler-quote-selection-enabled", String(enabled));
     } catch {
       // Keep the current page usable when storage is unavailable.
     }
@@ -226,7 +226,7 @@ export function AppShell() {
     growthDirection: "right",
     maxWidth: SIDEBAR_MAX_WIDTH,
     minWidth: SIDEBAR_MIN_WIDTH,
-    storageKey: "pi-sidebar-width",
+    storageKey: "brabbler-sidebar-width",
     widthRef: sidebarWidthRef,
   });
   const rightPanelResizer = useResizablePanel({
@@ -238,7 +238,7 @@ export function AppShell() {
     growthDirection: "left",
     maxWidth: RIGHT_PANEL_MAX_WIDTH,
     minWidth: RIGHT_PANEL_MIN_WIDTH,
-    storageKey: "pi-right-panel-width",
+    storageKey: "brabbler-right-panel-width",
     widthRef: rightPanelWidthRef,
   });
   const reclampSidebarWidth = sidebarResizer.reclampWidth;
@@ -855,7 +855,7 @@ export function AppShell() {
       if (!response.ok || !data.info) throw new Error(data.error ?? `HTTP ${response.status}`);
       handleSelectSession(data.info);
     } catch (error) {
-      console.error("[pi-web] failed to open session:", error instanceof Error ? error.message : error);
+      console.error("[brabbler] failed to open session:", error instanceof Error ? error.message : error);
     }
   }, [handleSelectSession, sessionCatalog]);
 
@@ -923,7 +923,7 @@ export function AppShell() {
       targetSession,
       title: targetSession?.name ?? translate("i18n.sessionComplete"),
       body: translate("i18n.taskFinished"),
-      tag: targetSession ? `pi-session-complete:${targetSession.id}` : "pi-session-complete",
+      tag: targetSession ? `brabbler-session-complete:${targetSession.id}` : "brabbler-session-complete",
     });
   }, [deliverSessionNotification, hydrateSelectedSession, selectedSession, translate]);
 
@@ -938,7 +938,7 @@ export function AppShell() {
       body: request.method === "custom"
         ? translate("i18n.extensionInputNeeded")
         : request.title,
-      tag: `pi-extension-ui:${request.id}`,
+      tag: `brabbler-extension-ui:${request.id}`,
     });
   }, [deliverSessionNotification, selectedSession, translate]);
 
@@ -1189,7 +1189,7 @@ export function AppShell() {
 
   const activeFileTab = fileTabs.find((tab) => tab.id === activeFileTabId) ?? null;
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
-  const windowTitle = activeCwdName ? `${activeCwdName} - Pi Web` : "Pi Web";
+  const windowTitle = activeCwdName ? `${activeCwdName} - Brabbler` : "Brabbler";
 
   useEffect(() => {
     const syncWindowTitle = () => {

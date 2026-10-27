@@ -36,7 +36,7 @@ test('ordinary large Markdown is not diagnosed or activated as an oversized note
 test('production file entry is inert; selected evidence, two panes, exploration and free cross-file steps retain current focus/identity', async t => {
   const runtime = guidedRuntime(t);
   const { GuidedReviewEntry, I18nProvider } = await production();
-  let props = { filePath: folder.index, cwd: '/guide', markdown: fence('pi-notebook', index), onWork: runtime.onWork };
+  let props = { filePath: folder.index, cwd: '/guide', markdown: fence('brabbler-notebook', index), onWork: runtime.onWork };
   const element = () => createElement(I18nProvider, null, createElement(GuidedReviewEntry, props, createElement('p', null, 'Ordinary document')));
   const view = await runtime.mount(element());
   assert.equal(runtime.requests.length, 0, 'ordinary mount has no folder/Git reads');
@@ -123,14 +123,14 @@ test('ACTIVE cwd/index changes fence pending folder/evidence bodies, including s
   runtime.healthy();
 });
 
-test('quoted pi-review examples in guided prose and local Markdown assets remain literal, never undeclared expandable cards', async t => {
+test('quoted brabbler-review examples in guided prose and local Markdown assets remain literal, never undeclared expandable cards', async t => {
   const runtime = guidedRuntime(t), { GuidedReviewReader, I18nProvider } = await production();
-  const quoted = fence('pi-review', source).trimEnd().split('\n').map(line => '> ' + line).join('\n');
+  const quoted = fence('brabbler-review', source).trimEnd().split('\n').map(line => '> ' + line).join('\n');
   const replay = runtime.expect('/api/review-notebook', folder), current = runtime.expect('/api/review-notebook', folder);
   const view = await runtime.mount(createElement(I18nProvider, null, createElement(GuidedReviewReader, { indexPath: folder.index, onClose() {}, onWork: runtime.onWork })));
   const assetReplay = runtime.expect('/api/review-notebook', { ...folder, asset: 'notes.md' }), asset = runtime.expect('/api/review-notebook', { ...folder, asset: 'notes.md' });
   await current.deliver({ ...notebook, chapters: [{ ...notebook.chapters[0], steps: [{ id: 'example', title: 'Literal examples', markdown: quoted, targets: [{ ...file, path: 'notes.md' }] }] }] });
-  await asset.deliver({ content: fence('pi-review', source) }); await assetReplay.deliver({ content: 'obsolete' }); await replay.deliver(notebook);
+  await asset.deliver({ content: fence('brabbler-review', source) }); await assetReplay.deliver({ content: 'obsolete' }); await replay.deliver(notebook);
   assert.equal(view.container.querySelectorAll('[data-review-stop]').length, 0);
   assert.equal(view.container.querySelectorAll('.guided-prose blockquote code').length, 1);
   assert.match(view.container.querySelector('.guided-file-evidence').textContent, /Pinned source/);

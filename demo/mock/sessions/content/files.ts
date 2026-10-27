@@ -32,7 +32,7 @@ export const filesSession: SessionScript = {
         {
           seconds: 11,
           text: {
-            en: `**Pi Web** is a local browser UI for the [pi coding agent](https://github.com/earendil-works/pi). In short:
+            en: `**Brabbler** is a local browser UI for the [pi coding agent](https://github.com/earendil-works/pi). In short:
 
 - **Same data as the CLI** — it reads and writes \`~/.pi/agent\`, so sessions, models and credentials are shared with \`pi\` in your terminal.
 - **Session workspace** — browse, resume, rename, export and delete conversations grouped by project, with cost and context usage.
@@ -40,8 +40,8 @@ export const filesSession: SessionScript = {
 - **Project tools** — file explorer, uploads, Git diffs, previews (Markdown, images, PDF, DOCX…) and Git worktrees.
 - **Web configuration** — provider login, API keys, models, skills and plugins without leaving the browser.
 
-Start it with \`npx @agegr/pi-web@latest\`; it listens on \`127.0.0.1:30141\` by default.`,
-            zh: `**Pi Web** 是 [pi 编程智能体](https://github.com/earendil-works/pi) 的本地浏览器界面。简单来说：
+Start it with \`nix run /path/to/brabbler -- --no-open\`; it listens on \`127.0.0.1:30141\` by default.`,
+            zh: `**Brabbler** 是 [pi 编程智能体](https://github.com/earendil-works/pi) 的本地浏览器界面。简单来说：
 
 - **与命令行共享数据**：读写 \`~/.pi/agent\`，会话、模型和凭据都和终端里的 \`pi\` 通用。
 - **会话工作区**：按项目分组浏览、继续、重命名、导出和删除对话，并显示费用和上下文占用。
@@ -49,7 +49,7 @@ Start it with \`npx @agegr/pi-web@latest\`; it listens on \`127.0.0.1:30141\` by
 - **项目工具**：文件浏览器、上传、Git diff、各种预览（Markdown、图片、PDF、DOCX 等）以及 Git worktree。
 - **网页配置**：登录服务商、填写 API Key、管理模型、技能和插件，都不用离开浏览器。
 
-用 \`npx @agegr/pi-web@latest\` 启动，默认监听 \`127.0.0.1:30141\`。`,
+用 \`nix run /path/to/brabbler -- --no-open\` 启动，默认监听 \`127.0.0.1:30141\`。`,
           },
         },
       ],
@@ -58,8 +58,8 @@ Start it with \`npx @agegr/pi-web@latest\`; it listens on \`127.0.0.1:30141\` by
       kind: "user",
       gapMinutes: 2,
       text: {
-        en: "Add a tip under **Quick Start** that points people to `pi-web --help`.",
-        zh: "在 **Quick Start** 下面加一条提示，告诉大家可以用 `pi-web --help` 查看启动参数。",
+        en: "Add a tip under **Quick Start** that points people to `brabbler --help`.",
+        zh: "在 **Quick Start** 下面加一条提示，告诉大家可以用 `brabbler --help` 查看启动参数。",
       },
     },
     {

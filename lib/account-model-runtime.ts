@@ -15,7 +15,7 @@ export interface AccountModelRuntimeOptions {
 
 // Shared symbol identity also survives independent module loaders; the marker is
 // non-enumerable and self-bound so spreading/rebuilding a binding cannot authorize it.
-const bindingMarker: unique symbol = Symbol.for("pi-web.account-model-runtime.binding.v1");
+const bindingMarker: unique symbol = Symbol.for("brabbler.account-model-runtime.binding.v1");
 
 export interface AccountModelRuntimeBinding {
   readonly [bindingMarker]: AccountModelRuntimeBinding;
@@ -43,7 +43,7 @@ export function prepareAccountModelRuntime(
   const accounts = Object.freeze(Object.fromEntries(entries));
   const loginConfig = Object.freeze({ allowPendingLogin: options.allowPendingLogin === true });
   const agentDir = options.agentDir ?? getAgentDir();
-  const accountsPath = options.accountsPath ?? join(agentDir, "pi-web-accounts.json");
+  const accountsPath = options.accountsPath ?? join(agentDir, "brabbler-accounts.json");
   validateAccountSelection(accounts, accountsPath, loginConfig);
   let modelsStorePath = join(agentDir, "models-store.json");
   let credentials: CredentialStore | undefined;
@@ -51,7 +51,7 @@ export function prepareAccountModelRuntime(
     // Only the complete provider/account-ID snapshot participates, never labels or credentials.
     const identity = createHash("sha256").update(JSON.stringify(entries)).digest("hex");
     let directory = agentDir;
-    for (const part of ["pi-web", "model-stores", "v1", identity]) {
+    for (const part of ["brabbler", "model-stores", "v1", identity]) {
       directory = join(directory, part);
       mkdirSync(directory, { recursive: true, mode: 0o700 });
       if (!lstatSync(directory).isDirectory()) throw new Error("Invalid account catalog directory");

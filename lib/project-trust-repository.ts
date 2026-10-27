@@ -16,8 +16,8 @@ export interface TrustedGitRepository {
   worktrees: string[];
 }
 
-const MARKER = "pi-web-trust-id";
-const NATIVE_MARKER = "pi-web-native-resources-id";
+const MARKER = "brabbler-trust-id";
+const NATIVE_MARKER = "brabbler-native-resources-id";
 const MARKER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 function readMarker(common: string, marker = MARKER): string | null {
   const path = join(common, marker);
@@ -109,7 +109,7 @@ export function nativeResourcesGitRepository(cwd: string, createIdentity = false
   }
 }
 
-function storePath(agentDir: string): string { return join(agentDir, "pi-web", "trusted-git-repositories.json"); }
+function storePath(agentDir: string): string { return join(agentDir, "brabbler", "trusted-git-repositories.json"); }
 function readStore(path: string): Set<string> {
   if (!existsSync(path)) return new Set();
   const data: unknown = JSON.parse(readFileSync(path, "utf8"));

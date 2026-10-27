@@ -57,7 +57,7 @@ export function hiddenActivitySessionIds(sessions: readonly SessionInfo[], hidde
   return hidden;
 }
 
-/** Classify only sessions known to this Pi Web catalogue; idle history is not an inbox. */
+/** Classify only sessions known to this Brabbler catalogue; idle history is not an inbox. */
 export function getActivitySections(
   sessions: readonly SessionInfo[],
   runningIds: ReadonlySet<string>,

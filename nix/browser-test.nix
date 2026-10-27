@@ -16,7 +16,7 @@ let
     backend = "nix-build-sandbox";
     source = toString src;
     flakeSource = toString flakeSource;
-    package = "${package}/lib/node_modules/@agegr/pi-web";
+    package = "${package}/lib/node_modules/brabbler";
     launcher = lib.getExe package;
     node = "${pkgs.nodejs_24}/bin/node";
     chromium = "${pkgs.chromium}/bin/chromium";
@@ -25,7 +25,7 @@ let
     fontconfig = toString fontconfig;
     toolPath = lib.makeBinPath tools;
   };
-  support = pkgs.runCommand "pi-web-browser-support" { } ''
+  support = pkgs.runCommand "brabbler-browser-support" { } ''
     mkdir -p "$out"
     cp -R ${src}/. "$out/"
     ln -s ${modules}/node_modules "$out/node_modules"
@@ -33,9 +33,9 @@ let
   '';
   mkCapsule = { group, runId ? "", sourceDigest ? "", hostNamespaces ? { } }:
     assert builtins.hasAttr group groups;
-    let configuration = pkgs.writeText "pi-web-browser-${group}-selection.json"
+    let configuration = pkgs.writeText "brabbler-browser-${group}-selection.json"
       (builtins.toJSON { inherit group runId sourceDigest hostNamespaces; });
-    in pkgs.runCommand "pi-web-browser-${group}-diagnostics" {
+    in pkgs.runCommand "brabbler-browser-${group}-diagnostics" {
       inherit runId;
       preferLocalBuild = true;
       allowSubstitutes = runId == "";
@@ -53,12 +53,12 @@ let
         ${support}/browser.json ${configuration} "$out" "$root"
     '';
   checked = lib.mapAttrs (group: _: let capsule = mkCapsule { inherit group; };
-    in pkgs.runCommand "pi-web-browser-${group}-check" { } ''
+    in pkgs.runCommand "brabbler-browser-${group}-check" { } ''
       ${pkgs.nodejs_24}/bin/node ${support}/nix/browser-plan.mjs check \
         ${support}/browser.json ${lib.escapeShellArg group} ${capsule}
       ln -s ${capsule} "$out"
     '') groups;
-  check = pkgs.runCommand "pi-web-browser-acceptance" { } ''
+  check = pkgs.runCommand "brabbler-browser-acceptance" { } ''
     mkdir -p "$out"
     ${lib.concatStringsSep "\n" (lib.mapAttrsToList (group: result:
       "ln -s ${result} \"$out/${group}\"") checked)}

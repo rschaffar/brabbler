@@ -7,7 +7,7 @@ import { writePrivateFileAtomicSync } from "./atomic-file";
 const MAX_STARS = 10_000;
 
 export function starredSessionsPath(agentDir = getAgentDir()): string {
-  return join(agentDir, "pi-web", "starred-sessions.json");
+  return join(agentDir, "brabbler", "starred-sessions.json");
 }
 
 export function validStarredSessionId(id: unknown): id is string {

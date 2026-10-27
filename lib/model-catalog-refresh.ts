@@ -7,21 +7,21 @@ import type { AccountSelection } from "./provider-accounts";
 /**
  * On-demand refresh of pi's remote provider catalogs.
  *
- * pi's built-in model lists are generated when the SDK is built and pi-web
+ * pi's built-in model lists are generated when the SDK is built and brabbler
  * pins one SDK version, so a model a provider ships after that release stays
- * invisible until pi-web itself publishes a new version (#914: Kimi for
+ * invisible until brabbler itself publishes a new version (#914: Kimi for
  * Coding's K2.8). The SDK already carries the missing half: every built-in
  * provider is wrapped in a pi.dev catalog overlay that `ModelRuntime.refresh()`
  * fetches and persists to a scope-local `models-store.json`, keyed by provider.
  * Pi default keeps the CLI-shared file; selected accounts use isolated stores.
  * Restoring that overlay needs no network, which is why "run the pi CLI once"
  * was the known workaround — the CLI refreshes with the network on, and every
- * pi-web request then reads what the CLI left behind. Both of pi-web's own
+ * brabbler request then reads what the CLI left behind. Both of brabbler's own
  * refresh paths ask for the offline half only (`createAgentSessionServices()`
- * and `lib/provider-usage.ts` pass `allowNetwork: false`), so pi-web never
+ * and `lib/provider-usage.ts` pass `allowNetwork: false`), so brabbler never
  * filled that file itself.
  *
- * This runs the network pass in pi-web, behind the Models panel's refresh
+ * This runs the network pass in brabbler, behind the Models panel's refresh
  * button. It only has to write `models-store.json`: the overlay reaches the UI
  * through the ordinary `/api/models` and `/api/models/enabled` loads, which
  * build a fresh runtime that restores the store.
@@ -90,7 +90,7 @@ export function isModelNetworkDisabled(): boolean {
  * Fetch the remote catalogs once and persist them.
  *
  * `refresh()` is called without `allowNetwork` so the runtime applies its own
- * `PI_OFFLINE` rule instead of pi-web overriding it, and always with
+ * `PI_OFFLINE` rule instead of brabbler overriding it, and always with
  * `force: true`: someone who pressed the button is asking past the SDK's
  * four-hour freshness window, which is the whole point of a manual refresh.
  * Provider failures are reported rather than thrown; identity validation fails closed.

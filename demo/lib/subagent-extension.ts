@@ -3,7 +3,7 @@
 import type { SubagentRunInfo } from "./subagents";
 
 export interface SubagentToolDetails {
-  kind: "pi-web-subagent";
+  kind: "brabbler-subagent";
   sessionId: string;
   runId?: string;
   profile: string;

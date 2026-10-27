@@ -62,9 +62,9 @@ function fences(markdown: string, lang: string): Code[] {
   return nodes(markdown).filter((n): n is Code => n.type === "code" && n.lang === lang);
 }
 export function parseNotebookIndex(markdown: string): NotebookIndex | null {
-  const markers = fences(markdown, "pi-notebook");
+  const markers = fences(markdown, "brabbler-notebook");
   if (!markers.length) return null;
-  if (markers.length !== 1) throw new Error("Expected exactly one top-level pi-notebook fence");
+  if (markers.length !== 1) throw new Error("Expected exactly one top-level brabbler-notebook fence");
   const v = object(markers[0].value); fields(v, ["version", "id", "title", "chapters"]); header(v);
   if (!Array.isArray(v.chapters) || !v.chapters.length || v.chapters.length > GUIDED_LIMITS.chapters) throw new Error("Expected 1–32 chapters");
   const ids = new Set<string>(), paths = new Set<string>();
@@ -100,15 +100,15 @@ export function parseNotebookChapter(markdown: string): GuidedStep[] {
   const ids = new Set<string>();
   for (const node of tree) {
     if (node.type !== "code") continue;
-    if (node.lang === "pi-notebook") throw new Error("Nested notebook manifests/cycles are forbidden");
-    if (node.lang === "pi-step") {
+    if (node.lang === "brabbler-notebook") throw new Error("Nested notebook manifests/cycles are forbidden");
+    if (node.lang === "brabbler-step") {
       if (step) step.markdown = markdown.slice(start, node.position!.start.offset);
       const v = object(node.value); fields(v, ["version", "id", "title"]); header(v);
       if (ids.has(v.id as string)) throw new Error("Duplicate step id"); ids.add(v.id as string);
       step = { id: v.id as string, title: v.title as string, markdown: "", targets: [] }; steps.push(step);
       start = node.position!.end.offset!;
-    } else if (node.lang === "pi-question") {
-      if (!step) throw new Error("Questions must follow a pi-step boundary");
+    } else if (node.lang === "brabbler-question") {
+      if (!step) throw new Error("Questions must follow a brabbler-step boundary");
       const v = object(node.value);
       const allowed = ["version", "id", "shortLabel", "question", "context", "type", "required", "options", "explanation"];
       if (Object.keys(v).some(k => !allowed.includes(k)) || v.version !== 1) throw new Error("Invalid question fields/version");
@@ -119,10 +119,10 @@ export function parseNotebookChapter(markdown: string): GuidedStep[] {
       const questions = step.questions ??= [];
       if (questions.length >= 6 || questions.some(q => q.id === v.id)) throw new Error("Duplicate question id or more than six questions per step");
       questions.push({ ...parsed.questions[0], ...(v.explanation !== undefined ? { explanation: v.explanation as string } : {}) });
-    } else if (node.lang === "pi-review" || node.lang === "pi-evidence") {
-      if (!step) throw new Error("Evidence must follow a pi-step boundary");
+    } else if (node.lang === "brabbler-review" || node.lang === "brabbler-evidence") {
+      if (!step) throw new Error("Evidence must follow a brabbler-step boundary");
       object(node.value); // Guided-package ambiguity/depth policy also covers unchanged v1 targets.
-      const parsed = node.lang === "pi-review" ? parseReviewBlock(node.value) : { value: parseEvidence(node.value), error: undefined };
+      const parsed = node.lang === "brabbler-review" ? parseReviewBlock(node.value) : { value: parseEvidence(node.value), error: undefined };
       if (parsed.error) throw new Error(parsed.error);
       step.targets.push(parsed.value!);
     }
@@ -142,7 +142,7 @@ export function validateNotebook(notebook: GuidedNotebook): GuidedNotebook {
 }
 /** Remove only parser-owned top-level evidence, not example fences inside code. */
 export function stepProse(markdown: string): string {
-  const evidence = fences(markdown, "pi-review").concat(fences(markdown, "pi-evidence"), fences(markdown, "pi-question")).sort((a, b) => b.position!.start.offset! - a.position!.start.offset!);
+  const evidence = fences(markdown, "brabbler-review").concat(fences(markdown, "brabbler-evidence"), fences(markdown, "brabbler-question")).sort((a, b) => b.position!.start.offset! - a.position!.start.offset!);
   for (const node of evidence) markdown = markdown.slice(0, node.position!.start.offset) + markdown.slice(node.position!.end.offset);
   return markdown;
 }

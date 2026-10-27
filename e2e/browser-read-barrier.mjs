@@ -15,7 +15,7 @@ export async function observeBrowserReads(page, specs, { natural = false } = {})
   await page.evaluate(({ key, specs, natural }) => {
     const original = window.fetch;
     const state = { reads: [], interruptions: [], restore: null };
-    const events = ["focus", "online", "visibilitychange", "pi-web:activity-refresh"];
+    const events = ["focus", "online", "visibilitychange", "brabbler:activity-refresh"];
     const interrupted = (event) => state.interruptions.push(event.type);
     if (natural) {
       if (document.visibilityState !== "visible") throw new Error("Natural polls require a visible document");

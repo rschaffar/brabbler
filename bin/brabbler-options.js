@@ -30,25 +30,26 @@ function normalizePort(value) {
 }
 
 function getHelpText() {
-  return `Usage: pi-web [options]
+  return `Usage: brabbler [options]
 
-Start the Pi Web UI server.
+Start the Brabbler UI server.
 
 Options:
   -p, --port <port>          Server port (default: 30141, or PORT)
-  -H, --hostname <host>      Bind hostname (default: 127.0.0.1, or PI_WEB_HOSTNAME)
+  -H, --hostname <host>      Bind hostname (default: 127.0.0.1, or BRABBLER_HOSTNAME)
       --no-open              Do not open a browser automatically
   -h, --help                 Show this help message and exit
 
 Environment:
   PORT                       Default port when --port is omitted
-  PI_WEB_HOSTNAME            Default hostname when --hostname is omitted
-  PI_WEB_NO_OPEN             Set to 1/true/yes/on to disable browser open
-  PI_WEB_APP_NAME            PWA manifest name (trimmed; default Pi Web)
-  PI_WEB_PASSWORD            Enable browser password login and API Basic Auth
-  PI_WEB_ALLOWED_HOSTS       Extra exact proxy/custom hostnames, comma-separated
-  PI_WEB_SKIP_VERSION_CHECK  Set to 1 to disable Pi Web update checks
-  PI_WEB_IDLE_TIMEOUT_MS     Session idle timeout in ms (0 disables; default 600000)
+  BRABBLER_HOSTNAME            Default hostname when --hostname is omitted
+  BRABBLER_NO_OPEN             Set to 1/true/yes/on to disable browser open
+  BRABBLER_APP_NAME            PWA manifest name (trimmed; default Brabbler)
+  BRABBLER_PASSWORD            Enable browser password login and API Basic Auth
+  BRABBLER_ALLOWED_HOSTS       Extra exact proxy/custom hostnames, comma-separated
+  BRABBLER_SKIP_VERSION_CHECK  Set to 1 to disable running-version reload prompts
+  BRABBLER_PUSH_SUBJECT        Operator contact URL required for Web Push
+  BRABBLER_IDLE_TIMEOUT_MS     Session idle timeout in ms (0 disables; default 600000)
 `;
 }
 
@@ -82,8 +83,8 @@ function parseLaunchOptions(args = process.argv.slice(2), env = process.env) {
   return {
     help: false,
     port: normalizePort(values.port ?? env.PORT ?? "30141"),
-    hostname: values.hostname ?? env.PI_WEB_HOSTNAME ?? "127.0.0.1",
-    openBrowser: !values["no-open"] && !isEnabled(env.PI_WEB_NO_OPEN),
+    hostname: values.hostname ?? env.BRABBLER_HOSTNAME ?? "127.0.0.1",
+    openBrowser: !values["no-open"] && !isEnabled(env.BRABBLER_NO_OPEN),
   };
 }
 

@@ -10,8 +10,8 @@ export function createNativeRouteOwner(t, capabilities, commitIndex) {
   const baselineWrappers = new Set(globalThis.__piSessions?.values() ?? []);
   const baselineStarts = new Set(globalThis.__piStartLocks?.values() ?? []);
   const baselineRead = globalThis.__piSessionListPromise;
-  const baselineScan = globalThis.__piWebScanQueue;
-  const baselineSave = globalThis.__piWebScanIndexSave;
+  const baselineScan = globalThis.__brabblerScanQueue;
+  const baselineSave = globalThis.__brabblerScanIndexSave;
   const baselineProjects = new Set(globalThis.__piProjectRefresh?.values() ?? []);
   let closed = false, closing;
   const observe = (set, promise) => {
@@ -22,7 +22,7 @@ export function createNativeRouteOwner(t, capabilities, commitIndex) {
   };
   const sample = () => {
     const read = globalThis.__piSessionListPromise;
-    const scan = globalThis.__piWebScanQueue;
+    const scan = globalThis.__brabblerScanQueue;
     if (read !== baselineRead) observe(catalogue, read);
     if (scan !== baselineScan) observe(catalogue, scan);
     for (const task of globalThis.__piProjectRefresh?.values() ?? []) {
@@ -58,7 +58,7 @@ export function createNativeRouteOwner(t, capabilities, commitIndex) {
     await all(catalogue);
     // The current serialized scan tail also covers any scan admitted by those
     // read continuations. This is one named queue join, not an idle/flush loop.
-    const scanTail = globalThis.__piWebScanQueue;
+    const scanTail = globalThis.__brabblerScanQueue;
     if (scanTail !== baselineScan) {
       observe(catalogue, scanTail);
       await all([scanTail]);
@@ -66,7 +66,7 @@ export function createNativeRouteOwner(t, capabilities, commitIndex) {
     // Stale project publication is not its background generation's settlement.
     sample();
     await all(projects);
-    const pending = globalThis.__piWebScanIndexSave;
+    const pending = globalThis.__brabblerScanIndexSave;
     if (pending && pending === baselineSave) {
       failures.push(new Error('Refusing to commit an index writer predating this native scope'));
     } else if (pending) {
@@ -74,7 +74,7 @@ export function createNativeRouteOwner(t, capabilities, commitIndex) {
       // removal, after actual scan/read settlement. Best-effort cache persistence
       // is not durable application success or native mutation authority.
       try { commitIndex(); } catch (error) { failures.push(error); }
-      if (globalThis.__piWebScanIndexSave) failures.push(new Error('Owned index writer remains scheduled after its specific commit'));
+      if (globalThis.__brabblerScanIndexSave) failures.push(new Error('Owned index writer remains scheduled after its specific commit'));
     }
     await all([...responses].map(async response => {
       if (response.body && !response.bodyUsed) await response.arrayBuffer();

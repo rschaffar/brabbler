@@ -52,7 +52,7 @@ app/api/
   auth/logout/[provider]/route.ts POST OAuth logout
   auth/providers/route.ts         GET OAuth and API-key provider lists
   cwd/validate/route.ts           POST validate/select a cwd
-  default-cwd/route.ts            POST create ~/pi-cwd-YYYYMMDD
+  default-cwd/route.ts            POST create ~/brabbler-cwd-YYYYMMDD
   files/[...path]/route.ts        GET file contents for viewer
   home/route.ts                   GET user home directory
   models/route.ts                 GET { models, modelList, defaultModel }
@@ -82,7 +82,7 @@ app/api/
   terminal/route.ts               POST create a terminal session
   terminal/[id]/route.ts          GET stream | POST input/resize | DELETE kill
   cwd/browse/route.ts             GET browse allowed cwd directories
-  app-update/route.ts             GET current vs latest published pi-web version
+  app-update/route.ts             GET local version; external update discovery disabled
   file-index/route.ts             GET file list for @-mentions
   git/status/route.ts             GET changed files for a cwd
   git/diff/route.ts               GET diff for one changed file

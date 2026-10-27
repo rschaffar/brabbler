@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { createJiti } from "jiti";
 
-const agentDir = mkdtempSync(join(tmpdir(), "pi-web-activity-route-"));
+const agentDir = mkdtempSync(join(tmpdir(), "brabbler-activity-route-"));
 const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 process.env.PI_CODING_AGENT_DIR = agentDir;
 test.after(() => {

@@ -195,8 +195,8 @@ export async function checkUpstreamComposer(context, base, sessionId, alternateS
     manifestCall = { api: {} };
     manifestCall.work = observeOriginal(readManifest(manifestCall));
     const manifest = await manifestCall.work.original;
-    assert.equal(manifest.name, "E2E Pi Desk", "installed package reads the launch environment, not the build environment");
-    assert.equal(manifest.short_name, "E2E Pi Desk");
+    assert.equal(manifest.name, "E2E Brabbler", "installed package reads the launch environment, not the build environment");
+    assert.equal(manifest.short_name, "E2E Brabbler");
     assert.equal(manifest.id, "/");
     const input = page.locator(".chat-input-textarea");
     await input.waitFor();

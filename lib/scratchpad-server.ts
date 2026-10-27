@@ -11,7 +11,7 @@ import { registeredGitRepository } from "./project-trust-repository";
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
 export function scratchpadPath(scope: ScratchpadScope, agentDir = getAgentDir()): string {
   if (!validScratchpadScope(scope)) throw new Error("Invalid scratchpad scope");
-  return join(agentDir, "pi-web", "scratchpads", `${digest(JSON.stringify(scope))}.json`);
+  return join(agentDir, "brabbler", "scratchpads", `${digest(JSON.stringify(scope))}.json`);
 }
 /** Fresh grouping only: no trust/default marker, project-file write or new file root. */
 export function scratchpadProject(cwd: string): ScratchpadProject {

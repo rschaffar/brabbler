@@ -6,7 +6,7 @@ import test, { after } from "node:test";
 import { createJiti } from "jiti";
 
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
-const testAgentDir = await mkdtemp(join(tmpdir(), "pi-web-title-model-"));
+const testAgentDir = await mkdtemp(join(tmpdir(), "brabbler-title-model-"));
 process.env.PI_CODING_AGENT_DIR = testAgentDir;
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true, moduleCache: false });
 const { GET, PUT } = await jiti.import("./route.ts");
@@ -33,13 +33,13 @@ test("title model defaults to session model; saves exact provider/id and preserv
   assert.equal(readTitleLanguage(), "de");
   writeTitleLanguage("en");
   assert.deepEqual(await (await GET()).json(), { model });
-  assert.deepEqual(JSON.parse(await readFile(join(testAgentDir, "pi-web", "title-settings.json"), "utf8")), { language: "en", model });
+  assert.deepEqual(JSON.parse(await readFile(join(testAgentDir, "brabbler", "title-settings.json"), "utf8")), { language: "en", model });
   assert.deepEqual(await (await PUT(request(null))).json(), { model: null });
   assert.deepEqual(await (await GET()).json(), { model: null });
 });
 
 test("does not replace damaged server settings", async () => {
-  const path = join(testAgentDir, "pi-web", "title-settings.json");
+  const path = join(testAgentDir, "brabbler", "title-settings.json");
   await writeFile(path, '{"language":"en","model":{"provider":"bad"}}');
   assert.equal((await GET()).status, 500);
   assert.equal((await PUT(request(null))).status, 500);

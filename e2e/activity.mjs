@@ -285,11 +285,11 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   // Legacy import is client policy below; retain one installed migration/default
   // storage bridge, not another storage-write/reload/server-reset at each width.
   if (width === 1280) {
-    await page.evaluate((id) => localStorage.setItem("pi-web:starred-sessions", JSON.stringify([id])), otherSessionId);
+    await page.evaluate((id) => localStorage.setItem("brabbler:starred-sessions", JSON.stringify([id])), otherSessionId);
     await page.reload({ waitUntil: "domcontentloaded" });
     await waitForAsyncCondition(page, async (id) => {
       const response = await fetch("/api/starred-sessions", { cache: "no-store" });
-      return (await response.json()).ids.includes(id) && localStorage.getItem("pi-web:starred-sessions") === null;
+      return (await response.json()).ids.includes(id) && localStorage.getItem("brabbler:starred-sessions") === null;
     }, otherSessionId);
     await post("/api/starred-sessions", { op: "set", id: otherSessionId, starred: false });
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -349,7 +349,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   if (width === 1280) {
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByText("Active branch answer", { exact: true }).waitFor();
-    assert.equal(await page.evaluate(() => localStorage.getItem("pi-web:starred-sessions")), null,
+    assert.equal(await page.evaluate(() => localStorage.getItem("brabbler:starred-sessions")), null,
       "stars are stored on the server rather than in this browser");
   } else {
     // Unlike reload, staying in this document leaves Starred OPEN. Close it
@@ -453,7 +453,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
     peerContext.on("page", watchPage); // before page creation/navigation; no expected-error filter
     peer = await peerContext.newPage();
     await peer.goto(`${base}/?session=${selectedSessionId}`, { waitUntil: "domcontentloaded" });
-    assert.equal(await peer.evaluate(() => localStorage.getItem("pi-web:unread-session-ids")), null);
+    assert.equal(await peer.evaluate(() => localStorage.getItem("brabbler:unread-session-ids")), null);
     await peer.getByText("Active branch answer", { exact: true }).waitFor();
     await peer.getByRole("button", { name: /^Activity/ }).click();
     await peer.getByRole("region", { name: "Activity" }).locator(".activity-deferred-attention").filter({ hasText: "E2E browser question" }).waitFor();
@@ -595,7 +595,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   const reloadedOverview = page.getByRole("region", { name: "Activity" });
   assert.equal(await reloadedOverview.locator(".activity-item-ready").filter({ hasText: "Other workspace task" }).count(), 0,
     "server-reviewed runs must not reappear after reloading this browser");
-  assert.equal(await page.evaluate(() => localStorage.getItem("pi-web:reviewed-run-times")), null);
+  assert.equal(await page.evaluate(() => localStorage.getItem("brabbler:reviewed-run-times")), null);
   await setArchived(false);
   const [childA, childB, workingChild, otherChild] = subagentIds;
   const completed = seedSubagentCompletions();

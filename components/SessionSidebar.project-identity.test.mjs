@@ -18,7 +18,7 @@ for (const cwd of ['/canonical/wt', 'C:/Repo/Worktree', '\\\\host\\share\\Worktr
     if (request.url.pathname === '/api/sessions/worktrees' && request.url.searchParams.get('project') === root) {
       exact(request, '/api/sessions/worktrees', { project: root }, { signal: true, cache: 'no-store' }); return { handled: true, data: { project: root, mainCwd: cwd, worktrees: [] } };
     }
-  }, { listings }), (window) => { window.localStorage.setItem('pi-web:last-custom-cwd', '/prior'); });
+  }, { listings }), (window) => { window.localStorage.setItem('brabbler:last-custom-cwd', '/prior'); });
   const controller = r.graph.createActivityClientController({ visible: () => false });
   r.releaseOnClose(() => controller.dispose());
   await r.render(createElement(r.graph.SessionSidebar, { selectedSessionId: null, selectedCwd: '/repo', onSelectSession() {}, activityController: controller,
@@ -31,7 +31,7 @@ for (const cwd of ['/canonical/wt', 'C:/Repo/Worktree', '\\\\host\\share\\Worktr
   await click(r.view, button(r.view, 'Select this folder', r.view.window.document)); await r.settled();
   assert.ok(changes.some(value => value[0] === cwd && value[1] === root && value[2] === key));
   assert.equal(changes.some(value => value[0] === cwd && value[2] === cwd), false, 'no transient raw-path project switch');
-  assert.equal(r.view.window.localStorage.getItem('pi-web:last-custom-cwd'), cwd);
+  assert.equal(r.view.window.localStorage.getItem('brabbler:last-custom-cwd'), cwd);
   // Open the real picker again; its initialPath is the last validated spelling.
   await click(r.view, r.view.container.querySelector(`button[title="${root}"]`));
   // Reload is separately installed-browser-owned. Storage bytes above establish

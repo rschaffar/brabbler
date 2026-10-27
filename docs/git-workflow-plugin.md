@@ -1,6 +1,6 @@
 # Optional Git Workflow plugin
 
-Pi Web works with every bundled plugin disabled. **Settings → Plugins → Git
+Brabbler works with every bundled plugin disabled. **Settings → Plugins → Git
 Workflow** enables this browser-only bundled plugin; it is off by default.
 Ordinary coding/shell tools, Git Explorer and standalone worktrees do not depend
 on it. The removed managed Workflow and its private data are not restored or read.
@@ -10,8 +10,8 @@ managed-directory reservation, not the removed managed Workflow system.
 
 ## Settings
 
-The plugin declares schema version 1 and defaults. Pi Web stores only explicit
-overrides in `~/.pi/agent/pi-web/plugins/git-workflow/settings.json` (relative to
+The plugin declares schema version 1 and defaults. Brabbler stores only explicit
+overrides in `~/.pi/agent/brabbler/plugins/git-workflow/settings.json` (relative to
 `PI_CODING_AGENT_DIR` when configured), using owner-only directories/files and
 locked atomic writes. No settings are stored in tracked repository files or the
 session transcript. The version-1 document may also contain explicit overrides
@@ -56,7 +56,7 @@ are unchanged. Isolated cleanup still asks about generated artifacts by default.
 Presets grant neither implementation nor remote-operation authority.
 
 The read-only `git_policy` tool reports effective values, origins and a revision
-for an explicit selected repository. Request-local `pi-web:git-policy/v1` context
+for an explicit selected repository. Request-local `brabbler:git-policy/v1` context
 refreshes on each model request, is not persisted in the transcript, and reminds
 the agent to use `ask_user` for workflow Ask. Tool execution independently resolves
 and rechecks policy. Applicable skills/instructions must recognize that contract
@@ -76,7 +76,7 @@ in conversation history.
 `cleanupFeature` permission; existing `removeWorktree` remains strict and retains
 branches. Both Ask and Allow operations leave durable execution cards, not just
 tool results. See [ADR 0016](adr/0016-session-git-policy.md). No tool can change settings. Agents must not use shell/API access to change their own permissions.
-The same authenticated host/origin boundary as other Pi Web settings applies;
+The same authenticated host/origin boundary as other Brabbler settings applies;
 this plugin is not an OS sandbox for an agent that already has shell access.
 
 Each of `commit`, `rebase`, `merge`, `createWorktree`, `attachWorktree`,
@@ -115,7 +115,7 @@ or additional verification they require even when a plugin permission is Allow.
 
 ## Tools and correctness
 
-Tools are ordinary Pi inline-extension tools, exposed only to ordinary Pi Web
+Tools are ordinary Pi inline-extension tools, exposed only to ordinary Brabbler
 coding sessions while enabled. Chat-only sessions and subagent profiles do not
 load them. Each invocation explicitly selects an absolute `checkout` root in
 **any local repository**, independently of the session cwd. The caller may be
@@ -251,7 +251,7 @@ Linux mount metadata also rejects same-device bind mounts, while other platforms
 reject device changes and links.
 
 A managed-directory reservation spans final validation and mutation, blocking new
-Pi Web prompts/startup/terminals in that directory while existing active use
+Brabbler prompts/startup/terminals in that directory while existing active use
 prevents acquisition. It is not an OS/filesystem lock: external writers remain
 uncoordinated. Resources and policy are checked between effects. Stop or changes
 retain the remaining resources after already-dispatched effects settle; failures
@@ -370,7 +370,7 @@ Settings and transcript history may remain for re-enabling.
 
 ### Durable execution receipts
 
-Every admitted Git operation persists `pi-web:operation-receipt` snapshots before
+Every admitted Git operation persists `brabbler:operation-receipt` snapshots before
 checks/effects and at settlement. A separate generic host API owns persistence;
 missing capability or failed pre-effect persistence refuses execution. Records
 carry the operation UUID, optional SDK tool-call ID, compact bounded presentation
@@ -397,7 +397,7 @@ The existing application authentication/origin boundary applies. Reads validate
 stored integrity; bounded pages and streamed downloads do not impose an operation
 size ceiling. Old inline receipts continue to render unchanged.
 
-Private `pi-web/reviews/` storage is independent of cwd and creator-session paths.
+Private `brabbler/reviews/` storage is independent of cwd and creator-session paths.
 Moves preserve references; forks with copied receipts retain access even after
 the parent is deleted. Published bundles have no TTL or automatic garbage
 collection, including bundles orphaned after publication. Unpublished scratch is

@@ -17,7 +17,7 @@ const fileLanguage = await jiti.import("../../../lib/file-language.ts");
 const sessionId = "550e8400-e29b-41d4-a716-446655440000";
 
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-reference-policy-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "brabbler-reference-policy-"));
   let fileBody;
   t.after(async () => {
     const { closed, errors } = fileBody ? await fileBody.finish() : { closed: true, errors: [] };
@@ -66,7 +66,7 @@ test("all reference-enabled routes deny untrusted transcript paths before filesy
   const text = [{ type: "text", text: f.outside }];
   for (const source of [
     entry("system", text), entry("toolResult", text, { toolName: "remote_search", toolCallId: "remote" }),
-    { type: "custom", id: "receipt", customType: "pi-web:operation-receipt", data: { patch: f.outside, authorized: true } },
+    { type: "custom", id: "receipt", customType: "brabbler:operation-receipt", data: { patch: f.outside, authorized: true } },
     { type: "context_edit", id: "edit", replacement: { content: text } },
     entry("toolResult", [], { toolName: "mcp.read", details: { fullOutputPath: f.outside } }),
   ]) {

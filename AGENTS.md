@@ -1,4 +1,4 @@
-# Pi Web — Development Instructions
+# Brabbler — Development Instructions
 
 <!-- project-workflow-align: baseline-v3 -->
 ## Project Git Profile

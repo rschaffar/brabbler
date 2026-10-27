@@ -6,7 +6,7 @@ import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 function sourceAt(root: string): { path: string; version: string } | null {
   try {
     const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-    if (manifest.name !== "@agegr/pi-web" || typeof manifest.version !== "string"
+    if (manifest.name !== "brabbler" || typeof manifest.version !== "string"
       || !existsSync(join(root, "app", "layout.tsx"))
       || !existsSync(join(root, "lib", "rpc-manager.ts"))) return null;
     return { path: root, version: manifest.version };
@@ -16,7 +16,7 @@ function sourceAt(root: string): { path: string; version: string } | null {
 }
 
 /** Prefer the executing module's package (dev or .next/server/chunks), not the caller's cwd. */
-export function piWebSourceLocation(root?: string): { path: string; version: string } | null {
+export function brabblerSourceLocation(root?: string): { path: string; version: string } | null {
   if (root !== undefined) return sourceAt(resolve(root));
   let candidate = resolve(__dirname);
   while (true) {
@@ -31,27 +31,27 @@ export function piWebSourceLocation(root?: string): { path: string; version: str
 }
 
 /** A small, on-demand pointer; source contents never enter the system prompt. */
-export function createPiWebSourceExtension(
-  locate: () => ReturnType<typeof piWebSourceLocation> = piWebSourceLocation,
+export function createBrabblerSourceExtension(
+  locate: () => ReturnType<typeof brabblerSourceLocation> = brabblerSourceLocation,
 ): InlineExtension {
   return {
-    name: "pi-web-source",
+    name: "brabbler-source",
     hidden: true,
     factory: (pi) => {
       pi.registerTool({
-        name: "pi_web_source",
-        label: "Pi Web source",
-        description: "Locate the source of this running Pi Web version when investigating Pi Web itself. Returns a local path and version, not source contents; read only the files you need with your file tools.",
+        name: "brabbler_source",
+        label: "Brabbler source",
+        description: "Locate the source of this running Brabbler version when investigating Brabbler itself. Returns a local path and version, not source contents; read only the files you need with your file tools.",
         parameters: Type.Object({}),
         async execute() {
           const source = locate();
           if (!source) return {
-            content: [{ type: "text" as const, text: "Pi Web source is unavailable in this installation." }],
+            content: [{ type: "text" as const, text: "Brabbler source is unavailable in this installation." }],
             isError: true,
             details: {},
           };
           return {
-            content: [{ type: "text" as const, text: `Pi Web ${source.version} source: ${source.path}\nFirst-party code is in app/, components/, hooks/, lib/, and plugins/. Treat this installed copy as a reference; work in a checkout for changes.` }],
+            content: [{ type: "text" as const, text: `Brabbler ${source.version} source: ${source.path}\nFirst-party code is in app/, components/, hooks/, lib/, and plugins/. Treat this installed copy as a reference; work in a checkout for changes.` }],
             details: {},
           };
         },

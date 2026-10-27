@@ -37,7 +37,7 @@ export function sessionReferenceExcerpt(entries: readonly SessionEntry[], id: st
 async function loadSessionReference(id: string): Promise<string> {
   const path = await resolveSessionPath(id);
   if (!path || readSessionHeader(path)?.id.toLowerCase() !== id) {
-    return `Referenced local session ${id} is unavailable (deleted or not on this Pi Web instance).`;
+    return `Referenced local session ${id} is unavailable (deleted or not on this Brabbler instance).`;
   }
   try {
     const branch = openSessionManager(path).getBranch() as unknown as SessionEntry[];
@@ -52,7 +52,7 @@ export function createSessionReferenceExtension(
   load: (id: string) => Promise<string> = loadSessionReference,
 ): InlineExtension {
   return {
-    name: "pi-web-session-references",
+    name: "brabbler-session-references",
     hidden: true,
     factory: (pi) => {
       pi.on("before_agent_start", async (event) => {
@@ -65,7 +65,7 @@ export function createSessionReferenceExtension(
         }));
         return {
           message: {
-            customType: "pi-web:session-references",
+            customType: "brabbler:session-references",
             display: false,
             content: excerpts.join("\n\n---\n\n"),
           },

@@ -149,7 +149,7 @@ export async function fileDiffRealm(t) {
     async show(status, id) {
       scenario = { status, id };
       const from = h.work.length;
-      h.view.window.localStorage.setItem('pi-web:git-diff-preferences', JSON.stringify({ view: 'split', wrap: true }));
+      h.view.window.localStorage.setItem('brabbler:git-diff-preferences', JSON.stringify({ view: 'split', wrap: true }));
       await h.render(createElement(graph.FileViewerComposition, { store, viewers: [{ viewId: id, filePath: path, cwd, sourceSessionId: session, watchEnabled: false, onWork }] }));
       await join(from); return { scenario, from };
     },

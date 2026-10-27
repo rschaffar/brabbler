@@ -6,7 +6,7 @@ The reduced feature composes SDK 1.4.0 MCP, tools-only Code-mode and Tool search
 
 Configure servers in native `~/.pi/agent/mcp.json` or trusted project `.pi/mcp.json`, including Nix-provided leaf symlinks. Project replacement and restricted `enabled`/`exposure`/`toolExposure` overrides retain native semantics. The browser does not edit those files or grant project trust. Configured does not mean connected.
 
-Session intent is a version-1 `pi-web:native-resources` custom entry:
+Session intent is a version-1 `brabbler:native-resources` custom entry:
 
 ```json
 {"version":1,"codeMode":true,"mcpServers":[{"scope":"global","name":"example"}]}
@@ -22,7 +22,7 @@ Each wrapper captures its declarations, environment and native stdio path expans
 
 In **Session tools**, select the desired servers/Code-mode and choose **Save selection as project default**. This saves intent for future ordinary sessions, not an Apply to the current session. **Clear project default** returns future creation to off. Both actions leave existing wrappers and saved sessions unchanged; ambiguous acknowledgements require **Refresh status**, never an automatic write retry.
 
-Defaults are private, versioned Pi Web settings in `agentDir/pi-web/project-native-resources.json`, not edits to native `mcp.json` or repository-controlled files. They cover registered Git checkout roots and their linked/future worktrees. Repository subdirectories and non-Git directories do not inherit a repository default. Fresh physical membership and a separate shared `pi-web-native-resources-id` marker prevent a replacement repository at the same path from inheriting it. An explicit save may initialize that native-default identity marker; it neither creates the trust marker nor grants project trust. Acceptance profiles/jobs keep their identity when defaults are saved, and a later explicit trust grant does not rename native defaults. No identity is created by metadata reads or session startup.
+Defaults are private, versioned Brabbler settings in `agentDir/brabbler/project-native-resources.json`, not edits to native `mcp.json` or repository-controlled files. They cover registered Git checkout roots and their linked/future worktrees. Repository subdirectories and non-Git directories do not inherit a repository default. Fresh physical membership and a separate shared `brabbler-native-resources-id` marker prevent a replacement repository at the same path from inheriting it. An explicit save may initialize that native-default identity marker; it neither creates the trust marker nor grants project trust. Acceptance profiles/jobs keep their identity when defaults are saved, and a later explicit trust grant does not rename native defaults. No identity is created by metadata reads or session startup.
 
 Only ordinary browser/API creation through `POST /api/agent/new` reads defaults. The chosen selection is snapshotted and persisted even for a setup-only session, without fabricating a message. Existing/legacy sessions, reopen, account/tool recreation, fork/clone and session moves keep their existing intent rather than consulting current defaults. Child and agent-launched sessions remain off by default. Changing or clearing defaults is not a revocation mechanism for sessions that already captured them; change those sessions explicitly.
 

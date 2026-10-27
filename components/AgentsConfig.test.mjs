@@ -163,7 +163,7 @@ test('actual remembered agent selection uses scope identity and writable duplica
   const profiles = [profile('project'), profile('global')];
   const { f, graph } = await fixture(t, profiles);
   await f.mount(h(graph.AgentsConfig, { cwd: '/project', embedded: true, onClose() {} }), { setup(window) {
-    window.localStorage.setItem('pi-web:settings-navigation', JSON.stringify({ selections: { '["agents","/project"]': 'global:same' } }));
+    window.localStorage.setItem('brabbler:settings-navigation', JSON.stringify({ selections: { '["agents","/project"]': 'global:same' } }));
   } });
   assert.equal(f.node('.config-sidebar-item[aria-current="page"]').textContent.includes('global agent'), true);
   assert.equal(f.node('.config-detail-path').textContent, '~/.pi/agent/agents/same.md');

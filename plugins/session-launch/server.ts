@@ -29,7 +29,7 @@ export async function executeSessionLaunch(request: LaunchRequest, caller: Plugi
   let createdSessionId: string | undefined;
   let accepted = false;
   const record = (phase: PluginOperationReceipt["phase"], summary?: string) => {
-    if (!receipt || !ui.operationReceipt) throw new Error("Session launch requires durable Pi Web operation receipts");
+    if (!receipt || !ui.operationReceipt) throw new Error("Session launch requires durable Brabbler operation receipts");
     receipt = { ...receipt, phase, effectStarted: Boolean(createdSessionId), ...(summary ? { summary } : {}) };
     ui.operationReceipt(sessionLaunchManifest.id, structuredClone(receipt));
   };
@@ -45,7 +45,7 @@ export async function executeSessionLaunch(request: LaunchRequest, caller: Plugi
     const initialPolicy = policy(directory.cwd, caller);
     const capturedRevision = revision(initialPolicy);
     host ??= ui.sessionLaunchHost;
-    if (!host) throw new Error("Session launch requires the ordinary Pi Web session host");
+    if (!host) throw new Error("Session launch requires the ordinary Brabbler session host");
     const config = await host.resolve({ ...proposal, cwd: directory.cwd }, caller);
     if (launchDirectory(config.cwd).identity !== directory.identity) throw new Error("Launch destination changed during preparation");
     const revalidate = () => {
@@ -73,7 +73,7 @@ export async function executeSessionLaunch(request: LaunchRequest, caller: Plugi
       authorization: { mode, source: initialPolicy.sources.launch, revision: capturedRevision, decision: mode === "allow" ? "policy-authorized" : "pending" }, checks: [] };
     record("prepared");
     if (mode === "ask") {
-      if (!ui.pluginCardWithDetails) throw new Error("Ask requires the live Pi Web approval card");
+      if (!ui.pluginCardWithDetails) throw new Error("Ask requires the live Brabbler approval card");
       const cancellation = new AbortController();
       const unsubscribe = onPluginSettingsChange((id) => {
         if (id !== sessionLaunchManifest.id) return;

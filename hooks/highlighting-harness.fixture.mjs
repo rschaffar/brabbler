@@ -16,7 +16,7 @@ export async function harness(t, { failure = false, gated = false, kind = 'defer
     const native = createJiti(import.meta.url, { fsCache: false });
     importGate = { entered: deferred(), release: deferred(),
       importActual: () => native.import('react-syntax-highlighter/dist/esm/prism') };
-    runtime.installGlobal(Symbol.for('pi-web:test-prism-import-gate'), importGate);
+    runtime.installGlobal(Symbol.for('brabbler:test-prism-import-gate'), importGate);
     runtime.releaseOnSettle(() => importGate.release.resolve());
   }
   const alias = failure || gated ? { 'react-syntax-highlighter/dist/esm/prism': fileURLToPath(new URL(

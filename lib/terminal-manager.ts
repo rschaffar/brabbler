@@ -24,7 +24,7 @@ interface TerminalRecord {
 }
 
 declare global {
-  var __piWebTerminals: Map<string, TerminalRecord> | undefined;
+  var __brabblerTerminals: Map<string, TerminalRecord> | undefined;
 }
 
 // ponytail: bounded replay; use terminal serialization if full-screen snapshots become necessary.
@@ -32,16 +32,16 @@ const MAX_BACKLOG = 128 * 1024;
 export const TERMINAL_RECONNECT_MS = 120_000;
 
 function registry(): Map<string, TerminalRecord> {
-  if (!globalThis.__piWebTerminals) {
-    globalThis.__piWebTerminals = new Map();
+  if (!globalThis.__brabblerTerminals) {
+    globalThis.__brabblerTerminals = new Map();
     const shutdown = () => {
-      for (const id of globalThis.__piWebTerminals!.keys()) killTerminal(id, true);
+      for (const id of globalThis.__brabblerTerminals!.keys()) killTerminal(id, true);
     };
     process.once("exit", shutdown);
     process.once("SIGINT", shutdown);
     process.once("SIGTERM", shutdown);
   }
-  return globalThis.__piWebTerminals;
+  return globalThis.__brabblerTerminals;
 }
 
 function shellEnvironment(): Record<string, string> {
@@ -50,7 +50,7 @@ function shellEnvironment(): Record<string, string> {
     // Server login/control metadata is not command authority. Keep only the
     // public managed SSH_AUTH_SOCK in the inheriting shell environment.
     const comparableKey = process.platform === "win32" ? key.toUpperCase() : key;
-    if (value !== undefined && comparableKey !== "PI_WEB_PASSWORD" && comparableKey !== "PI_DESK_SSH_RUNTIME") env[key] = value;
+    if (value !== undefined && comparableKey !== "BRABBLER_PASSWORD" && comparableKey !== "BRABBLER_SSH_RUNTIME") env[key] = value;
   }
   env.TERM = "xterm-256color";
   env.COLORTERM = "truecolor";
@@ -91,10 +91,10 @@ export function createTerminal(cwd: string, cols: number, rows: number, id: stri
   } catch (error) {
     throw new Error(
       `Cannot load the node-pty native terminal module for ${process.platform}-${process.arch}. ` +
-      "The binary may be missing or incompatible. In the pi-web installation directory " +
+      "The binary may be missing or incompatible. In the brabbler installation directory " +
       "(the npx cache directory when using npx), run: npm rebuild node-pty --build-from-source --ignore-scripts=false --foreground-scripts. " +
       "On Debian/Ubuntu, install build tools first: sudo apt-get install -y python3 build-essential. " +
-      `Then restart pi-web. Original error: ${error instanceof Error ? error.message : String(error)}`,
+      `Then restart brabbler. Original error: ${error instanceof Error ? error.message : String(error)}`,
       { cause: error },
     );
   }

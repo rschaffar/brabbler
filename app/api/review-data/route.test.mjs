@@ -11,8 +11,8 @@ function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'review-route-')), folder = path.join(root, 'book'); fs.mkdirSync(folder);
   t.after(() => { delete globalThis.__piAllowedRootsCache; fs.rmSync(root, { recursive: true, force: true }); });
   const index = path.join(folder, 'index.md');
-  fs.writeFileSync(index, '```pi-notebook\n{"version":1,"id":"constructor","title":"Notebook","chapters":[{"id":"one","title":"One","path":"one.md"}]}\n```');
-  fs.writeFileSync(path.join(folder, 'one.md'), '```pi-step\n{"version":1,"id":"toString","title":"Step"}\n```\nProse');
+  fs.writeFileSync(index, '```brabbler-notebook\n{"version":1,"id":"constructor","title":"Notebook","chapters":[{"id":"one","title":"One","path":"one.md"}]}\n```');
+  fs.writeFileSync(path.join(folder, 'one.md'), '```brabbler-step\n{"version":1,"id":"toString","title":"Step"}\n```\nProse');
   globalThis.__piAllowedRootsCache = { roots: new Set([folder]), expiresAt: Date.now() + 60_000 };
   const url = `http://localhost/api/review-data?${new URLSearchParams({ index })}`;
   const request = async (body, headers = {}) => {

@@ -14,7 +14,7 @@ const { claimSshSettingsLease } = require("./ssh-agent-lease");
 const { commandEnvironment } = require("./command-env");
 
 const MAX_FRAME = 256 * 1024;
-const MARKER = "pi-desk-runtime@pi-desk";
+const MARKER = "brabbler-runtime@brabbler";
 const failure = Buffer.from([5]);
 const empty = Buffer.from([12, 0, 0, 0, 0]);
 function frame(data) { const header = Buffer.alloc(4); header.writeUInt32BE(data.length); return Buffer.concat([header, data]); }
@@ -76,7 +76,7 @@ async function probe(value, ownRoot, options = {}) {
     socket = net.connect(real); socket.on("error", () => {});
     options.sockets?.add(socket); options.signal?.addEventListener("abort", cancel, { once: true });
     const marked = await exchange(socket, markerRequest());
-    if (marked[0] === 6) throw new Error("Another Pi Desk router is not a system backend");
+    if (marked[0] === 6) throw new Error("Another Brabbler router is not a system backend");
     const identities = await exchange(socket, Buffer.from([11]));
     if (identities[0] !== 12 || identities.length < 5) throw new Error("Invalid agent identities response");
     const count = identities.readUInt32BE(1);
@@ -202,7 +202,7 @@ async function createSshAgentRouter(options = {}) {
                 const real = ownedSocket(selected, root);
                 record.upstream = net.connect(real); record.upstream.on("error", () => {});
                 const marked = await exchange(record.upstream, markerRequest());
-                if (marked[0] === 6) throw new Error("Recursive Pi Desk agent route");
+                if (marked[0] === 6) throw new Error("Recursive Brabbler agent route");
               }
               response = await exchange(record.upstream, request, 60000);
             }
@@ -252,7 +252,7 @@ async function createSshAgentRouter(options = {}) {
         try {
           ownedSocket(next.selected.path, root);
           const checked = await checkProbe(next.selected.path);
-          if (checked.error?.includes("Pi Desk router")) throw new Error(checked.error);
+          if (checked.error?.includes("Brabbler router")) throw new Error(checked.error);
         } catch (error) { if (error.code !== "ENOENT" && error.code !== "ECONNREFUSED") throw error; }
       }
       if (closed) throw new Error("SSH runtime is shutting down");

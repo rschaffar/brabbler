@@ -4,7 +4,7 @@ export interface DiffPreferenceStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
 }
-export const GIT_DIFF_PREFERENCE_KEY = "pi-web:git-diff-preferences";
+export const GIT_DIFF_PREFERENCE_KEY = "brabbler:git-diff-preferences";
 export const DEFAULT_DIFF_PREFERENCES: GitDiffPreferences = { view: "split", wrap: true };
 
 export function readDiffPreferences(storage: DiffPreferenceStorage | null): GitDiffPreferences {

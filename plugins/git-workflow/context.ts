@@ -12,7 +12,7 @@ interface Snapshot {
   cwd: string; identity: string; before: string; after: string; created: number;
   files: Map<string, { path: string; previousPath?: string }>;
 }
-const key = Symbol.for("pi-web:git-plugin-context");
+const key = Symbol.for("brabbler:git-plugin-context");
 const global = globalThis as typeof globalThis & { [key]?: Map<string, Snapshot> };
 const snapshots = global[key] ??= new Map<string, Snapshot>();
 function identity(cwd: string) {

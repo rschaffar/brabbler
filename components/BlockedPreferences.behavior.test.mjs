@@ -20,7 +20,7 @@ test('Markdown blocked preferences: actual audio hook and General update mounted
     h(c.ThinkingBlock, { block: { type: 'thinking', thinking: 'Final thinking details.' }, blockIndex: 0 }));
   await f.mount(tree('cold'), { setup(window) {
     const prototype = window.Storage.prototype, get = prototype.getItem, set = prototype.setItem;
-    const blocked = new Set(['pi-sound-enabled', 'pi-thinking-expanded']);
+    const blocked = new Set(['brabbler-sound-enabled', 'brabbler-thinking-expanded']);
     prototype.getItem = function (key) {
       if (!blocked.has(key)) return get.call(this, key);
       storageAttempts.push(['get', key]); throw new window.DOMException('Storage blocked', 'SecurityError');
@@ -54,10 +54,10 @@ test('Markdown blocked preferences: actual audio hook and General update mounted
   assert.equal(thinkingBlock().getAttribute('aria-expanded'), 'false');
   assert.equal(c.isThinkingExpandedByDefault(), false, 'ordinary user control restores false, not a test reset API');
   assert.deepEqual(storageAttempts.filter(a => a[0] === 'set'), [
-    ['set', 'pi-sound-enabled', 'false'], ['set', 'pi-sound-enabled', 'true'],
-    ['set', 'pi-thinking-expanded', 'true'], ['set', 'pi-thinking-expanded', 'false'],
+    ['set', 'brabbler-sound-enabled', 'false'], ['set', 'brabbler-sound-enabled', 'true'],
+    ['set', 'brabbler-thinking-expanded', 'true'], ['set', 'brabbler-thinking-expanded', 'false'],
   ]);
-  for (const key of ['pi-sound-enabled', 'pi-thinking-expanded']) assert.equal(storageAttempts.some(a => a[0] === 'get' && a[1] === key), true, `${key} really threw on read`);
+  for (const key of ['brabbler-sound-enabled', 'brabbler-thinking-expanded']) assert.equal(storageAttempts.some(a => a[0] === 'get' && a[1] === key), true, `${key} really threw on read`);
   assert.equal(f.requests.some(r => r.path.startsWith('/api/agent/') || r.path.includes('thinking')), false, 'inline thinking needs no fabricated content read');
   await f.rerender(null); await f.commit();
   f.check();

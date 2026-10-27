@@ -8,8 +8,8 @@ const http = require("node:http");
 // Only server-side code reads the newly generated runtime control capability.
 // It is never returned by HTTP routes or placed in process environments.
 function runtimeControl(environment = process.env) {
-  const root = environment.PI_DESK_SSH_RUNTIME;
-  if (!root) throw new Error("Managed SSH runtime unavailable; use the supported Pi Desk launcher");
+  const root = environment.BRABBLER_SSH_RUNTIME;
+  if (!root) throw new Error("Managed SSH runtime unavailable; use the supported Brabbler launcher");
   const directory = fs.lstatSync(root);
   const file = path.join(root, "control.json"); const stat = fs.lstatSync(file);
   if (!directory.isDirectory() || directory.isSymbolicLink() || directory.uid !== process.getuid() || (directory.mode & 0o077)

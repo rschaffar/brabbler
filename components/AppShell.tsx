@@ -108,7 +108,7 @@ export function AppShell() {
   const [quoteSelectionEnabled, setQuoteSelectionEnabled] = useState(false);
   useEffect(() => {
     try {
-      setQuoteSelectionEnabled(localStorage.getItem("pi-quote-selection-enabled") === "true");
+      setQuoteSelectionEnabled(localStorage.getItem("brabbler-quote-selection-enabled") === "true");
     } catch {
       // Browser storage is best-effort.
     }
@@ -116,7 +116,7 @@ export function AppShell() {
   const handleQuoteSelectionChange = useCallback((enabled: boolean) => {
     setQuoteSelectionEnabled(enabled);
     try {
-      localStorage.setItem("pi-quote-selection-enabled", String(enabled));
+      localStorage.setItem("brabbler-quote-selection-enabled", String(enabled));
     } catch {
       // Keep the current page usable when storage is unavailable.
     }
@@ -232,7 +232,7 @@ export function AppShell() {
     growthDirection: "right",
     maxWidth: SIDEBAR_MAX_WIDTH,
     minWidth: SIDEBAR_MIN_WIDTH,
-    storageKey: "pi-sidebar-width",
+    storageKey: "brabbler-sidebar-width",
     widthRef: sidebarWidthRef,
   });
   const rightPanelResizer = useResizablePanel({
@@ -244,7 +244,7 @@ export function AppShell() {
     growthDirection: "left",
     maxWidth: Number.MAX_SAFE_INTEGER,
     minWidth: RIGHT_PANEL_MIN_WIDTH,
-    storageKey: "pi-right-panel-width",
+    storageKey: "brabbler-right-panel-width",
     widthRef: rightPanelWidthRef,
   });
   const reclampSidebarWidth = sidebarResizer.reclampWidth;
@@ -558,7 +558,7 @@ export function AppShell() {
 
   const { currentFileWorkspaceKey, fileWorkspaceKey, parkedFileWorkspaceKey, setParkedFileWorkspaceKey, parkedFileCwd } = useSessionFileBinding(selectedSession, activeCwd);
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
-  const windowTitle = activeCwdName ? `${activeCwdName} - Pi Web` : "Pi Web";
+  const windowTitle = activeCwdName ? `${activeCwdName} - Brabbler` : "Brabbler";
 
   useEffect(() => {
     const syncWindowTitle = () => {

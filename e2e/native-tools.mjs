@@ -42,7 +42,7 @@ faux.setResponses([fauxAssistantMessage([fauxToolCall(busy?"ask_user":"codemode"
   settings.enabledModels.push(`${PROVIDER}/**`); writeFileSync(settingsPath, JSON.stringify(settings));
   for (const [index, id] of MODEL_SPEED_IDS.slice(0, 2).entries()) writeSession(id, [
     { type: "model_change", id: "native-model", parentId: null, timestamp, provider: PROVIDER, modelId: "faux-1" },
-    { type: "custom", id: "native-tools", parentId: "native-model", timestamp, customType: "pi-web:tool-selection", data: { version: 1, tools: ["read", "grep", "find", "ls"] } },
+    { type: "custom", id: "native-tools", parentId: "native-model", timestamp, customType: "brabbler:tool-selection", data: { version: 1, tools: ["read", "grep", "find", "ls"] } },
     { type: "session_info", id: "native-title", parentId: "native-tools", timestamp, name: `Native tools fixture ${index + 1}` },
     message("native-user", "native-title", "user", [{ type: "text", text: `Native fixture ${index + 1}` }]),
     message("native-answer", "native-user", "assistant", [{ type: "text", text: "Native engines initially off." }]),

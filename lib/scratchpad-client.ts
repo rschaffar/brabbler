@@ -68,7 +68,7 @@ export class ScratchpadController {
     recoveryUnavailable: false, conflict: null, canUndo: false, canRedo: false, selection: null,
   };
   constructor(readonly scope: ScratchpadScope, private storage: ScratchpadStorage | null, private transport = scratchpadTransport, private onWork?: ScratchpadWorkObserver) {
-    this.storageKey = `pi-web:scratchpad:${JSON.stringify(scope)}`;
+    this.storageKey = `brabbler:scratchpad:${JSON.stringify(scope)}`;
     try {
       const raw = storage?.getItem(this.storageKey);
       const draft = raw ? JSON.parse(raw) : null;

@@ -54,7 +54,7 @@ for (const mode of ['success', 'known', 'finalizer', 'callback']) {
     });
     if (contained) t.after(containedCleanup);
     outer.remove(() => root && fsp.rm(root, { recursive: true, force: true }));
-    root = await outer.work(fsp.mkdtemp(join(tmpdir(), 'pi-web-native-observer-')));
+    root = await outer.work(fsp.mkdtemp(join(tmpdir(), 'brabbler-native-observer-')));
     dataRoot = join(root, 'data');
     await outer.work(fsp.mkdir(dataRoot));
     const path = join(dataRoot, 'message.jsonl');

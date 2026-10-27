@@ -41,7 +41,7 @@ export async function openAcceptanceWithHeldStatus(page, dialog, project) {
 export async function checkProjectAcceptance(page, { base, api, post, project, width, returnSessionId }) {
   const input = `acceptance-${width}.txt`;
   writeFileSync(join(project, input), `exact source ${width}\n`);
-  const held = `const fs=require('node:fs'),path=require('node:path'); console.log('acceptance fixture ready'); const timer=setInterval(()=>{if(fs.existsSync(path.join(process.env.PI_WEB_ACCEPTANCE_RUNTIME,'release'))){clearInterval(timer);console.log('acceptance fixture passed');}},50);setTimeout(()=>process.exit(9),20000).unref();`;
+  const held = `const fs=require('node:fs'),path=require('node:path'); console.log('acceptance fixture ready'); const timer=setInterval(()=>{if(fs.existsSync(path.join(process.env.BRABBLER_ACCEPTANCE_RUNTIME,'release'))){clearInterval(timer);console.log('acceptance fixture passed');}},50);setTimeout(()=>process.exit(9),20000).unref();`;
   const make = (name, source) => ({ name, label: `Acceptance ${name} ${width}`, coverage: 'focused', argv: ['node', '-e', source], inputs: [input], cpus: 1, memoryMiB: 128, permission: 'allow' });
   const profiles = [make('held', held), make('quick', 'console.log("quick acceptance passed")')];
   const endpoint = `/api/acceptance?cwd=${encodeURIComponent(project)}`;

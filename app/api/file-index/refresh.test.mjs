@@ -11,7 +11,7 @@ const fuzzy = await jiti.import("../../../lib/file-fuzzy.ts");
 const security = await jiti.import("../../../lib/path-security.ts");
 
 test("explicit search refresh replaces a cached listing only after normal authorization", async t => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-index-refresh-")));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "brabbler-index-refresh-")));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, "match-first.txt"), "first");
   let roots = new Set([root]);

@@ -347,7 +347,7 @@ test("browser cleanup top and nested five-root tuples keep one-time consent, nat
     assertDirectoryAdmissionAllowed(f.path); // release observed after whole executor promise
     const reload = () => readFileSync(saved, "utf8").trim().split("\n").map(line => readOperationReceipt(JSON.parse(line)));
     const history = reload(); assert.equal(history.every(Boolean), true);
-    const messages = history.map(details => ({ role: "custom", customType: "pi-web:operation-receipt", details }));
+    const messages = history.map(details => ({ role: "custom", customType: "brabbler:operation-receipt", details }));
     const collapsed = collapseOperationReceipts({ messages, entryIds: messages.map((_, i) => String(i)) });
     assert.equal(collapsed.messages.length, 2);
     const outcome = collapsed.messages.find(m => m.details.operationId === cards[1].operationId).details;

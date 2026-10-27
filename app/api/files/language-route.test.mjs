@@ -9,7 +9,7 @@ import { createJiti } from "jiti";
 import { refractor } from "refractor/core";
 import ts from "typescript";
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-file-grammars-"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "brabbler-file-grammars-"));
 process.env.PI_CODING_AGENT_DIR = path.join(root, "agent");
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true });

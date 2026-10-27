@@ -476,7 +476,7 @@ test('actual WebVersionNotice owns original checks across legacy locale inputs, 
     assert.equal(checks.at(-1).state, 'pending'); assert.equal(statusCount(), 0);
     await finishPhase();
     const message = c.versionMessages['appUpdate.runningVersionChanged'].replace('{version}', '99.99.99');
-    assert.ok(message.includes('Pi Web v99.99.99 is running.'), 'retain the original History substring expectation against the actual full catalog message');
+    assert.ok(message.includes('Brabbler v99.99.99 is running.'), 'retain the original History substring expectation against the actual full catalog message');
     let status = f.node('[role="status"]');
     const button = f.button(c.versionMessages['appUpdate.reloadWeb']);
     assert.equal(status.querySelector('span').textContent, message);

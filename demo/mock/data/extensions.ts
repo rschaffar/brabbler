@@ -3,7 +3,7 @@ import type { PluginsResponse, SkillSearchResult } from "@/lib/api-types";
 import { AGENT_DIR, PROJECT_ROOT } from "../paths";
 
 const notifyPath = `${AGENT_DIR}/npm/node_modules/@demo/pi-notify`;
-const reviewPath = `${PROJECT_ROOT}/.pi/git/github.com/demo/pi-review-kit`;
+const reviewPath = `${PROJECT_ROOT}/.pi/git/github.com/demo/brabbler-review-kit`;
 
 export const PLUGINS_RESPONSE: PluginsResponse = {
   packages: [
@@ -24,13 +24,13 @@ export const PLUGINS_RESPONSE: PluginsResponse = {
       status: "loaded",
     },
     {
-      source: "git:github.com/demo/pi-review-kit",
+      source: "git:github.com/demo/brabbler-review-kit",
       scope: "project",
       canCheckForUpdates: true,
       filtered: false,
       disabled: false,
       installedPath: reviewPath,
-      packageName: "pi-review-kit",
+      packageName: "brabbler-review-kit",
       version: "0.3.2",
       description: "Code review prompt templates, a reviewer skill and a high-contrast theme.",
       counts: { extensions: 0, skills: 1, prompts: 2, themes: 1 },

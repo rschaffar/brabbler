@@ -217,7 +217,7 @@ export class BrowserSshAgent {
       if (type === 11) {
         reader.end();
         if (this.options.policy && !this.options.policy.available(bridge.token)) return Buffer.from([12, 0, 0, 0, 0]);
-        return Buffer.concat([Buffer.from([12, 0, 0, 0, 1]), sshString(bridge.identity.blob), sshString("pi-web browser FIDO")]);
+        return Buffer.concat([Buffer.from([12, 0, 0, 0, 1]), sshString(bridge.identity.blob), sshString("brabbler browser FIDO")]);
       }
       if (type !== 13) return FAILURE; // Never acknowledge session-bind/forwarding constraints.
       if (!reader.string().equals(bridge.identity.blob)) return FAILURE;
@@ -242,7 +242,7 @@ export class BrowserSshAgent {
   }
 }
 
-const globalKey = Symbol.for("pi-web:browser-ssh-agent");
+const globalKey = Symbol.for("brabbler:browser-ssh-agent");
 export function browserSshAgent(): BrowserSshAgent {
   const registry = globalThis as typeof globalThis & { [globalKey]?: BrowserSshAgent };
   if (!registry[globalKey]) {

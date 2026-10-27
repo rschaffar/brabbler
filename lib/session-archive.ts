@@ -1,7 +1,7 @@
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { SessionEntry } from "./types";
 
-export const SESSION_ARCHIVE_TYPE = "pi-web:archive";
+export const SESSION_ARCHIVE_TYPE = "brabbler:archive";
 
 /** The newest valid marker wins; false explicitly restores an earlier archive. */
 export function appendSessionArchiveState(sessionManager: SessionManager, archived: boolean): void {

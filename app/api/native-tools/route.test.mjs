@@ -86,7 +86,7 @@ test("project default saves are inert; ordinary creation snapshots once and exis
   await existing.waitUntilReady();
   const before = (await f.catalogue()).projectDefault;
   assert.equal(before.selection, null);
-  assert.equal(existsSync(join(f.cwd, ".git/pi-web-trust-id")), false);
+  assert.equal(existsSync(join(f.cwd, ".git/brabbler-trust-id")), false);
   const count = globalThis.__piSessions.size;
   const response = await f.save({ revision: before.revision, nativeResources: on });
   assert.equal(response.status, 200);
@@ -100,7 +100,7 @@ test("project default saves are inert; ordinary creation snapshots once and exis
   assert.equal(inherited.hasNativeSessionTools(), true);
   const file = inherited.sessionFile;
   const entries = (await readFile(file, "utf8")).trim().split("\n").map(line => JSON.parse(line));
-  const intents = entries.filter(entry => entry.customType === "pi-web:native-resources");
+  const intents = entries.filter(entry => entry.customType === "brabbler:native-resources");
   assert.equal(intents.length, 1); assert.deepEqual(intents[0].data, on);
   assert.equal(entries.some(entry => entry.type === "message"), false, "setup persistence fabricates no message");
   const explicitOff = rpc.getRpcSession(await f.start(["read"], { nativeResources: off }));

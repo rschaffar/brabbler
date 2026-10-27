@@ -12,7 +12,7 @@ import { boundedErrors } from './files-diagnostics.fixture.mjs';
 // Hold only external chunk delivery and the actual Mermaid render capability.
 // SVG measurements below supply unsupported APIs, NOT browser layout evidence.
 test('guided prose/assets and nested Mermaid source own complete held presenter work through observer swap, unmount and realm teardown', async t => {
-  const prismKey = Symbol.for('pi-web:test-prism-import-gate'), mermaidKey = Symbol.for('pi-web:test-mermaid-import-gate');
+  const prismKey = Symbol.for('brabbler:test-prism-import-gate'), mermaidKey = Symbol.for('brabbler:test-mermaid-import-gate');
   const descriptors = new Map([prismKey, mermaidKey].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   const native = [], observed = [], old = [], current = [], nativeErrors = [];
   const renderEntered = deferred(), releaseRender = deferred();
@@ -100,7 +100,7 @@ test('guided prose/assets and nested Mermaid source own complete held presenter 
   const element = () => createElement(I18nProvider, null, createElement(GuidedReviewReader, { indexPath: '/guide/index.md', onClose() {}, onWork }));
   const index = { version: 1, id: 'guide', title: 'Presenter work', chapters: [{ id: 'chapter', title: 'Chapter', path: 'chapter.md' }] };
   const source = { version: 1, kind: 'source', id: 'example', title: 'Literal example', cwd: '/repo', branch: 'main', oid: 'a'.repeat(40), path: 'code.ts', start: 1, end: 2 };
-  const prose = '> ```pi-review\n> ' + JSON.stringify(source) + '\n> ```\n\n```mermaid\nflowchart TD\nA --> B\n```';
+  const prose = '> ```brabbler-review\n> ' + JSON.stringify(source) + '\n> ```\n\n```mermaid\nflowchart TD\nA --> B\n```';
   const targets = [
     { version: 1, kind: 'web', id: 'web', title: 'Reference', url: 'https://example.test/reference' },
     ...['json', 'md', 'mmd'].map(ext => ({ version: 1, kind: 'file', id: ext, title: `Asset ${ext}`, path: `asset.${ext}` })),

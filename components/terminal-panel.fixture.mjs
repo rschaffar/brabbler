@@ -19,7 +19,7 @@ export async function terminalPanelFixture(t, { restored = false, online = true,
   const port = { terminals, checked: lifetime.checked,
     admit() { lifetime.checked(() => assert.equal(externalAdmission, true, 'no xterm effects during graph import')); },
     get fits() { return fits; }, set fits(value) { fits = value; } };
-  lifetime.replace(globalThis, Symbol.for('pi-web:test-terminal-port'), port);
+  lifetime.replace(globalThis, Symbol.for('brabbler:test-terminal-port'), port);
   class Source {
     static CLOSED = 2;
     constructor(url) {

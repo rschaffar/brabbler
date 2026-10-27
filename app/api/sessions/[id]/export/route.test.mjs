@@ -9,7 +9,7 @@ import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true });
 
 test("HTML export patches the installed Pi SDK template", async (t) => {
-  const agentDir = mkdtempSync(join(tmpdir(), "pi-web-export-sdk-"));
+  const agentDir = mkdtempSync(join(tmpdir(), "brabbler-export-sdk-"));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const previousOffline = process.env.PI_OFFLINE;
   process.env.PI_CODING_AGENT_DIR = agentDir;

@@ -6,11 +6,11 @@ import test, { after } from "node:test";
 import { createJiti } from "jiti";
 
 const original = process.env.PI_CODING_AGENT_DIR;
-const agentDir = await mkdtemp(join(tmpdir(), "pi-web-privacy-"));
+const agentDir = await mkdtemp(join(tmpdir(), "brabbler-privacy-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true, moduleCache: false });
 const { GET, POST } = await jiti.import("./route.ts");
-const file = join(agentDir, "pi-web", "hidden-projects.json");
+const file = join(agentDir, "brabbler", "hidden-projects.json");
 after(async () => {
   if (original === undefined) delete process.env.PI_CODING_AGENT_DIR;
   else process.env.PI_CODING_AGENT_DIR = original;
@@ -33,7 +33,7 @@ test("missing settings mean no hidden projects; per-key concurrent saves persist
   assert.deepEqual(JSON.parse(await readFile(file, "utf8")), { version: 1, keys: ["/private/a", "/private/b"] });
   if (process.platform !== "win32") {
     assert.equal((await stat(file)).mode & 0o777, 0o600);
-    assert.equal((await stat(join(agentDir, "pi-web"))).mode & 0o777, 0o700);
+    assert.equal((await stat(join(agentDir, "brabbler"))).mode & 0o777, 0o700);
   }
   const reloaded = await createJiti(import.meta.url, { alias: { "@": process.cwd() }, moduleCache: false }).import("./route.ts");
   assert.deepEqual(await (await reloaded.GET()).json(), { keys: ["/private/a", "/private/b"] });

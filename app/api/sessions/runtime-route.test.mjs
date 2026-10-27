@@ -39,7 +39,7 @@ const nativeRouteCapabilities = { deleteSession, getSessionDetail, renameSession
 
 test("list versions expose idle session creation, rename and deletion to other windows", async (t) => {
   const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
-  const dir = await mkdtemp(join(tmpdir(), "pi-web-list-sync-"));
+  const dir = await mkdtemp(join(tmpdir(), "brabbler-list-sync-"));
   native.root(dir);
   native.remove(() => rm(dir, { recursive: true, force: true }));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -92,7 +92,7 @@ test("list versions expose idle session creation, rename and deletion to other w
 
 test("session detail reports a possible interrupted run without reopening it; dismissal and deletion persist", async (t) => {
   const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
-  const dir = await mkdtemp(join(tmpdir(), "pi-web-restart-recovery-"));
+  const dir = await mkdtemp(join(tmpdir(), "brabbler-restart-recovery-"));
   native.root(dir);
   native.remove(() => rm(dir, { recursive: true, force: true }));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -110,7 +110,7 @@ test("session detail reports a possible interrupted run without reopening it; di
   id = manager.getSessionId();
   cacheSessionPath(id, manager.getSessionFile());
   const runId = recordRunStart(id);
-  const root = join(dir, "pi-web", "run-journal", "v1");
+  const root = join(dir, "brabbler", "run-journal", "v1");
   const startFile = join(root, id, `${runId}.start.json`);
   assert.deepEqual((await (await native.routes.listInterrupted()).json()).interruptedSessionIds, [], "live owner must not appear in Activity");
   const start = JSON.parse(await readFile(startFile, "utf8"));
@@ -142,7 +142,7 @@ test("session detail reports a possible interrupted run without reopening it; di
 
 test("running snapshot exposes only live wrapper attention without opening sessions", async (t) => {
   const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
-  const dir = await mkdtemp(join(tmpdir(), "pi-web-activity-snapshot-"));
+  const dir = await mkdtemp(join(tmpdir(), "brabbler-activity-snapshot-"));
   native.root(dir);
   native.remove(() => rm(dir, { recursive: true, force: true }));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -174,7 +174,7 @@ test("running snapshot exposes only live wrapper attention without opening sessi
 
 test("archive and restore preserve the session file and refresh the catalogue", async (t) => {
   const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
-  const dir = await mkdtemp(join(tmpdir(), "pi-web-archive-"));
+  const dir = await mkdtemp(join(tmpdir(), "brabbler-archive-"));
   native.root(dir);
   native.remove(() => rm(dir, { recursive: true, force: true }));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -201,7 +201,7 @@ test("archive and restore preserve the session file and refresh the catalogue", 
   const before = await list();
   assert.equal((await patch({ archived: true })).status, 200);
   const archived = await list();
-  assert.match(await readFile(path, "utf8"), /pi-web:archive/);
+  assert.match(await readFile(path, "utf8"), /brabbler:archive/);
   assert.ok(archived.sessionListVersion > before.sessionListVersion);
   assert.equal(archived.sessions.find((session) => session.id === id)?.archived, true);
   assert.equal((await list(true)).sessions.find((session) => session.id === id)?.archived, true);
@@ -243,7 +243,7 @@ test("archive and restore preserve the session file and refresh the catalogue", 
     assert.equal((await native.routes.searchSessions(new Request(`http://localhost/api/sessions/search?${invalid}`))).status, 400);
   }
   assert.deepEqual(await search("active", { projectKey: "unknown" }), []);
-  assert.match(await readFile(path, "utf8"), /pi-web:archive/);
+  assert.match(await readFile(path, "utf8"), /brabbler:archive/);
   assert.equal((await patch({ archived: false })).status, 200);
   assert.deepEqual(await search(), [id], "restored sessions return to active search");
   assert.equal((await list()).sessions.find((session) => session.id === id)?.archived, undefined);
@@ -268,7 +268,7 @@ test("archive and restore preserve the session file and refresh the catalogue", 
 
 test("session listing returns a gzip-compressed response when the client accepts it", async (t) => {
   const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
-  const dir = await mkdtemp(join(tmpdir(), "pi-web-list-gzip-"));
+  const dir = await mkdtemp(join(tmpdir(), "brabbler-list-gzip-"));
   native.root(dir);
   native.remove(() => rm(dir, { recursive: true, force: true }));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -318,7 +318,7 @@ test("session listing returns a gzip-compressed response when the client accepts
 
 test("deleting an unpersisted session shuts down its runtime and invalidates caches", async (t) => {
   const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
-  const dir = await mkdtemp(join(tmpdir(), "pi-web-delete-empty-"));
+  const dir = await mkdtemp(join(tmpdir(), "brabbler-delete-empty-"));
   native.root(dir);
   native.remove(() => rm(dir, { recursive: true, force: true }));
   const previousRegistry = globalThis.__piSessions;
@@ -365,7 +365,7 @@ test("deleting an unpersisted session shuts down its runtime and invalidates cac
 
 test("deleting a session removes all persisted subagent descendants", async (t) => {
   const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
-  const dir = await mkdtemp(join(tmpdir(), "pi-web-delete-reparent-"));
+  const dir = await mkdtemp(join(tmpdir(), "brabbler-delete-reparent-"));
   native.root(dir);
   native.remove(() => rm(dir, { recursive: true, force: true }));
   const grandparentPath = join(dir, "grandparent.jsonl");
@@ -389,7 +389,7 @@ test("deleting a session removes all persisted subagent descendants", async (t) 
     header(childId, parentPath),
     JSON.stringify({
       type: "custom",
-      customType: "pi-web:subagent",
+      customType: "brabbler:subagent",
       id: "meta",
       parentId: null,
       timestamp: "2026-01-01T00:00:00.000Z",
@@ -407,7 +407,7 @@ test("deleting a session removes all persisted subagent descendants", async (t) 
     header(grandchildId, childPath),
     JSON.stringify({
       type: "custom",
-      customType: "pi-web:subagent",
+      customType: "brabbler:subagent",
       id: "grandchild-meta",
       parentId: null,
       timestamp: "2026-01-01T00:00:00.000Z",
@@ -455,7 +455,7 @@ test("live detail and state routes work without a persisted JSONL file", async (
     getLeafId: () => entry.id,
     getTree: () => [],
     getSessionName: () => undefined,
-    getSessionFile: () => `/tmp/pi-web-live-route-not-persisted-${process.pid}.jsonl`,
+    getSessionFile: () => `/tmp/brabbler-live-route-not-persisted-${process.pid}.jsonl`,
   };
   globalThis.__piSessions = new Map([[id, {
     isAlive: () => true,
@@ -512,7 +512,7 @@ test("session detail returns a gzip-compressed response when the client accepts 
     getLeafId: () => entry.id,
     getTree: () => [],
     getSessionName: () => undefined,
-    getSessionFile: () => `/tmp/pi-web-live-route-gzip-${process.pid}.jsonl`,
+    getSessionFile: () => `/tmp/brabbler-live-route-gzip-${process.pid}.jsonl`,
   };
   globalThis.__piSessions = new Map([[id, {
     isAlive: () => true,
@@ -632,7 +632,7 @@ test("state GET alive path wins even without disk; dead, missing and command fai
 
 test("native catalogue scope joins real scans and commits its named index writer before root removal", async t => {
   const native = createNativeRouteOwner(t, nativeRouteCapabilities, flushSessionScanIndexForTests);
-  const dir = await mkdtemp(join(tmpdir(), "pi-web-native-catalogue-close-"));
+  const dir = await mkdtemp(join(tmpdir(), "brabbler-native-catalogue-close-"));
   native.root(dir);
   native.remove(() => rm(dir, { recursive: true, force: true }));
   const previous = process.env.PI_CODING_AGENT_DIR;
@@ -644,7 +644,7 @@ test("native catalogue scope joins real scans and commits its named index writer
   const response = await native.routes.getSessionList(new Request("http://localhost/api/sessions?force=1"));
   assert.equal(response.status, 200); await response.json();
   await native.close();
-  assert.equal(globalThis.__piWebScanIndexSave, undefined, "specific writer committed and timer removed");
+  assert.equal(globalThis.__brabblerScanIndexSave, undefined, "specific writer committed and timer removed");
   await assert.rejects(stat(dir), { code: "ENOENT" });
 });
 

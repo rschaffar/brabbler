@@ -1,6 +1,6 @@
 # Process-wide SSH agent and browser signing
 
-**Settings → SSH** selects one agent for this Pi Web runtime. The sidebar shows
+**Settings → SSH** selects one agent for this Brabbler runtime. The sidebar shows
 the effective backend and pending count; signing cards are global and nonmodal.
 The [completed implementation record](plans/archived/2026-10-22_process-wide-ssh-agent-plan.md) records
 verification and retained failures. [ADR 0033](adr/0033-process-wide-ssh-agent.md)
@@ -31,7 +31,7 @@ bounded known locations and identity-only probes, not filesystem crawling. It
 may activate a socket-activated agent. Closing Settings cancels its discovery
 admission; already-started server probes remain bounded. Results are snapshots;
 passive endpoint presence is not proof of usability. Dynamic selector aliases
-can change externally. Pi Web never edits the host's selector, loads external
+can change externally. Brabbler never edits the host's selector, loads external
 keys through this UI, or stops external agents.
 
 Explicit environment exports, SSH `IdentityAgent` and deliberately isolated
@@ -43,7 +43,7 @@ key files and other authentication methods may still work.
 
 - Unix sockets (Linux/macOS server), writable private runtime/state directories,
   and socket pathnames within 100 bytes. Windows server sockets are unsupported.
-- Configured `PI_WEB_PASSWORD` and a signed web login. Basic/API authentication
+- Configured `BRABBLER_PASSWORD` and a signed web login. Basic/API authentication
   alone cannot manage SSH. Exact same-origin/public-Host checks apply.
 - Browser signing needs a secure top-level DNS origin: trusted HTTPS or
   `http://localhost`, not an IP literal. Native selection/status also works on
@@ -51,7 +51,7 @@ key files and other authentication methods may still work.
   do not broaden trust or rewrite Origin to bypass checks.
 - A browser exposing ES256 WebAuthn public keys and a cross-platform P-256
   authenticator with user verification. Enrollment requests a security key, not
-  a platform passkey. PIN/private-key custody remains outside Pi Web.
+  a platform passkey. PIN/private-key custody remains outside Brabbler.
 - **Browser-agent consumers need OpenSSH 10.3+ or the compatibility backport.**
   Older clients may verify signatures yet reject agent-returned WebAuthn ones.
   See the [upstream fix](https://github.com/openssh/openssh-portable/commit/15fe1ceb29760d72398c6ac7df5a403416cba207).
@@ -61,7 +61,7 @@ key files and other authentication methods may still work.
 Existing `ssh:` application credentials and Ed25519-SK keys cannot be reused
 through standard browser WebAuthn. A separate credential is required, even on
 the same physical token. Its SSH application is the hostname/RP ID, not `ssh:`,
-a URL or a port; Pi Web additionally pins the exact origin, including port.
+a URL or a port; Brabbler additionally pins the exact origin, including port.
 
 ## Register keys and connect devices
 
@@ -77,7 +77,7 @@ a URL or a port; Pi Web additionally pins the exact origin, including port.
    active**. This requires fresh verification but does not select Browser agent
    as the routing backend: **Use agent** remains a separate explicit action.
 4. Copy the public key from **Key details** and authorize it through your normal
-   destination administration. Pi Web does not install keys or configure Git
+   destination administration. Brabbler does not install keys or configure Git
    signing identities. Keep a separate recovery identity.
 
 There can be multiple registered keys and connected devices but only one active
@@ -123,7 +123,7 @@ a protocol limitation, not a way to reopen an application grant.
 
 Every signature still requires presence; browsers/authenticators may also demand
 verification. This is not PIN caching or a touch-only guarantee. **UP-only cannot
-satisfy a destination's `verify-required` policy**; Pi Web does not relax it.
+satisfy a destination's `verify-required` policy**; Brabbler does not relax it.
 Cancelling the second ceremony denies signing but does not undo an already
 completed unlock—use **Lock**. Lock/revocation cancels affected pending approvals;
 ordinary handoff preserves already-admitted ownership and remaining time.

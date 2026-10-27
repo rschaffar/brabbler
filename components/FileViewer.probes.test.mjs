@@ -4,7 +4,7 @@ import test from 'node:test';
 import { open, read, reader, click, type, button, expectRead, expectEdit, expectGit, eligible, denied } from './file-viewer-harness.fixture.mjs';
 
 const patch = 'diff --git a/file.txt b/file.txt\nindex 3367afd..b00cafe 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+saved\n';
-const rawPreference = window => window.localStorage.setItem('pi-web:git-diff-preferences', JSON.stringify({ view: 'raw', wrap: true }));
+const rawPreference = window => window.localStorage.setItem('brabbler:git-diff-preferences', JSON.stringify({ view: 'raw', wrap: true }));
 
 for (const nextCwd of ['/new-checkout', '/old-checkout']) for (const currentPatch of ['patch', patch]) test(`disposed watcher preserves current edit revision and actual supported diff (${nextCwd}/${currentPatch === 'patch' ? 'legacy-literal' : 'native-patch'})`, async t => {
   const h = await open(t, { filePath: '/file.txt', cwd: '/old-checkout', sourceSessionId: 'session', watchEnabled: true,

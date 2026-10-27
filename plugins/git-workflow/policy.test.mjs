@@ -106,7 +106,7 @@ test("SDK request context and read-only policy tool use the real session and ref
   // error responses, which session.prompt() does not necessarily reject.
   const capture = (response) => (context) => { requests.push(structuredClone(context.messages)); return response; };
   const persistedPolicies = () => sessionManager.getEntries().filter((entry) =>
-    [entry.customType, entry.message?.customType].some((type) => typeof type === "string" && type.startsWith("pi-web:plugin-policy:")));
+    [entry.customType, entry.message?.customType].some((type) => typeof type === "string" && type.startsWith("brabbler:plugin-policy:")));
   faux.setResponses([
     capture(fauxAssistantMessage([fauxToolCall("git_policy", { checkout: other }, { id: "policy-foreign" })], { stopReason: "toolUse" })),
     capture(fauxAssistantMessage("Done.")),
@@ -114,7 +114,7 @@ test("SDK request context and read-only policy tool use the real session and ref
   await session.prompt("Inspect the foreign repository policy.");
   assert.equal(requests.length, 2); assert.equal(session.getLastAssistantText(), "Done.");
   const text = JSON.stringify(requests[0]);
-  assert.match(text, /pi-web:git-policy\/v1/); assert.match(text, /current-branch/); assert.match(text, /ask_user/);
+  assert.match(text, /brabbler:git-policy\/v1/); assert.match(text, /current-branch/); assert.match(text, /ask_user/);
   assert.deepEqual(requests[1].slice(0, requests[0].length), requests[0],
     "the real SDK request keeps its old policy prefix when tool results append");
   const result = session.messages.find((m) => m.role === "toolResult" && m.toolCallId === "policy-foreign");

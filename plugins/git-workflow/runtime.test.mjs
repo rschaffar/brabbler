@@ -14,7 +14,7 @@ const { bundledPluginExtensions } = await jiti.import("../../lib/plugins/registr
 const { preparePluginReview } = await jiti.import("../../lib/plugins/review-store.ts");
 const { updatePluginSettings } = await jiti.import("../../lib/plugins/settings.ts");
 async function disposeSession(session) {
-  // Mirror Pi Web shutdown: dispose alone invalidates the SDK runner without
+  // Mirror Brabbler shutdown: dispose alone invalidates the SDK runner without
   // sending extension cleanup, leaving process-global settings listeners stale.
   try { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); }
   finally { session.dispose(); }
@@ -44,7 +44,7 @@ test("real Pi lifecycle keeps disabled sessions ordinary, enables live and withd
   assert.ok(session.getAllTools().filter((tool) => tool.name.startsWith("git_")).every((tool) => tool.exposure === "hidden"));
   assert.ok(session.getActiveToolNames().includes("read"));
   // Malformed plugin settings also must not break core session startup.
-  writeFileSync(join(agentDir, "pi-web", "plugins", "git-workflow", "settings.json"), "not JSON");
+  writeFileSync(join(agentDir, "brabbler", "plugins", "git-workflow", "settings.json"), "not JSON");
   await session.reload();
   assert.equal(session.getActiveToolNames().some((name) => name.startsWith("git_")), false);
 });
@@ -86,7 +86,7 @@ test("real model-issued Git tools select repositories independently of Git and n
     const { session } = await createAgentSessionFromServices({ services, model: faux.getModel(), thinkingLevel: "off", sessionManager });
     st.after(() => disposeSession(session));
     let expectedCheckout; let approvals = 0; let calls = 0;
-    await session.bindExtensions({ mode: "rpc", uiContext: { notify() {}, prepareReview: preparePluginReview, operationReceipt(_pluginId, receipt) { sessionManager.appendCustomEntry("pi-web:operation-receipt", receipt); }, pluginCard: async (id, card) => {
+    await session.bindExtensions({ mode: "rpc", uiContext: { notify() {}, prepareReview: preparePluginReview, operationReceipt(_pluginId, receipt) { sessionManager.appendCustomEntry("brabbler:operation-receipt", receipt); }, pluginCard: async (id, card) => {
       assert.equal(id, "git-workflow"); assert.equal(card.fields.find((field) => field.label === "Checkout").value, expectedCheckout);
       approvals++; return "approve";
     } } });

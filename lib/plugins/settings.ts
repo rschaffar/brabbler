@@ -23,7 +23,7 @@ export function isPluginSessionId(value: unknown): value is string {
 function validateSession(session: PluginSession): void {
   if (!isPluginSessionId(session.id) || !session.cwd) throw new Error("Invalid plugin session identity");
 }
-const symbol = Symbol.for("pi-web:bundled-plugin-settings-listeners");
+const symbol = Symbol.for("brabbler:bundled-plugin-settings-listeners");
 const global = globalThis as typeof globalThis & { [symbol]?: Set<(id: string) => void> };
 const listeners = global[symbol] ??= new Set();
 export function onPluginSettingsChange(listener: (id: string) => void): () => void {
@@ -66,7 +66,7 @@ export function pluginScopeIdentity(manifest: PluginManifest, cwd: string): stri
 }
 export function pluginSettingsPath(manifest: PluginManifest, agentDir = getAgentDir()): string {
   if (!/^[a-z][a-z0-9-]*$/.test(manifest.id)) throw new Error("Invalid plugin ID");
-  return join(agentDir, "pi-web", "plugins", manifest.id, "settings.json");
+  return join(agentDir, "brabbler", "plugins", manifest.id, "settings.json");
 }
 function object(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);

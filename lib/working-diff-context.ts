@@ -11,7 +11,7 @@ import { DiffContextError, MAX_DIFF_FILE_BYTES, MAX_DIFF_CONTEXT_LINES, countDif
 const exec = promisify(execFile);
 export interface WorkingFile { buffer: Buffer; signature: string }
 interface Snapshot { cwd: string; root: string; filePath: string; gitPath: string; oldPath: string; head: string | null; signature: string | null; created: number }
-const key = Symbol.for("pi-web:working-diff-context");
+const key = Symbol.for("brabbler:working-diff-context");
 const global = globalThis as typeof globalThis & { [key]?: Map<string, Snapshot> };
 const snapshots = global[key] ??= new Map<string, Snapshot>();
 const TTL = 60 * 60 * 1000;

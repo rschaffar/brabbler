@@ -17,7 +17,7 @@ interface AccountFile {
 }
 
 const emptyFile = (): AccountFile => ({ version: 1, accounts: {}, projects: {} });
-const defaultPath = () => join(getAgentDir(), "pi-web-accounts.json");
+const defaultPath = () => join(getAgentDir(), "brabbler-accounts.json");
 const own = (obj: object, key: string) => Object.hasOwn(obj, key);
 
 function parseFile(path: string): AccountFile {

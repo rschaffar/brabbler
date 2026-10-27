@@ -50,7 +50,7 @@ import type {
 import { createHeadlessCustomUiTui, DEFAULT_CUSTOM_UI_COLUMNS, type HeadlessCustomUiTui } from "./custom-ui-terminal";
 import {
   createSubagentExtension,
-  preferPiWebSubagentExtension,
+  preferBrabblerSubagentExtension,
 } from "./subagent-extension";
 import {
   listSubagentProfiles,
@@ -67,10 +67,10 @@ import { resolveShellTools } from "./powershell-settings";
 import { CHAT_ONLY_RESOURCE_LOADER_OPTIONS, contextFilesSystemPrompt } from "./chat-only";
 import { haveContextFilesChanged } from "./context-file-changes";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
-import { createAskUserExtension, preferPiWebAskUserExtension, type AskUserUiContext } from "./ask-user-extension";
+import { createAskUserExtension, preferBrabblerAskUserExtension, type AskUserUiContext } from "./ask-user-extension";
 import { parseQuestionSet } from "./question-set";
 import { createSessionReferenceExtension } from "./session-reference-extension";
-import { createPiWebSourceExtension } from "./pi-web-source-extension";
+import { createBrabblerSourceExtension } from "./brabbler-source-extension";
 import { createLocalFileLinkGuidanceExtension } from "./local-file-link-guidance";
 import { bundledPluginExtensions } from "./plugins/registry";
 import { validatePluginCard } from "./plugins/ui";
@@ -180,7 +180,7 @@ const IDLE_RESET_EVENT_TYPES = new Set([
 const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
- * Resolves the PI_WEB_IDLE_TIMEOUT_MS environment variable into a session idle
+ * Resolves the BRABBLER_IDLE_TIMEOUT_MS environment variable into a session idle
  * timeout in milliseconds. An unset/blank value returns the 10-minute default,
  * `0` disables idle shutdown, and positive values up to Node's timer limit
  * (2147483647 ms) are used as-is. Invalid or out-of-range values fall back to
@@ -188,12 +188,12 @@ const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
  * @param rawValue Value to parse; defaults to the environment variable.
  */
 export function resolveSessionIdleTimeoutMs(
-  rawValue: string | undefined = process.env.PI_WEB_IDLE_TIMEOUT_MS,
+  rawValue: string | undefined = process.env.BRABBLER_IDLE_TIMEOUT_MS,
 ): number {
   if (rawValue !== undefined && rawValue.trim() !== "") {
     const parsed = Number(rawValue);
     if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 2_147_483_647) return parsed;
-    console.warn(`[pi-web] invalid PI_WEB_IDLE_TIMEOUT_MS "${rawValue}", falling back to 10 minutes`);
+    console.warn(`[brabbler] invalid BRABBLER_IDLE_TIMEOUT_MS "${rawValue}", falling back to 10 minutes`);
   }
   return DEFAULT_SESSION_IDLE_TIMEOUT_MS;
 }
@@ -427,7 +427,7 @@ export class AgentSessionWrapper {
     this.pauseFailure = String(error).slice(0, 1000);
     if (this.pause) {
       try { this.pause = changeSessionPause(this.sessionId, this.pause.id, (row) => { row.error = this.pauseFailure; if (row.state === "paused") row.state = "pausing"; }); }
-      catch (failure) { console.error("[pi-web] could not persist pause failure:", failure); }
+      catch (failure) { console.error("[brabbler] could not persist pause failure:", failure); }
     }
     this.emit({ type: "pause_error", errorMessage: this.pauseFailure });
   }
@@ -478,7 +478,7 @@ export class AgentSessionWrapper {
     if (childSettled ? inputBusy : this.isRunning()) return;
     if (this.hasQueuedPauseInput()) {
       void this.settleIdlePauseInput().then(() => this.finishPause(childSettled), (error) => {
-        console.error("[pi-web] could not save idle pause input:", error);
+        console.error("[brabbler] could not save idle pause input:", error);
         this.pauseFailed(error);
       });
       return;
@@ -683,13 +683,13 @@ export class AgentSessionWrapper {
       }
       if (parentId !== this.sessionId) continue;
       const branch = manager.getBranch();
-      if (branch.some((entry) => entry.type === "custom_message" && entry.customType === "pi-web:paused-subsession-context"
+      if (branch.some((entry) => entry.type === "custom_message" && entry.customType === "brabbler:paused-subsession-context"
         && (entry.details as { pauseId?: unknown } | undefined)?.pauseId === pause.id)) { this.pendingChildHandoffs.delete(pause.id); continue; }
       const pending = this.pendingChildHandoffs.get(pause.id);
       if (pending && (pending.anchor === null || branch.some((entry) => entry.id === pending.anchor))) continue;
       const handoff = { anchor: manager.getLeafId(), id: randomUUID() };
       this.pendingChildHandoffs.set(pause.id, handoff);
-      try { await this.inner.sendCustomMessage({ customType: "pi-web:paused-subsession-context", display: true,
+      try { await this.inner.sendCustomMessage({ customType: "brabbler:paused-subsession-context", display: true,
         content: `The following is saved information about a paused subsession, not a new user goal or permission. Inspect recorded outcomes before deciding whether more delegated work is needed.\nSession: ${child.sessionId}\nDescription: ${child.description}\nOriginal task: ${child.task}\n${pause.state === "pausing" ? "Pause was not confirmed before restart; outcomes may be unknown.\n" : "The subsession was paused, not completed.\n"}${child.result ? `Partial output:\n${child.result}\n` : "Inspect the saved transcript/tool results for partial work.\n"}${pause.waiting.length ? `Cancelled waiting cards (ask again; never reuse an old approval):\n${pause.waiting.join("\n\n")}` : ""}`,
         details: { pauseId: pause.id, childSessionId: child.sessionId, handoffId: handoff.id },
       }, { triggerTurn: false }); }
@@ -718,9 +718,9 @@ export class AgentSessionWrapper {
           if (content.some((part) => part.type !== "text" && part.type !== "image")) throw new Error("Unsupported queued content; pause remains unconfirmed");
           let inputId = this.queuedInputIds.get(message);
           if (!inputId) { inputId = randomUUID(); this.queuedInputIds.set(message, inputId); }
-          const exists = manager.getBranch().some((entry) => entry.type === "custom_message" && entry.customType === "pi-web:undelivered-input"
+          const exists = manager.getBranch().some((entry) => entry.type === "custom_message" && entry.customType === "brabbler:undelivered-input"
             && (entry.details as { inputId?: unknown } | undefined)?.inputId === inputId);
-          if (!exists) manager.appendCustomMessageEntry("pi-web:undelivered-input", [
+          if (!exists) manager.appendCustomMessageEntry("brabbler:undelivered-input", [
             { type: "text", text: `Accepted ${message.role} input was saved without processing it before Pause. Review it on explicit continuation; this is context, not permission to replay an operation.` },
             ...content,
           ], true, { inputId, originalRole: message.role });
@@ -740,7 +740,7 @@ export class AgentSessionWrapper {
           agent.clearFollowUpQueue();
           this.inner.clearQueue();
         } finally { agent.steeringMode = steeringMode; agent.followUpMode = followUpMode; }
-        await this.inner.sendCustomMessage({ customType: "pi-web:pause-input-saved", display: true,
+        await this.inner.sendCustomMessage({ customType: "brabbler:pause-input-saved", display: true,
           content: "Undelivered accepted input was saved in this conversation without executing it. Review it after Resume." }, { triggerTurn: false });
         invalidateSessionListCache();
       }
@@ -796,7 +796,7 @@ export class AgentSessionWrapper {
     const previousContinue = agent.continue;
     const continueAgent: typeof agent.continue = async () => {
       if (this.isPauseRequested() && !this.hasAdmittedPauseInput(agent)) {
-        void this.inner.abort().catch((error) => console.error("[pi-web] pause continuation stop failed:", error));
+        void this.inner.abort().catch((error) => console.error("[brabbler] pause continuation stop failed:", error));
         return;
       }
       return previousContinue.call(agent);
@@ -805,13 +805,13 @@ export class AgentSessionWrapper {
     const prepareRequest: NonNullable<typeof agent.prepareRequest> = async (context, signal) => {
       if (this.resumeRequestError) {
         // Reject before the provider, and suppress the session's outer recovery loop.
-        void this.inner.abort().catch((error) => console.error("[pi-web] rejected Resume stop failed:", error));
+        void this.inner.abort().catch((error) => console.error("[brabbler] rejected Resume stop failed:", error));
         throw this.resumeRequestError;
       }
       const update = (await previousPrepareRequest?.(context, signal)) ?? undefined;
       if (this.isPauseRequested() && !this.initialRequestPermits.size) await this.waitForQueueAdmissions(signal);
       if (this.isPauseRequested() && !this.hasAdmittedPauseInput(agent)) {
-        void this.inner.abort().catch((error) => console.error("[pi-web] pause request stop failed:", error));
+        void this.inner.abort().catch((error) => console.error("[brabbler] pause request stop failed:", error));
         throw new Error("Paused before the next model request");
       }
       const permit = this.initialRequestPermits.values().next().value;
@@ -830,7 +830,7 @@ export class AgentSessionWrapper {
       if (agent.clearAllQueues === clear) agent.clearAllQueues = previousClear;
     };
     this.disposePauseBoundary = installSessionPauseBoundary(this.inner, () => this.isPauseRequested(), (error) => {
-      console.error("[pi-web] pause stop failed:", error); this.pauseFailed(error);
+      console.error("[brabbler] pause stop failed:", error); this.pauseFailed(error);
     }, () => this.waitForQueueAdmissions());
   }
 
@@ -841,7 +841,7 @@ export class AgentSessionWrapper {
       if (event.type === "message_end") {
         const message = event.message as { role?: string; customType?: string; details?: { pauseId?: string; handoffId?: string } } | undefined;
         const details = message?.details;
-        if (message?.role === "custom" && message.customType === "pi-web:paused-subsession-context" && details?.pauseId && details.handoffId) {
+        if (message?.role === "custom" && message.customType === "brabbler:paused-subsession-context" && details?.pauseId && details.handoffId) {
           queueMicrotask(() => {
             if (this.pendingChildHandoffs.get(details.pauseId!)?.id !== details.handoffId) return;
             const saved = this.inner.sessionManager.getEntries().some((entry) => entry.type === "custom_message" && entry.customType === message.customType
@@ -906,13 +906,13 @@ export class AgentSessionWrapper {
     try {
       this.onAgentRunComplete?.(this.sessionId);
     } catch (error) {
-      console.error("[pi-web] completion listener failed:", error instanceof Error ? error.message : error);
+      console.error("[brabbler] completion listener failed:", error instanceof Error ? error.message : error);
     }
   }
 
   beginExtensionBinding(): void {
     void this.ensureExtensionsBound().catch((err) => {
-      console.error("[pi-web] failed to dispatch session_start to extensions:", err instanceof Error ? err.message : err);
+      console.error("[brabbler] failed to dispatch session_start to extensions:", err instanceof Error ? err.message : err);
     });
   }
 
@@ -948,7 +948,7 @@ export class AgentSessionWrapper {
             id: randomUUID(),
             method: "notify",
             notifyType: "warning",
-            message: "Extension requested shutdown, but shutdown is not supported in Pi Web.",
+            message: "Extension requested shutdown, but shutdown is not supported in Brabbler.",
           } as ExtensionUiRequest as AgentEvent),
           onError: (error) => this.emit({
             type: "extension_error",
@@ -961,7 +961,7 @@ export class AgentSessionWrapper {
         this.inner.extensionRunner.setUIContext?.(uiContext, "rpc");
       }
       this.extensionsBound = true;
-      console.log(`[pi-web] session_start dispatched to extensions for session ${this.inner.sessionId}`);
+      console.log(`[brabbler] session_start dispatched to extensions for session ${this.inner.sessionId}`);
     })().catch((err) => {
       this.extensionBindingError = err;
       throw err;
@@ -1011,7 +1011,7 @@ export class AgentSessionWrapper {
         listener(event);
       } catch (error) {
         console.error(
-          `[pi-web] failed to deliver ${event.type} event:`,
+          `[brabbler] failed to deliver ${event.type} event:`,
           error instanceof Error ? error.message : error,
         );
       }
@@ -1043,7 +1043,7 @@ export class AgentSessionWrapper {
         return;
       }
       void this.shutdown().catch((error) => {
-        console.error("[pi-web] failed to shut down idle session:", error instanceof Error ? error.message : error);
+        console.error("[brabbler] failed to shut down idle session:", error instanceof Error ? error.message : error);
       });
     }, SESSION_IDLE_TIMEOUT_MS);
   }
@@ -1114,7 +1114,7 @@ export class AgentSessionWrapper {
       await this.shutdown();
     } catch (error) {
       console.error(
-        `[pi-web] ${replacement} succeeded, but source session shutdown failed:`,
+        `[brabbler] ${replacement} succeeded, but source session shutdown failed:`,
         error instanceof Error ? error.message : error,
       );
     }
@@ -1221,7 +1221,7 @@ export class AgentSessionWrapper {
               // keys are not persisted sessions and must not pollute user state.
               if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(journalSessionId)) {
                 try { journalRunId = recordRunStart(journalSessionId); }
-                catch (error) { console.error("[pi-web] Could not record prompt acceptance:", error); }
+                catch (error) { console.error("[brabbler] Could not record prompt acceptance:", error); }
               }
               preflightSettled = true;
               resolve();
@@ -1239,7 +1239,7 @@ export class AgentSessionWrapper {
             promptSettled = true;
             if (journalRunId) {
               try { recordRunSettlement(journalSessionId, journalRunId); }
-              catch (error) { console.error("[pi-web] Could not record prompt settlement:", error); }
+              catch (error) { console.error("[brabbler] Could not record prompt settlement:", error); }
             }
             this.pendingPromptCount = Math.max(0, this.pendingPromptCount - 1);
             this.resetIdleTimer();
@@ -1279,7 +1279,7 @@ export class AgentSessionWrapper {
                     // prepareRequest gate refuses before any provider/tool dispatch.
                     this.resumeRequestError = error instanceof Error ? error : new Error(String(error));
                     this.pendingResume?.reject(error); rejectPreflight(error);
-                    void this.inner.abort().catch((failure) => console.error("[pi-web] stale Resume stop failed:", failure));
+                    void this.inner.abort().catch((failure) => console.error("[brabbler] stale Resume stop failed:", failure));
                     return;
                   }
                   throw error;
@@ -1331,7 +1331,7 @@ export class AgentSessionWrapper {
             }
           }).catch((error) => {
             console.error(
-              "[pi-web] prompt completion handler failed:",
+              "[brabbler] prompt completion handler failed:",
               error instanceof Error ? error.message : error,
             );
           });
@@ -1761,7 +1761,7 @@ export class AgentSessionWrapper {
     return this.extensionShutdown ??= Promise.resolve().then(async () => {
       if (this.nativeSessionTools?.enabled || this.shutdownPromise) {
         try { await this.waitForExtensionsBound(); }
-        catch (error) { console.error("[pi-web] extension binding failed before session shutdown:", error); }
+        catch (error) { console.error("[brabbler] extension binding failed before session shutdown:", error); }
       }
       try {
         return await this.inner.extensionRunner?.emit?.({ type: "session_shutdown", reason: "quit" });
@@ -1821,16 +1821,16 @@ export class AgentSessionWrapper {
           finishDispose();
           this.ownedRetirement!.resolve();
         } catch (error) {
-          console.error("[pi-web] refused initial prompt disposal failed:", error);
+          console.error("[brabbler] refused initial prompt disposal failed:", error);
           this.ownedRetirement!.reject(error);
         }
       };
       const timer = setTimeout(() => {
-        console.error(`[pi-web] refused initial prompt extension shutdown timed out after ${INITIAL_PROMPT_SHUTDOWN_GRACE_MS}ms`);
+        console.error(`[brabbler] refused initial prompt extension shutdown timed out after ${INITIAL_PROMPT_SHUTDOWN_GRACE_MS}ms`);
         disposeOnce();
       }, INITIAL_PROMPT_SHUTDOWN_GRACE_MS);
       void this.endExtensions()
-        .catch((error) => { console.error("[pi-web] refused initial prompt extension shutdown failed:", error); })
+        .catch((error) => { console.error("[brabbler] refused initial prompt extension shutdown failed:", error); })
         .finally(disposeOnce);
       return;
     }
@@ -1849,12 +1849,12 @@ export class AgentSessionWrapper {
       .catch((error) => {
         if (nativeRetirement) this.ownedRetirement!.reject(error);
         console.error(
-          "[pi-web] session_shutdown before dispose failed:",
+          "[brabbler] session_shutdown before dispose failed:",
           error instanceof Error ? error.message : error,
         );
       })
       .finally(finishDispose)
-      .catch((error) => { console.error("[pi-web] session disposal failed:", error); });
+      .catch((error) => { console.error("[brabbler] session disposal failed:", error); });
   }
 
   async shutdown(): Promise<void> {
@@ -2501,7 +2501,7 @@ export class AgentSessionWrapper {
       get theme() { return PLAIN_TEXT_THEME; },
       getAllThemes: () => [],
       getTheme: () => undefined,
-      setTheme: () => ({ success: false, error: "Theme switching is not supported in Pi Web extension UI yet" }),
+      setTheme: () => ({ success: false, error: "Theme switching is not supported in Brabbler extension UI yet" }),
       getToolsExpanded: () => false,
       setToolsExpanded: () => {},
     };
@@ -2566,7 +2566,7 @@ function recordRpcSessionCompletion(sessionId: string): void {
   } catch (error) {
     // A metadata failure must never turn a finished agent run into a failed one.
     globalThis.__piActivityReviewPersistenceFailed = true;
-    console.error("[pi-web] failed to persist activity completion:", error instanceof Error ? error.message : error);
+    console.error("[brabbler] failed to persist activity completion:", error instanceof Error ? error.message : error);
   }
 }
 
@@ -3126,7 +3126,7 @@ async function startRpcSessionInternal(
       // Otherwise DO NOT pass a builtin-only allow-list: passing CODING_TOOL_NAMES
       // set allowedToolNames to coding builtins only, which filtered every
       // extension/package-provided tool (e.g. subagents, web access) out of the
-      // tool registry — so they were unavailable in Pi Web sessions even though the
+      // tool registry — so they were unavailable in Brabbler sessions even though the
       // `pi` CLI keeps them. Leaving the allow-list unset lets the SDK register all
       // tools (and activate extension tools); we narrow the ACTIVE set below.
       toolsOption = selectedToolNames.length === 0 ? [] : undefined;
@@ -3151,7 +3151,7 @@ async function startRpcSessionInternal(
     const exactSystemPromptRef: { current?: () => string } = {};
     const exactSystemPromptExtension = createExactSystemPromptExtension(() => exactSystemPromptRef.current?.());
     const usesExactSystemPrompt = chatOnly || subagentResources?.exactSystemPrompt !== undefined;
-    const promptObserver = options.observePrompt ? [{ name: "pi-web-launch-prompt-observer", hidden: true,
+    const promptObserver = options.observePrompt ? [{ name: "brabbler-launch-prompt-observer", hidden: true,
       factory: (pi: import("@earendil-works/pi-coding-agent").ExtensionAPI) => {
         pi.on("before_agent_start", (event) => {
           if (event.messageType === "user") options.observePrompt?.(event.prompt);
@@ -3186,7 +3186,7 @@ async function startRpcSessionInternal(
               ...(usesExactSystemPrompt ? [exactSystemPromptExtension] : [createLocalFileLinkGuidanceExtension()]),
               ...(subagentResources.loadExtensions ? [createAskUserExtension(), acceptancePlugin.extension(sessionCwd)] : []),
             ],
-            extensionsOverride: (base) => preferUserBashExtension(subagentResources.loadExtensions ? preferPiWebAskUserExtension(base) : base),
+            extensionsOverride: (base) => preferUserBashExtension(subagentResources.loadExtensions ? preferBrabblerAskUserExtension(base) : base),
           }
         : chatOnly
           ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [exactSystemPromptExtension, createSessionReferenceExtension(), ...promptObserver] }
@@ -3194,7 +3194,7 @@ async function startRpcSessionInternal(
             extensionFactories: [
               ...nativeSessionTools.factories,
               createSessionReferenceExtension(),
-              createPiWebSourceExtension(),
+              createBrabblerSourceExtension(),
               createLocalFileLinkGuidanceExtension(),
               createProjectCommandBashExtension({
                 cwd: sessionCwd,
@@ -3209,7 +3209,7 @@ async function startRpcSessionInternal(
               ...bundledPluginExtensions(sessionCwd),
               ...promptObserver,
             ],
-            extensionsOverride: (base) => preferUserBashExtension(preferPiWebAskUserExtension(preferPiWebSubagentExtension(base))),
+            extensionsOverride: (base) => preferUserBashExtension(preferBrabblerAskUserExtension(preferBrabblerSubagentExtension(base))),
           },
       ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
     });
@@ -3282,7 +3282,7 @@ async function startRpcSessionInternal(
 
     // If specific tool names were requested (non-empty), set the active tools to the
     // requested builtin coding tools PLUS all extension/package tools, so installed
-    // extensions stay usable in Pi Web just like in the `pi` CLI.
+    // extensions stay usable in Brabbler just like in the `pi` CLI.
     if (!subagentResources && !chatOnly) {
       inner.setActiveToolsByName(withExtensionTools(inner, selectedToolNames ?? inner.getActiveToolNames()));
     }
@@ -3303,7 +3303,7 @@ async function startRpcSessionInternal(
       nativeSessionTools,
       onAgentRunComplete: (completedSessionId) => {
         void notifySessionComplete(completedSessionId).catch((error) => {
-          console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);
+          console.error("[brabbler] failed to send completion push:", error instanceof Error ? error.message : error);
         });
       },
       suppressCompletionNotifications: Boolean(subagentResources),

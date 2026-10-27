@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test, { after } from "node:test";
 import { createJiti } from "jiti";
 
-const agent = mkdtempSync(join(tmpdir(), "pi-web-worktrees-agent-"));
+const agent = mkdtempSync(join(tmpdir(), "brabbler-worktrees-agent-"));
 const previous = process.env.PI_CODING_AGENT_DIR;
 process.env.PI_CODING_AGENT_DIR = agent;
 after(() => {
@@ -20,7 +20,7 @@ const request = (method, body) => new Request("http://localhost/api/worktrees", 
   method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
 });
 function fixture(t) {
-  const root = mkdtempSync(join(tmpdir(), "pi-web-worktree-route-")), repo = join(root, "repo");
+  const root = mkdtempSync(join(tmpdir(), "brabbler-worktree-route-")), repo = join(root, "repo");
   mkdirSync(repo); t.after(() => rmSync(root, { recursive: true, force: true }));
   const git = (...args) => execFileSync("git", ["-C", repo, "-c", "core.hooksPath=/dev/null", ...args], { encoding: "utf8" }).trim();
   git("init", "-qb", "main");
@@ -32,8 +32,8 @@ function fixture(t) {
 
 test("standalone worktrees list, create and remove with explicit local base/tip and no chat settings", async t => {
   const f = fixture(t);
-  const obsolete = join(agent, "pi-web", "git-workflow-settings.json");
-  mkdirSync(join(agent, "pi-web"), { recursive: true }); writeFileSync(obsolete, "obsolete invalid data");
+  const obsolete = join(agent, "brabbler", "git-workflow-settings.json");
+  mkdirSync(join(agent, "brabbler"), { recursive: true }); writeFileSync(obsolete, "obsolete invalid data");
   const created = await POST(request("POST", f.body));
   assert.equal(created.status, 200, await created.clone().text());
   const { path } = await created.json(); assert.ok(existsSync(path));

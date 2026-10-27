@@ -88,7 +88,7 @@ export async function run(args, { cwd = process.cwd(), ambient = process.env, co
   const handlers = Object.fromEntries(['SIGINT', 'SIGTERM'].map(sig => [sig, () => controller.abort(sig)]));
   for (const [sig, handler] of Object.entries(handlers)) process.on(sig, handler);
   try {
-    const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'pi-web-test-source-'));
+    const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'brabbler-test-source-'));
     const env = privateEnvironment(root, ambient);
     for (const name of ['home', 'config', 'cache', 'data', 'state', 'runtime', 'agent', 'tmp', 'nix-conf']) {
       fs.mkdirSync(path.join(root, name), { mode: 0o700 });
@@ -107,7 +107,7 @@ export async function run(args, { cwd = process.cwd(), ambient = process.env, co
     if (parsed.kind === 'e2e' || parsed.kind === 'all') {
       const verified = JSON.parse(fs.readFileSync(manifest, 'utf8'));
       if (verified.status !== 'complete' || !/^[a-f0-9]{64}$/.test(verified.contentModeSha256 ?? '')) throw new Error('Missing verified source digest');
-      env.PI_WEB_SOURCE_DIGEST = verified.contentModeSha256;
+      env.BRABBLER_SOURCE_DIGEST = verified.contentModeSha256;
     }
     const launch = (kind, options) => checked('nix', ['run', '--extra-experimental-features', 'nix-command flakes', '--store', 'daemon',
       '--no-write-lock-file', '--option', 'accept-flake-config', 'false', '--max-jobs', '2', '--cores', '4',
@@ -121,7 +121,7 @@ export async function run(args, { cwd = process.cwd(), ambient = process.env, co
       const admission = combinedBudget(resources, budget, coreJobs);
       const { overlap } = admission;
       const coreOptions = parsed.options.length ? parsed.options : ['--jobs', overlap ? '2' : '4'];
-      const selection = { version: 2, source: output, sourceDigest: env.PI_WEB_SOURCE_DIGEST,
+      const selection = { version: 2, source: output, sourceDigest: env.BRABBLER_SOURCE_DIGEST,
         levels: ['core', 'browser', 'service'], budget, coreOptions, overlap, admission };
       fs.writeFileSync(path.join(root, 'selection.json'), JSON.stringify(selection, null, 2) + '\n', { mode: 0o600 });
       console.log(`Complete acceptance: ${overlap ? 'overlap' : 'serial (insufficient spare budget for overlap)'}, browser sandboxes=${budget.workers}, core=${JSON.stringify(coreOptions)}`);

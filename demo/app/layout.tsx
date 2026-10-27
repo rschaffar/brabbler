@@ -13,9 +13,9 @@ const notoSansMono = Noto_Sans_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pi Web",
-  description: "Interactive demo of Pi Web, the browser UI for the pi coding agent",
-  applicationName: "Pi Web",
+  title: "Brabbler",
+  description: "Interactive demo of Brabbler, the browser UI for the pi coding agent",
+  applicationName: "Brabbler",
   icons: {
     icon: [
       {
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Pi Web",
+    title: "Brabbler",
   },
   formatDetection: {
     telephone: false,

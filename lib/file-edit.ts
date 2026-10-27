@@ -84,7 +84,7 @@ export function loadEditableFile(filePath: string, roots: Set<string>) {
   return { ...snapshot, writable, editIdentity };
 }
 
-/** Synchronous compare-and-replace: other Pi Web saves cannot interleave between
+/** Synchronous compare-and-replace: other Brabbler saves cannot interleave between
  * comparison and rename in this process. External filesystem writers can race. */
 export function saveEditableFile(filePath: string, roots: Set<string>, content: string, expectedRevision: string, expectedEditIdentity?: string) {
   const bytes = Buffer.from(content, "utf8");
@@ -100,7 +100,7 @@ export function saveEditableFile(filePath: string, roots: Set<string>, content: 
   if (current.revision !== expectedRevision) throw new FileEditError("File changed on disk; draft not saved", 409);
 
   const directory = path.dirname(filePath);
-  const temp = path.join(directory, `.pi-web-edit-${crypto.randomBytes(12).toString("hex")}.tmp`);
+  const temp = path.join(directory, `.brabbler-edit-${crypto.randomBytes(12).toString("hex")}.tmp`);
   let created = false;
   try {
     fs.writeFileSync(temp, bytes, { flag: "wx", mode: stat.mode & 0o777 });

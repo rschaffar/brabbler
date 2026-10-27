@@ -179,7 +179,7 @@ async function modelsPanel(t, { config = { providers: { stepfun: { api: 'openai-
   f.route('GET', '/api/auth/providers', { reply: () => ({ data: discovery }) });
   f.route('GET', '/api/models/enabled', { query: { cwd: '/project' }, reply: { data: enabled ?? enabledView(scope) } });
   await f.mount(h(graph.ModelsConfig, { cwd: '/project', embedded: true, onClose() {} }), { setup(window) {
-    if (selection) window.localStorage.setItem('pi-web:settings-navigation', JSON.stringify({ selections: { models: JSON.stringify(selection) } }));
+    if (selection) window.localStorage.setItem('brabbler:settings-navigation', JSON.stringify({ selections: { models: JSON.stringify(selection) } }));
   } });
   return { f, graph, discovery(value) { discovery = value; } };
 }

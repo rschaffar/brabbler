@@ -30,7 +30,7 @@ export function NotebookReviewPanel({ indexPath, step, selection, destination, o
   const [corruptDraft, setCorruptDraft] = useState<string | null>(null), recoveryBlocked = useRef(false);
   const alive = useRef(true), generation = useRef(0), pendingWork = useRef(false), stepRef = useRef(step.id); stepRef.current = step.id;
   const observer = useRef(onWork); observer.current = onWork;
-  const recoveryPrefix = `pi-notebook-review-draft-v2:${encodeURIComponent(indexPath)}:`;
+  const recoveryPrefix = `brabbler-notebook-review-draft-v2:${encodeURIComponent(indexPath)}:`;
   const key = `${recoveryPrefix}${encodeURIComponent(owner)}`;
   useEffect(() => {
     alive.current = true;
@@ -171,7 +171,7 @@ export function NotebookReviewPanel({ indexPath, step, selection, destination, o
     <details><summary>Recover drafts from another pane or previous activation</summary><p>Each file view owns a separate browser recovery record. Loading a copy here never changes the other pane&apos;s record.</p><button type="button" onClick={() => {
       try { const entries: { key: string; raw: string }[] = []; const count = localStorage.length;
         if (count > 256) throw new Error("More than 256 browser storage keys; use browser storage export (no keys removed)");
-        for (let i = 0; i < count; i++) { const candidate = localStorage.key(i)!; if (candidate !== key && (candidate.startsWith(recoveryPrefix) || candidate === `pi-notebook-review-draft-v1:${indexPath}`)) { const raw = localStorage.getItem(candidate); if (raw !== null) entries.push({ key: candidate, raw: raw.slice(0, REVIEW_DRAFT_BYTES) }); } }
+        for (let i = 0; i < count; i++) { const candidate = localStorage.key(i)!; if (candidate !== key && (candidate.startsWith(recoveryPrefix) || candidate === `brabbler-notebook-review-draft-v1:${indexPath}`)) { const raw = localStorage.getItem(candidate); if (raw !== null) entries.push({ key: candidate, raw: raw.slice(0, REVIEW_DRAFT_BYTES) }); } }
         setRecoveries(entries); setRecoveryChoice("");
       } catch (e) { setStatus(`Recovery inventory unavailable: ${e instanceof Error ? e.message : e}`); }
     }}>List other recovery records</button><label>Recovery record<select value={recoveryChoice} onChange={e => setRecoveryChoice(e.target.value)}><option value="">Choose a preserved record</option>{recoveries.map(r => <option key={r.key} value={r.key}>{r.key}</option>)}</select></label>

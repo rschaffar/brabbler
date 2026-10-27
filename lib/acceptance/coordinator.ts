@@ -292,7 +292,7 @@ export class AcceptanceCoordinator {
       const home = path.join(run.runtimeDirectory, "home"); mkdirSync(home, { mode: 0o700 });
       const env: NodeJS.ProcessEnv = { NODE_ENV: run.environment.NODE_ENV, PATH: run.environment.PATH, LANG: run.environment.LANG, HOME: home, TMPDIR: run.runtimeDirectory,
         XDG_CONFIG_HOME: path.join(home, "config"), XDG_CACHE_HOME: path.join(home, "cache"), XDG_DATA_HOME: path.join(home, "data"),
-        XDG_STATE_HOME: path.join(home, "state"), PI_CODING_AGENT_DIR: path.join(home, "agent"), PI_WEB_ACCEPTANCE_RUNTIME: run.runtimeDirectory };
+        XDG_STATE_HOME: path.join(home, "state"), PI_CODING_AGENT_DIR: path.join(home, "agent"), BRABBLER_ACCEPTANCE_RUNTIME: run.runtimeDirectory };
       // The serial dispatch Promise is another async boundary; check before the supervisor's synchronous spawn.
       if (this.stopping || !this.enabled() || dispatch.epoch !== this.disableEpoch) {
         controller.abort();
@@ -366,7 +366,7 @@ export class AcceptanceCoordinator {
     });
   }
 }
-const symbol = Symbol.for("pi-web:acceptance-coordinators/v1");
+const symbol = Symbol.for("brabbler:acceptance-coordinators/v1");
 const host = globalThis as typeof globalThis & { [symbol]?: Map<string, AcceptanceCoordinator> };
 export function acceptanceCoordinator(): AcceptanceCoordinator {
   const root = acceptanceRoot(), coordinators = host[symbol] ??= new Map();

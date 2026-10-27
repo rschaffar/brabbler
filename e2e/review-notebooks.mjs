@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createOwnedRoutes } from "./owned-routes.mjs";
 import { checkGuidedReviewWorkflow } from "./guided-review-workflow.mjs";
 
-const fence = value => "```pi-review\n" + JSON.stringify(value, null, 2) + "\n```";
+const fence = value => "```brabbler-review\n" + JSON.stringify(value, null, 2) + "\n```";
 export function seedReviewNotebooks({ gitProject, targetWorktree, env, writeSession, message }) {
   const git = (...args) => execFileSync("git", ["-C", gitProject, ...args], { env, encoding: "utf8" }).trim();
   const id = "e2e-review-notebook";
@@ -25,29 +25,29 @@ export function seedReviewNotebooks({ gitProject, targetWorktree, env, writeSess
     fence({ ...common, kind: "commit", id: "feature-commit", title: "Feature changes" }) + "\n\n" +
     fence({ ...common, kind: "commit", id: "deep-history", title: "Earlier review step", branch: "review-history", oid: deepOid }) + "\n\n" +
     fence({ ...source, version: 99, title: "<script>globalThis.REVIEW_BAD=true</script>" }) + "\n\n" +
-    "```pi-review\n{broken JSON\n```\n\n";
+    "```brabbler-review\n{broken JSON\n```\n\n";
   const document = join(targetWorktree, "review-notebook.md");
   writeFileSync(document, text);
   const guidedFolder = join(targetWorktree, "guided-review"); mkdirSync(guidedFolder);
   const guidedIndex = join(guidedFolder, "index.md");
   const metadata = (language, value) => `\`\`\`${language}\n${JSON.stringify(value)}\n\`\`\`\n`;
-  writeFileSync(guidedIndex, "# Guided review\n\n" + metadata("pi-notebook", { version: 1, id: "reader-bridge", title: "Guided reader bridge", chapters: [
+  writeFileSync(guidedIndex, "# Guided review\n\n" + metadata("brabbler-notebook", { version: 1, id: "reader-bridge", title: "Guided reader bridge", chapters: [
     { id: "ordering", title: "Ordering", path: "ordering.md" }, { id: "failure", title: "Failure behavior", path: "failure.md" },
   ] }));
-  writeFileSync(join(guidedFolder, "ordering.md"), metadata("pi-step", { version: 1, id: "inspect", title: "Inspect the immutable evidence" }) +
+  writeFileSync(join(guidedFolder, "ordering.md"), metadata("brabbler-step", { version: 1, id: "inspect", title: "Inspect the immutable evidence" }) +
     "Compare the implementation with its surrounding context.\n\n" +
-    metadata("pi-question", { version: 1, id: "constructor", shortLabel: "Judgment", question: "Is the boundary understandable?", type: "single", required: true, options: [{ id: "clear", title: "Clear" }, { id: "inspect", title: "Needs inspection" }], explanation: "The author recommends checking rejection before extraction, not grading the reviewer." }) +
-    metadata("pi-question", { version: 1, id: "notes", shortLabel: "Understanding", question: "What did you inspect?", type: "text", required: false }) +
-    metadata("pi-question", { version: 1, id: "design", shortLabel: "Design", question: "Which design properties matter?", type: "multiple", required: false, options: [{ id: "local", title: "Locality" }, { id: "durable", title: "Durability" }, { id: "none", title: "None", exclusive: true }] }) +
+    metadata("brabbler-question", { version: 1, id: "constructor", shortLabel: "Judgment", question: "Is the boundary understandable?", type: "single", required: true, options: [{ id: "clear", title: "Clear" }, { id: "inspect", title: "Needs inspection" }], explanation: "The author recommends checking rejection before extraction, not grading the reviewer." }) +
+    metadata("brabbler-question", { version: 1, id: "notes", shortLabel: "Understanding", question: "What did you inspect?", type: "text", required: false }) +
+    metadata("brabbler-question", { version: 1, id: "design", shortLabel: "Design", question: "Which design properties matter?", type: "multiple", required: false, options: [{ id: "local", title: "Locality" }, { id: "durable", title: "Durability" }, { id: "none", title: "None", exclusive: true }] }) +
     fence({ ...source, id: "guided-source" }) + "\n\n" +
     fence({ ...source, id: "guided-code", title: "Implementation", path: "review-source.tsx", start: 2, end: 6 }) + "\n\n" +
-    metadata("pi-evidence", { version: 1, kind: "compare", id: "guided-range", title: "Whole feature range", cwd: gitProject, branch: "feature", base: prior, candidate: oid, path: "z-context.txt" }) + "\n\n" +
-    metadata("pi-evidence", { version: 1, kind: "file", id: "guided-image", title: "Working diagram", path: "assets/pixel.png" }));
+    metadata("brabbler-evidence", { version: 1, kind: "compare", id: "guided-range", title: "Whole feature range", cwd: gitProject, branch: "feature", base: prior, candidate: oid, path: "z-context.txt" }) + "\n\n" +
+    metadata("brabbler-evidence", { version: 1, kind: "file", id: "guided-image", title: "Working diagram", path: "assets/pixel.png" }));
   mkdirSync(join(guidedFolder, "assets"));
   // Reviewed inline one-pixel raster; no network/codec-generation dependency.
   writeFileSync(join(guidedFolder, "assets/pixel.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jXioAAAAASUVORK5CYII=", "base64"));
-  writeFileSync(join(guidedFolder, "failure.md"), metadata("pi-step", { version: 1, id: "failure-step", title: "Check the failure boundary" }) +
-    "This second step lives in another chapter file.\n\n" + metadata("pi-evidence", { version: 1, kind: "web", id: "reference", title: "External background", url: "https://example.invalid/no-auto-read" }));
+  writeFileSync(join(guidedFolder, "failure.md"), metadata("brabbler-step", { version: 1, id: "failure-step", title: "Check the failure boundary" }) +
+    "This second step lives in another chapter file.\n\n" + metadata("brabbler-evidence", { version: 1, kind: "web", id: "reference", title: "External background", url: "https://example.invalid/no-auto-read" }));
   writeSession(id, [message("review-user", null, "user", "Guided review fixture"),
     message("review-answer", "review-user", "assistant", [{ type: "text", text: text +
       `\n\n[Open review document](${document})\n\n[Open guided review](${guidedIndex})\n\n[Open working source](${join(gitProject, "z-context.txt")}#L50)` }])], targetWorktree);

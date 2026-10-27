@@ -13,8 +13,8 @@ export type FontPreferences = Record<FontKind, string> & Record<`${FontKind}Weig
 export const FONT_FAMILY_MAX_LENGTH = 500;
 export const FONT_WEIGHT_DEFAULT: FontWeight = 400;
 export const FONT_STORAGE_KEYS: Record<keyof FontPreferences, string> = {
-  ui: "pi-ui-font-family", mono: "pi-mono-font-family",
-  uiWeight: "pi-ui-font-weight", monoWeight: "pi-mono-font-weight",
+  ui: "brabbler-ui-font-family", mono: "brabbler-mono-font-family",
+  uiWeight: "brabbler-ui-font-weight", monoWeight: "brabbler-mono-font-weight",
 };
 export const DEFAULT_FONT_PREFERENCES: FontPreferences = {
   ui: "", mono: "", uiWeight: 400, monoWeight: 400,

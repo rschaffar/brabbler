@@ -68,7 +68,7 @@ let
     assert inputsOK;
     assert b.getContext payload == expectedPayloadContext;
     assert shapeOK;
-    pkgs.runCommand "pi-web-browser-definition-manifest" {
+    pkgs.runCommand "brabbler-browser-definition-manifest" {
       inherit runId;
       preferLocalBuild = true;
       allowSubstitutes = false;

@@ -134,7 +134,7 @@ export async function supervise(root, keepWorkspace, command, args) {
   process.on('SIGINT', onInt); process.on('SIGTERM', onTerm);
   const file = path.join(root, 'lifecycle.json');
   const state = { version: 1, root, original, command, args, keepWorkspace,
-    dependencies: process.env.PI_WEB_TEST_MODULES ?? null,
+    dependencies: process.env.BRABBLER_TEST_MODULES ?? null,
     startedAt: new Date().toISOString(), status: 'running', cleanup: { status: 'not-attempted' } };
   const save = () => fs.writeFileSync(file, JSON.stringify(state, null, 2) + '\n', { mode: 0o600 });
   save();

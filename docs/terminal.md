@@ -36,7 +36,7 @@ Supported launchers install one stable private `SSH_AUTH_SOCK` before children
 start, initially **No agent / SSH setup needed**. **Settings → SSH → Use agent**
 explicitly selects the Browser agent, startup system agent, discovered/named
 socket, or No agent. Existing inheriting PTYs retain the same pathname through
-switches; Pi Web does not change the host's selector. Explicit shell/profile
+switches; Brabbler does not change the host's selector. Explicit shell/profile
 exports and SSH `IdentityAgent` remain deliberate overrides. No agent is not a
 prohibition on private-key files or other authentication methods.
 
@@ -48,8 +48,8 @@ Strict verification is default; optional application unlock is fixed at 30 minut
 and every signature still requires presence. A locked Unlock and approve uses a
 fresh UV unlock challenge followed by the separate SSH signing ceremony.
 
-PTYs retain the public socket but omit `PI_WEB_PASSWORD` and the private
-`PI_DESK_SSH_RUNTIME` control locator. Legacy session-binding markers are ignored
+PTYs retain the public socket but omit `BRABBLER_PASSWORD` and the private
+`BRABBLER_SSH_RUNTIME` control locator. Legacy session-binding markers are ignored
 by managed commands and retained as migration evidence, never routing authority.
 See [browser SSH](browser-ssh-agent.md) for security/compatibility boundaries and
 the [completed implementation record](plans/archived/2026-10-22_process-wide-ssh-agent-plan.md) for
@@ -57,7 +57,7 @@ acceptance evidence.
 
 ## Appearance and touch keys
 
-The header's light/dark switch changes only the terminal, defaults dark, and persists best-effort as `pi-web:terminal-theme`. Open terminals share the browser choice; storage events synchronize other tabs. Failed persistence keeps the in-tab choice. Theme changes update live xterm options, not PTY/SSE ownership. The retained Nerd/System font selector (`pi-web:terminal-font`) is independent. **Nerd** keeps the bundled Pi Web Nerd Font family; **System** follows the shared monospace family in General → Fonts & layout, with its original fallback stack. Both modes follow the shared monospace base weight (100–600); terminal bold remains 700. Family/weight changes update xterm and refit live, including after hidden terminals become visible, without recreating a PTY or SSE stream. Font-family and weight resets are separate and never reset the terminal's mode, palette or shared size. Hidden terminals defer metric-option application until measurable. The lifetime-owned resize helper forces glyph remeasurement through public size options before fitting, and best-effort font readiness can refit the same instance; old completions cannot affect replacement terminals. This also handles xterm's DOM-measurement fallback, which otherwise retains stale nonzero dimensions while hidden.
+The header's light/dark switch changes only the terminal, defaults dark, and persists best-effort as `brabbler:terminal-theme`. Open terminals share the browser choice; storage events synchronize other tabs. Failed persistence keeps the in-tab choice. Theme changes update live xterm options, not PTY/SSE ownership. The retained Nerd/System font selector (`brabbler:terminal-font`) is independent. **Nerd** keeps the bundled Brabbler Nerd Font family; **System** follows the shared monospace family in General → Fonts & layout, with its original fallback stack. Both modes follow the shared monospace base weight (100–600); terminal bold remains 700. Family/weight changes update xterm and refit live, including after hidden terminals become visible, without recreating a PTY or SSE stream. Font-family and weight resets are separate and never reset the terminal's mode, palette or shared size. Hidden terminals defer metric-option application until measurable. The lifetime-owned resize helper forces glyph remeasurement through public size options before fitting, and best-effort font readiness can refit the same instance; old completions cannot affect replacement terminals. This also handles xterm's DOM-measurement fallback, which otherwise retains stale nonzero dimensions while hidden.
 
 Settings → General → **Chat & terminal font size** also adjusts the terminal: chat 14 means terminal 13px, with 12–24 chat mapping to 11–23 terminal. There is no separate size preference. Changes refit through the existing resize writer, including after a hidden terminal becomes visible, without recreating the shell or stream.
 
@@ -82,9 +82,9 @@ browser reports no external network. Actual HTTP/SSE failures still determine
 connection state; closing, disposal and same-ID restoration guards remain binding.
 
 `bin/prepare-terminal.js` repairs node-pty 1.1.0's macOS spawn-helper executable
-bits during installation, including published/npm-installed Pi Web packages.
+bits during installation, including published/npm-installed Brabbler packages.
 
-Pi Web pins node-pty to `1.2.0-beta.15`, which includes Linux x64 and ARM64
+Brabbler pins node-pty to `1.2.0-beta.15`, which includes Linux x64 and ARM64
 prebuilt binaries. Native module loading is deferred until terminal creation,
 so missing or incompatible binaries produce a JSON error with repair instructions.
 Empty or non-JSON API errors show the HTTP status and direct users to the server log.
@@ -94,7 +94,7 @@ If a native binary cannot load, run
 installation directory (for npx, the cache directory containing `node_modules`).
 On Debian/Ubuntu, install `python3` and `build-essential` first. This forces a
 source build instead of reusing a missing or incompatible prebuilt binary.
-Restart Pi Web after repair.
+Restart Brabbler after repair.
 
 ## Verification
 

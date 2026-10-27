@@ -335,7 +335,7 @@ export class ManagedSshAgent {
     try { await this.publish(null); } catch { /* A newer worker must not be cleared. */ }
   }
 }
-const globalKey = Symbol.for("pi-desk:managed-ssh-agent");
+const globalKey = Symbol.for("brabbler:managed-ssh-agent");
 export function managedSshAgent(): ManagedSshAgent {
   const global = globalThis as typeof globalThis & { [globalKey]?: ManagedSshAgent };
   if (!global[globalKey]) {

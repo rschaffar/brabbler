@@ -10,7 +10,7 @@ const { NextRequest } = await jiti.import("next/server");
 const { GET } = await jiti.import("./route.ts");
 const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
 test("Explorer context GET preserves admission, strict fields and changed-file scope", async (t) => {
-  const cwd = mkdtempSync(join(tmpdir(), "pi-web-context-route-"));
+  const cwd = mkdtempSync(join(tmpdir(), "brabbler-context-route-"));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   const git = (...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
   git("init", "-qb", "main"); git("config", "user.name", "Test"); git("config", "user.email", "test@example.invalid");

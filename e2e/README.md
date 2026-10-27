@@ -310,7 +310,7 @@ All selections retain the same package/inventory/deadlines; budgets are not rese
    the outer invocation. Each sandbox can use 30141 without touching another sandbox
    or host service. Separate users alone would not provide this isolation.
 3. Allocate private synthetic HOME/agent/projects/artifacts and launch the actual
-   installed `bin/pi-web` with a sanitized production environment. This is explicitly
+   installed `bin/brabbler` with a sanitized production environment. This is explicitly
    the process backend, not a simulated systemd service. Bind the registered child
    generation/package; unexpected exit, spawn/log failure or incomplete stop fails.
 4. Run every reviewed current browser/terminal chain, collecting each context trace,
@@ -383,14 +383,14 @@ user bus, developer `.next` or live host-store exposure is introduced.
 
 ## Diagnostics and settlement
 
-Fresh browser execution prints `/tmp/pi-web-test-browser.*`: `run.json`, preparation
+Fresh browser execution prints `/tmp/brabbler-test-browser.*`: `run.json`, preparation
 log and per-group driver logs/result links. Each immutable capsule contains
 `result.json`, suite output, harness/coverage receipts, server log, events, Chromium
 traces/screenshots and a failed-fixture archive on failure. Both cacheable and fresh
 verdict gates reject failed diagnostic capsules; Nix owns their build-tree disposal.
 
 Deployment prints `/tmp/pwv-*`: `run.json`, realization/driver logs, driver link,
-plan/evidence, JUnit and `artifacts/guest/pi-web-evidence/` with `journal.log`,
+plan/evidence, JUnit and `artifacts/guest/brabbler-evidence/` with `journal.log`,
 `service.log`, `observations.json`, `fixtures.tar.gz`. The exact receipt binds their
 guest-stage SHA-256 hashes computed **before** transfer. Root-owned staging rejects
 symlinks/special/cross-device entries before the driver's host copy can follow them;

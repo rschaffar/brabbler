@@ -1,7 +1,7 @@
-# Pi Web demo
+# Brabbler demo
 
-A static, backend-free copy of the Pi Web UI for GitHub Pages. It uses the
-real Pi Web components, and an in-browser mock answers every `/api/*` request
+A static, backend-free copy of the Brabbler UI for GitHub Pages. It uses the
+real Brabbler components, and an in-browser mock answers every `/api/*` request
 the UI makes, so visitors can click through sessions, files, models and
 settings without installing anything.
 
@@ -27,12 +27,12 @@ settings without installing anything.
 ## How it works
 
 ```text
-app/DemoRoot.tsx        imports mock/install.ts, then renders Pi Web's AppShell
+app/DemoRoot.tsx        imports mock/install.ts, then renders Brabbler's AppShell
 mock/install.ts         replaces window.fetch (for /api/*) and EventSource
 mock/router.ts          the API routes: sessions, agent, files, git, models, …
 mock/agent.ts           streams replies with pi's SSE event sequence
 mock/sessions/          tutorial scripts, expanded into pi session entries
-mock/captured/          responses recorded from a real Pi Web + pi SDK setup
+mock/captured/          inherited Pi Web + Pi SDK captures, adapted for this Brabbler demo
 scripts/prepare-demo-files.mjs
                         snapshots the repository into public/demo-files
 ```
@@ -68,13 +68,13 @@ UI modules. Application Nix acceptance excludes this separate demo; this SSH
 synchronization is source-reviewed, not a demo browser/build pass. Its independent
 CI remains responsible for demo verification; deployment is separately authorized.
 
-## Isolation from Pi Web
+## Isolation from Brabbler
 
 The demo never ends up in the app or its npm package:
 
 - **Not published.** The root `package.json` publishes only the paths in its
   `files` whitelist, so `npm pack` contains nothing from `demo/`.
-- **Not compiled into the app.** Pi Web imports nothing from `demo/`; the root
+- **Not compiled into the app.** Brabbler imports nothing from `demo/`; the root
   `tsconfig.json` excludes it and `eslint.config.mjs` ignores it.
 - **Kept out of the app's CSS.** Tailwind scans every file that isn't
   gitignored, so `app/globals.css` has `@source not "../demo";`. The demo's copy
@@ -104,7 +104,7 @@ production/static build during normal development. `npm run build` produces
 
 `npm run dev` and `npm run build` first run `scripts/prepare-demo-files.mjs`.
 To preview the build under a sub-path the way GitHub Pages serves it, set
-`PAGES_BASE_PATH=/pi-web` before `npm run build`.
+`PAGES_BASE_PATH=/brabbler` before `npm run build`.
 
 ## Deployment
 

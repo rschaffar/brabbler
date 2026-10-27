@@ -6,7 +6,7 @@ import { deferred } from '../lib/testing/async.fixture.mjs';
 import { sshStatus } from '../lib/ssh-notifications.fixture.mjs';
 
 export const publicCredential = { id: 'AQ', spki: 'Ag', origin: 'https://fixture.invalid' };
-export const genericKey = 'pi-web:browser-ssh-credential:v1';
+export const genericKey = 'brabbler:browser-ssh-credential:v1';
 export function keyView(extra = {}) {
   return { id: 'existing-session-key', name: 'Existing session key', origin: publicCredential.origin,
     credential: { id: publicCredential.id, spki: publicCredential.spki }, policy: 'session',

@@ -60,9 +60,9 @@ for (const [visibility, focused] of [['visible', true], ['visible', false], ['hi
       assert.equal(c.view.container.querySelector('output').textContent, '1');
       if (admitted) {
         assert.deepEqual(c.notifications.map(n => [n.title, n.options]), [
-          ['i18n.attentionNeeded', { body: 'Exact title', tag: 'pi-extension-ui:blocking-one', renotify: true }],
-          ['i18n.attentionNeeded', { body: 'Exact title', tag: 'pi-extension-ui:blocking-two', renotify: true }],
-          ['i18n.sessionComplete', { body: 'i18n.taskFinished', tag: 'pi-session-complete:root / one', renotify: true }],
+          ['i18n.attentionNeeded', { body: 'Exact title', tag: 'brabbler-extension-ui:blocking-one', renotify: true }],
+          ['i18n.attentionNeeded', { body: 'Exact title', tag: 'brabbler-extension-ui:blocking-two', renotify: true }],
+          ['i18n.sessionComplete', { body: 'i18n.taskFinished', tag: 'brabbler-session-complete:root / one', renotify: true }],
         ]);
       }
       await c.update({ selectedSession: session('current', undefined), onSettled: () => c.settled.push('current') });
@@ -70,13 +70,13 @@ for (const [visibility, focused] of [['visible', true], ['visible', false], ['hi
       assert.deepEqual(c.settled, ['old', 'current']);
       if (visibility !== 'visible' || !focused) {
         const notification = c.notifications.at(-1);
-        assert.equal(notification.options.tag, 'pi-session-complete:current');
+        assert.equal(notification.options.tag, 'brabbler-session-complete:current');
         await act(async () => notification.onclick());
         assert.equal(notification.closed, 1); assert.equal(c.focusCalls, 1);
         assert.deepEqual(c.selected, ['current'], 'real wrapper onclick reaches current shell selection callback');
         // Suppressed child/focus events must not consume a root blocking ID.
         await c.update({ request: confirm() }); await c.attention();
-        assert.equal(c.notifications.filter(n => n.options.tag === 'pi-extension-ui:blocking-one').length, 1);
+        assert.equal(c.notifications.filter(n => n.options.tag === 'brabbler-extension-ui:blocking-one').length, 1);
       }
     });
   }
@@ -90,7 +90,7 @@ test('actual shell method/title/dedup rules and current target with retained glo
   ]) {
     await c.update({ request: { ...confirm(method), method, question: 'Exact question' } });
     await c.attention(); await c.attention();
-    assert.deepEqual(c.notifications.at(-1).options, { body, tag: `pi-extension-ui:${method}`, renotify: true });
+    assert.deepEqual(c.notifications.at(-1).options, { body, tag: `brabbler-extension-ui:${method}`, renotify: true });
   }
   assert.equal(c.notifications.length, 8);
   for (const request of [{ ...confirm('closed'), method: 'custom', closed: true }, { ...confirm('toast'), method: 'notify' }]) {
@@ -101,9 +101,9 @@ test('actual shell method/title/dedup rules and current target with retained glo
   await c.attention(); assert.equal(c.notifications.length, 8, 'existing page-lived request ID remains claimed across selection');
   await c.complete();
   assert.equal(c.notifications.at(-1).title, 'Current named session');
-  assert.equal(c.notifications.at(-1).options.tag, 'pi-session-complete:next');
+  assert.equal(c.notifications.at(-1).options.tag, 'brabbler-session-complete:next');
   await c.update({ selectedSession: null }); await c.complete();
-  assert.equal(c.notifications.at(-1).options.tag, 'pi-session-complete');
+  assert.equal(c.notifications.at(-1).options.tag, 'brabbler-session-complete');
 });
 
 for (const permission of ['default', 'denied']) test(`actual shell permission=${permission} retains existing no-retry dedup policy`, async t => {
@@ -114,7 +114,7 @@ for (const permission of ['default', 'denied']) test(`actual shell permission=${
   if (permission === 'default') {
     await c.grant('granted');
     assert.equal(c.notifications.length, 1);
-    assert.equal(c.notifications[0].options.tag, 'pi-extension-ui:blocking-one');
+    assert.equal(c.notifications[0].options.tag, 'brabbler-extension-ui:blocking-one');
   } else {
     c.SyntheticNotification.permission = 'granted';
     await c.attention(); assert.equal(c.notifications.length, 0, 'claimed before denied delivery: inherited, not repaired');

@@ -87,7 +87,7 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
       const raw = String(children);
       const isBlock = className?.includes("language-") || raw.includes("\n");
       if (isBlock) {
-        if (lang === "pi-review" && enableReviewBlocks && !onNavigateLink) return <ReviewNotebookBlock source={raw.replace(/\n$/, "")} isStreaming={isStreaming} />;
+        if (lang === "brabbler-review" && enableReviewBlocks && !onNavigateLink) return <ReviewNotebookBlock source={raw.replace(/\n$/, "")} isStreaming={isStreaming} />;
         if (lang === "mermaid") {
           return (
             <MermaidBlock

@@ -16,7 +16,7 @@ const path = require("path");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const fs = require("fs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { getHelpText, parseLaunchOptions } = require("./pi-web-options");
+const { getHelpText, parseLaunchOptions } = require("./brabbler-options");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { launchManagedNext } = require("./ssh-agent-launch");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -59,7 +59,7 @@ try {
 }
 
 const loopbackHostnames = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
-const passwordEnabled = Boolean(process.env.PI_WEB_PASSWORD);
+const passwordEnabled = Boolean(process.env.BRABBLER_PASSWORD);
 
 if (!fs.existsSync(nextDir)) {
   console.error("Build artifacts not found. Please report this issue.");
@@ -69,11 +69,11 @@ if (!fs.existsSync(nextDir)) {
 if (!loopbackHostnames.has(hostname)) {
   if (passwordEnabled) {
     console.warn(
-      `Warning: pi-web is listening on ${hostname} with password authentication over HTTP. Use HTTPS or a trusted VPN to protect the password in transit.`,
+      `Warning: brabbler is listening on ${hostname} with password authentication over HTTP. Use HTTPS or a trusted VPN to protect the password in transit.`,
     );
   } else {
     console.warn(
-      `Warning: pi-web is listening on ${hostname} without authentication. Only use this on a trusted network.`,
+      `Warning: brabbler is listening on ${hostname} without authentication. Only use this on a trusted network.`,
     );
   }
 }
@@ -129,6 +129,6 @@ child.stdout.on("data", (chunk) => {
   }
 });
 }).catch((error) => {
-  console.error(`[pi-web] startup failed: ${error.message}`);
+  console.error(`[brabbler] startup failed: ${error.message}`);
   process.exit(error.exitCode || 1);
 });

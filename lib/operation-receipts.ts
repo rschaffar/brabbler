@@ -3,7 +3,7 @@ import { isOperationId, validatePluginCard } from "./plugins/ui";
 import type { AgentMessage, CustomMessage, SessionEntry } from "./types";
 
 export type { PluginOperationReceipt } from "./plugins/types";
-export const OPERATION_RECEIPT_TYPE = "pi-web:operation-receipt";
+export const OPERATION_RECEIPT_TYPE = "brabbler:operation-receipt";
 /** Host-owned ordering metadata, not plugin execution authority. */
 export interface OperationReceiptSnapshot extends PluginOperationReceipt {
   pluginId: string;

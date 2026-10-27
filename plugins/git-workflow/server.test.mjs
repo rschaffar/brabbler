@@ -109,7 +109,7 @@ test("ask shows exact resource, message, patch and checks; decline and no UI do 
   assert.equal(card.patch, undefined);
   assert.match((await reviewPreview(card.review, await reviewEntry(card.review, 1))).text, /changed a/);
   assert.equal(git(repo, "rev-parse", "HEAD"), before);
-  failed(await call(repo, commit(repo), {}), /live Pi Web/);
+  failed(await call(repo, commit(repo), {}), /live Brabbler/);
   success(await call(repo, commit(repo)));
 });
 test("permission and global enable changes cancel pending approvals; unrelated permissions do not", async () => {

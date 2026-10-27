@@ -1,4 +1,4 @@
-import { addSubscription, type PushSubscriptionRecord } from "@/lib/web-push";
+import { addSubscription, vapidSubject, type PushSubscriptionRecord } from "@/lib/web-push";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +30,10 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "Invalid push subscription" }, { status: 400 });
   }
 
+  try { vapidSubject(); }
+  catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "Web Push contact is not configured" }, { status: 503 });
+  }
   await addSubscription({
     endpoint: body.subscription.endpoint,
     keys: body.subscription.keys,

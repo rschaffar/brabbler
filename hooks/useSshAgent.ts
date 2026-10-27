@@ -29,7 +29,7 @@ type RequestUnlockBegin =
   | (Omit<SshEnrollmentProof, "token"> & { alreadyUnlocked: false; requestId: string });
 type RequestUnlockFinish = { status: SshAgentStatus; request: SshSigningRequest; newGrant: boolean };
 type EnrollmentAck = SshRecoveryAcknowledgement;
-const NOTIFY_KEY = "pi-web:ssh-local-notifications:v1";
+const NOTIFY_KEY = "brabbler:ssh-local-notifications:v1";
 
 function sameSigningPayload(a: SshSigningRequest, b: SshSigningRequest): boolean {
   return a.id === b.id && a.challenge === b.challenge && a.fingerprint === b.fingerprint && a.description === b.description;

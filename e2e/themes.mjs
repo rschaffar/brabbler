@@ -51,7 +51,7 @@ try {
       await radio.locator("..").click();
       await expectTheme(theme === "auto" ? "light" : theme);
       assert.equal(await radio.isChecked(), true);
-      assert.equal(await page.evaluate(() => localStorage.getItem("pi-theme")), theme);
+      assert.equal(await page.evaluate(() => localStorage.getItem("brabbler-theme")), theme);
       const colors = await page.locator("html").evaluate((root) => {
         const style = getComputedStyle(root);
         return Object.fromEntries(["bg", "bg-panel", "bg-hover", "bg-selected", "user-bg", "assistant-bg", "tool-bg", "text", "text-muted", "text-dim", "accent", "accent-hover", "accent-contrast"].map((key) => [key, style.getPropertyValue(`--${key}`).trim()]));
@@ -103,9 +103,9 @@ try {
       await menu.waitFor();
     };
     for (const [index, theme] of themes.entries()) {
-      const before = await page.evaluate(() => localStorage.getItem("pi-theme"));
+      const before = await page.evaluate(() => localStorage.getItem("brabbler-theme"));
       await openThemeMenu();
-      assert.equal(await page.evaluate(() => localStorage.getItem("pi-theme")), before, "Opening the menu must not switch themes");
+      assert.equal(await page.evaluate(() => localStorage.getItem("brabbler-theme")), before, "Opening the menu must not switch themes");
       assert.equal(await themeButton.getAttribute("aria-expanded"), "true");
       assert.deepEqual(await menu.getByRole("menuitemradio").allTextContents(), labels);
       assert.equal(await menu.getByRole("menuitemradio", { checked: true }).count(), 1);
@@ -115,7 +115,7 @@ try {
       await menu.getByRole("menuitemradio", { name: labels[index], exact: true }).click();
       await expectTheme(theme === "auto" ? "light" : theme);
       await menu.waitFor({ state: "detached" });
-      assert.equal(await page.evaluate(() => localStorage.getItem("pi-theme")), theme);
+      assert.equal(await page.evaluate(() => localStorage.getItem("brabbler-theme")), theme);
       assert.equal(await themeButton.evaluate((button) => button === document.activeElement), true);
     }
     await openThemeMenu();
