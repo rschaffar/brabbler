@@ -182,7 +182,7 @@ The current Nix baseline is Node **24.21.0**, with TypeScript **6.0.3** and Node
 typings in root/demo. The launcher and both manifests require Node **24.0.0 or
 newer**; this minimum check is not acceptance evidence for every future runtime. Update inputs deliberately in a feature worktree, then verify all three complete Nix checks before integration. Chromium/Playwright compatibility is part of packaged browser acceptance. Testing does not activate a service or authorize publication.
 
-SDK 1.3.0 has a [version-pinned child-environment patch](./docs/sdk-command-environment.md)
+SDK 1.4.0 has a [version-pinned child-environment patch](./docs/sdk-command-environment.md)
 for the embedded modular runtime. Nix applies it before publishing shared modules;
 maintained npm postinstall uses the same guarded installer. Startup verifies the
 installed SDK read-only and refuses missing/unknown patches rather than repairing

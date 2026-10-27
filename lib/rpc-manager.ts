@@ -365,6 +365,22 @@ export class AgentSessionWrapper {
     this.monitorContextFiles = options.monitorContextFiles ?? false;
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
+    if (typeof inner.navigateTree === "function") {
+      const navigate = inner.navigateTree.bind(inner);
+      // Install inside the shared model-runtime effect guard. RPC and extension
+      // commands must retain the same session-wide explicit builtin selection.
+      inner.navigateTree = async (...args) => {
+        const result = await navigate(...args);
+        if (!result.cancelled) {
+          const pinned = readSessionToolSelection(inner.sessionManager.getEntries() as unknown as SessionEntry[]);
+          if (pinned !== undefined) {
+            const extensions = inner.getActiveToolNames().filter(name => !CODING_TOOL_NAMES.includes(name));
+            inner.setActiveToolsByName([...resolveShellTools(pinned, inner.settingsManager.getDefaultTools()), ...extensions]);
+          }
+        }
+        return result;
+      };
+    }
     this.releaseModelRuntime = registerModelRuntimeSession(inner,
       (requester) => this.isRunning() || this.activeMutatingCommands > (requester === inner ? 1 : 0)
         || Boolean(this.shutdownPromise) || (!this.chatOnly && !this.extensionsBound),
@@ -1747,7 +1763,13 @@ export class AgentSessionWrapper {
         try { await this.waitForExtensionsBound(); }
         catch (error) { console.error("[pi-web] extension binding failed before session shutdown:", error); }
       }
-      return this.inner.extensionRunner?.emit?.({ type: "session_shutdown", reason: "quit" });
+      try {
+        return await this.inner.extensionRunner?.emit?.({ type: "session_shutdown", reason: "quit" });
+      } finally {
+        // Retirement already aborted the owner. Drain admitted native results
+        // before disposal invalidates their contexts or releases the same-ID barrier.
+        await this.nativeSessionTools?.settleExecutions();
+      }
     }).then(result => { this.extensionsEnded = true; return result; });
   }
 

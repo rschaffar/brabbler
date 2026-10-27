@@ -1,16 +1,16 @@
 "use strict";
-/* Generated from installed public SDK 1.3.0 dist bytes; no SDK source vendoring. */
+/* Generated from public SDK 1.4.0 dist bytes; no SDK source vendoring. */
 module.exports = {
   "schemaVersion": 1,
-  "patchId": "pi-desk-sdk-command-env-1.3.0-v2",
+  "patchId": "pi-desk-sdk-command-env-1.4.0-v2",
   "packageName": "@earendil-works/pi-coding-agent",
-  "packageVersion": "1.3.0",
-  "packageJsonSha256": "83c3bb7619f590c213cc96a24216eb29a819a3ef6dc548607cc037ed276e8dc5",
+  "packageVersion": "1.4.0",
+  "packageJsonSha256": "df6883685382d6a914e5797232744c26579fe7db5576ea0e9c859d018ca2d54e",
   "scope": "Twelve pinned modular SDK targets, including clipboard/browser helpers and RpcClient launch; excludes interactive-UI-only direct spawns, CLI/RPC bundles and arbitrary extension Node.js.",
   "helper": {
     "path": "dist/utils/pi-desk-command-env.js",
-    "content": "/** Pi Desk child-command environment policy, pinned to SDK 1.3.0.\n * Install-time downstream patch; never imported from the application runtime.\n * This is hygiene, not an extension sandbox. Filter only the final child copy:\n * explicit empty environments stay empty, and SSH/account/session values survive.\n */\nexport function sdkCommandEnvironment(source = process.env, platform = process.platform) {\n    const environment = { ...source };\n    for (const key of Object.keys(environment)) {\n        const name = platform === \"win32\" ? key.toUpperCase() : key;\n        if (name === \"PI_WEB_PASSWORD\" || name === \"PI_DESK_SSH_RUNTIME\") delete environment[key];\n    }\n    return environment;\n}\n",
-    "sha256": "70619385f02750445e93f7550bd8127c6ad6e3c6b03d066a340396cedac56ce3"
+    "content": "/** Pi Desk child-command environment policy, pinned to SDK 1.4.0.\n * Install-time downstream patch; never imported from the application runtime.\n * This is hygiene, not an extension sandbox. Filter only the final child copy:\n * explicit empty environments stay empty, and SSH/account/session values survive.\n */\nexport function sdkCommandEnvironment(source = process.env, platform = process.platform) {\n    const environment = { ...source };\n    for (const key of Object.keys(environment)) {\n        const name = platform === \"win32\" ? key.toUpperCase() : key;\n        if (name === \"PI_WEB_PASSWORD\" || name === \"PI_DESK_SSH_RUNTIME\") delete environment[key];\n    }\n    return environment;\n}\n",
+    "sha256": "e24862eeed0fae9945a340ad483bc1329312028c78a715f3c96e8e06c5cec808"
   },
   "files": [
     {
@@ -83,8 +83,8 @@ module.exports = {
     },
     {
       "path": "dist/core/tools/grep.js",
-      "originalSha256": "641ae520a88c7eb86406d9a18880f31412cb41cdc15a7ee3e1da5de62979ca7c",
-      "patchedSha256": "91253d4765c6f6b61aec3ee6fc64a8596aa038c71e7cdf3407a58875443975cd",
+      "originalSha256": "3ebc39e878898a348542d8b308944896af9c68439a975343ba4158d87cb20344",
+      "patchedSha256": "0a3bae181451ee81f8b2355bc4be85235efbf34daa613dfeaa3fcef365cf6084",
       "replacements": [
         {
           "before": "import { spawn } from \"child_process\";\n",
@@ -132,8 +132,8 @@ module.exports = {
     },
     {
       "path": "dist/utils/shell.js",
-      "originalSha256": "c8378f2b0566e35f90dfbb622a2214acf5cf45d15107c44b260cad897b539f72",
-      "patchedSha256": "48e4fee457591f36f2ad7acafc98b1625bb2f1fd23f3d1e9487e7e506fbb33e8",
+      "originalSha256": "f1e61708c725a337882bb08abac995bafc7a42883558ea1c46cc1917aff5d778",
+      "patchedSha256": "2ee99fc6be2a43a6e1efeb05db33b3ce8b2148426cea6b851e3e3a7c0e8bc364",
       "replacements": [
         {
           "before": "import { spawn, spawnSync } from \"child_process\";\n",
@@ -155,8 +155,8 @@ module.exports = {
     },
     {
       "path": "dist/utils/tools-manager.js",
-      "originalSha256": "28e24a2022460ed4e17ac10d0766984b878c4f69eb6286efed9382b958eb2963",
-      "patchedSha256": "120838540a6333572c359f1a08b95233c1716d7dd9499b803c109db5d48fd798",
+      "originalSha256": "4a8c8fc56b88dc306d10f476f6dfed2469dbd8d812251f40cc20f3e97b6928ec",
+      "patchedSha256": "8d83fac70e84fd8ec643fe0ec219afa9fd1c3c7399a754adeaa9b1487fb98735",
       "replacements": [
         {
           "before": "import { spawnSync } from \"child_process\";\n",
@@ -174,8 +174,8 @@ module.exports = {
     },
     {
       "path": "dist/utils/clipboard-command.js",
-      "originalSha256": "d9933ef767ba69f2ff26017081b81094c86b827961f758055c7a44cdd2d876b2",
-      "patchedSha256": "082f0ee2c6e2fff8c2be558f7048d39febd6793fc8890a2efe7f442f80abe5ed",
+      "originalSha256": "10e41ba8b85eab8b19a162e8255ee214eb359af2c06645fbae53d0493a4e6e51",
+      "patchedSha256": "3afdec0b1f45b35909f3fd8f7876f86391a398521c74ae89b142e75f9d1d94e5",
       "replacements": [
         {
           "before": "import { spawn } from \"node:child_process\";\n",

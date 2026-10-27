@@ -22,10 +22,10 @@ interface RuntimeSdk {
 }
 const nativeImport = (file: string) => import(/* webpackIgnore: true */ pathToFileURL(file).href);
 function distribution(): string {
-  // SDK 1.3 exposes neither its pure validator nor credential-store constructor.
+  // SDK 1.4 exposes neither its pure validator nor credential-store constructor.
   // Keep this version-scoped bridge separate from host policy and native engines.
   const manifest = findPackageJSON("@earendil-works/pi-coding-agent", pathToFileURL(join(__dirname, "pi-web-native-mcp.mjs")).href);
-  if (!manifest || JSON.parse(readFileSync(manifest, "utf8")).version !== "1.3.0") throw new Error("Unsupported native MCP SDK version");
+  if (!manifest || JSON.parse(readFileSync(manifest, "utf8")).version !== "1.4.0") throw new Error("Unsupported native MCP SDK version");
   return join(dirname(manifest), "dist");
 }
 let configuration: Promise<ConfigurationSdk> | undefined;
@@ -42,7 +42,7 @@ export function nativeMcpRuntimeSdk(): Promise<RuntimeSdk> {
   return runtime ??= (async () => {
     const dist = distribution();
     const manifest = findPackageJSON("@earendil-works/pi-mcp", pathToFileURL(join(dist, "index.js")).href);
-    if (!manifest || JSON.parse(readFileSync(manifest, "utf8")).version !== "1.3.0") throw new Error("Unsupported native MCP transport version");
+    if (!manifest || JSON.parse(readFileSync(manifest, "utf8")).version !== "1.4.0") throw new Error("Unsupported native MCP transport version");
     const [native, transports] = await Promise.all([
       nativeImport(join(dist, "extensions/mcp/runtime.js")), nativeImport(join(dirname(manifest), "dist/index.js")),
     ]);

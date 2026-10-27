@@ -58,6 +58,7 @@ export async function createNativeSessionTools(options: { agentDir: string; cwd:
     sdk!.createDefaultTransport({ ...entry, config: { ...entry.config, env: {} } }, options.cwd, undefined)]));
   const requiresTrust = entries.some(entry => entry.scope === "project" || !!entry.override);
   let retired = false;
+  const lifetime = new AbortController(), executions = new Set<Promise<void>>();
   const assertCurrent = () => {
     if (retired) throw new Error("Native session tools are retired");
     if (requiresTrust) {
@@ -75,10 +76,16 @@ export async function createNativeSessionTools(options: { agentDir: string; cwd:
     registerTool(tool) {
       if (!allowed(tool)) throw new Error("Unexpected native tool registration");
       if (tool.exposure !== "hidden") assertCurrent();
-      const execute: typeof tool.execute = (...args) => {
+      const execute: typeof tool.execute = (id, input, signal, onUpdate, context) => {
         assertCurrent();
         if (!registry || registry(tool.name) !== execute || owned.get(tool.name) !== execute) throw new Error("Native tool definition is not admitted");
-        return tool.execute(...args);
+        // SDK 1.4 can wait for capacity before starting a worker. Retirement must
+        // cancel already-admitted calls, not only refuse their next entry check.
+        const executionSignal = signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
+        const work = (async () => tool.execute(id, input, executionSignal, onUpdate, context))();
+        const settled = work.then(() => { executions.delete(settled); }, () => { executions.delete(settled); });
+        executions.add(settled);
+        return work;
       };
       pi.registerTool({ ...tool, execute });
       if (tool.exposure === "hidden") owned.delete(tool.name); else owned.set(tool.name, execute);
@@ -152,7 +159,9 @@ export async function createNativeSessionTools(options: { agentDir: string; cwd:
     selection, factories,
     enabled: selection.codeMode || hasMcp,
     bindToolRegistry(inspect: (name: string) => object | undefined) { if (registry) throw new Error("Native registry is already bound"); registry = inspect; },
-    retire() { retired = true; },
+    retire() { retired = true; lifetime.abort(new Error("Native session tools are retired")); },
+    /** Join admitted results, not worker exits; the SDK retains capacity until exit. */
+    async settleExecutions() { while (executions.size) await Promise.all([...executions]); },
     status(): NativeMcpStatus[] {
       let blocked = false; try { assertCurrent(); } catch { blocked = true; }
       const completions = !blocked ? command?.getArgumentCompletions?.("reconnect ") : null;
