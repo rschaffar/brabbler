@@ -348,7 +348,9 @@ document previews retain their existing defaults.
    attached images. Missing/switched/unmounted chat refuses and retains the preview.
    It never creates a session or submits a model turn/agent-execution command.
    Revealing the existing chat may trigger its normal read-only tool catalogue
-   request; that is not a prompt or execution. Normal chat **Send** is a second
+   request; the selected chat may also renew its existing SSE lease with a bodyless
+   same-session maintenance POST. Neither starts a model turn or agent execution.
+   Normal chat **Send** is a second
    explicit action. Saved batch status is Prepared or Drafted, never a sent/executed
    receipt. No fixes, tests, Git operations or publication are authorized by it.
 6. The prompt instructs the agent to write the batch's fixed raw JSON reply file,
