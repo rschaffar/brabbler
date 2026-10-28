@@ -40,6 +40,9 @@ on by default, portable, and explicitly bypassable at startup.
 - Stored-password setup must work on Linux and macOS. The owner does not require
   auth-store directory pinning against a hostile same-user process; this changes
   that specific threat model, not generic file/path or web-request authorization.
+- The owner has no Mac. Propose GitHub-hosted macOS CI for the artifact smoke
+  check, not an owner-machine handoff. Runner availability/architecture, permissions
+  and any cost must be checked before a separately approved run.
 - Use GitHub private vulnerability reporting, with a short `SECURITY.md` and a
   separately authorized enablement/verification gate. An additional public email
   address is not required. No automatic public advisory/release is implied.
@@ -161,10 +164,11 @@ not come from the builder's platform. Packaging success is not portability proof
 - [ ] Present the exact private publication-omission/replacement inventory, including
   former paths for omitted documents and any commit-message substitutions. Obtain
   specific approval; no blanket history rewriting or deletion of original evidence.
-- [ ] Select native macOS architecture/test access. Expected initial platforms are
-  Linux x86_64 and a specifically tested Mac architecture; no Intel/ARM support
-  claim follows from another architecture's test. A short runnable smoke check,
-  not a duplicate full Linux VM inventory, is sufficient for the Mac platform gate.
+- [ ] Select an available GitHub-hosted macOS runner and its explicit architecture;
+  verify access, permissions and any cost. Expected initial platforms are Linux
+  x86_64 and that tested Mac architecture; no Intel/ARM support claim follows from
+  another architecture's test. The owner need not supply hardware. A short artifact
+  smoke check, not a duplicate full Linux VM inventory, is the Mac platform gate.
 
 ### P1 — portable, default-on authentication
 
@@ -217,7 +221,11 @@ not come from the builder's platform. Packaging success is not portability proof
 - [ ] Run the same concise artifact smoke contract on real macOS: install/start,
   hidden TTY setup/replace, permissions, login/restart/revocation and native PTY.
   Record artifact checksum, resolved dependency versions and Node/OS/architecture.
-  Select the runner/handoff before execution; remote workflow runs need approval.
+  Use the selected GitHub-hosted macOS runner; transfer the exact isolated-build
+  tarball and verify its checksum before installation. Keep this job test-only,
+  with no deployment/publication authority. Do not upload unsanitized history just
+  to enable CI; coordinate the approved public-candidate preparation and obtain
+  approval for the exact remote workflow run.
 - [ ] Stop after the first coherent portable spike if paths/native resolution or
   dependency installation require a material redesign; present evidence/options
   before adding a container/release-runner platform. Preserve the isolated-build
@@ -287,8 +295,9 @@ not come from the builder's platform. Packaging success is not portability proof
 
 - The owner has reviewed categories, but the exact privacy-filter inventory is
   not approved. Omission alone must not leave historical copies or broken links.
-- Native macOS access/architecture remains unselected. File-based Node code is
-  not evidence for native PTY/TTY/filesystem behavior; keep the smoke check small.
+- The proposed hosted macOS runner/architecture is not yet verified; the owner
+  has no Mac. File-based Node code is not evidence for native PTY/TTY/filesystem
+  behavior. Keep the hosted check small and do not claim untested architectures.
 - Final no-auth transport/conflicts and declarative service opt-out require review;
   bypassing web login must not grant browser-SSH authentication authority.
 - Fixed modular Undici does not prove SDK bundle remediation. Escalate unresolved
