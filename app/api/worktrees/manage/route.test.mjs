@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createJiti } from "jiti";
-const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() } });
+const jiti = createJiti(import.meta.url, { fsCache: false, alias: { "@": process.cwd() } });
 const { GET } = await jiti.import("./route.ts");
 const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
 const { updatePluginSettings } = await jiti.import("../../../../lib/plugins/settings.ts");
@@ -38,8 +38,17 @@ test("inventory route is read-only, works disabled/no target, and rejects origin
 });
 test("manager permission is discardResources, independently of legacy cleanup and session overrides", async (t) => {
   const { cwd } = fixture(t);
-  updatePluginSettings(gitWorkflowManifest, "global", cwd, { enabled: true, cleanupFeature: "deny", discardResources: "allow" }, []);
-  updatePluginSettings(gitWorkflowManifest, "session", cwd, { discardResources: "deny" }, [], undefined, { id: "session-discard", cwd });
+  const saved = updatePluginSettings(gitWorkflowManifest, "global", cwd, { enabled: true, cleanupFeature: "deny", discardResources: "allow" }, []);
+  assert.throws(() => updatePluginSettings(gitWorkflowManifest, "session", cwd, { discardResources: "deny" }, [], undefined,
+    { id: "session-discard", cwd }), /does not support session overrides/);
+  // Preserve the original native ignored-session contrast using valid legacy
+  // storage: new writes are now refused, but old values must remain readable.
+  const settingsPath = join(process.env.PI_CODING_AGENT_DIR, "brabbler", "plugins", gitWorkflowManifest.id, "settings.json");
+  const legacy = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.notEqual(saved.project, null);
+  legacy.sessions ??= {};
+  legacy.sessions["session-discard"] = { project: saved.project, values: { discardResources: "deny" } };
+  writeFileSync(settingsPath, JSON.stringify(legacy));
   let inventory = await (await request({ cwd })).json();
   assert.equal(inventory.cleanup.enabled, true); assert.equal(inventory.cleanup.permission, "allow");
   updatePluginSettings(gitWorkflowManifest, "project", cwd, { cleanupFeature: "allow", discardResources: "deny" }, []);

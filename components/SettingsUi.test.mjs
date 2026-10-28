@@ -568,22 +568,60 @@ test('actual WebVersionNotice owns original checks across legacy locale inputs, 
 
 // SOURCE-ONLY proposal: append to the EXISTING SettingsUi.test.mjs.
 // Uses its existing settingsFixture/native fence; no second settings platform.
+async function workflowSettingsFixture(t) {
+  let saveRealm;
+  const f = await settingsFixture(t, {
+    capabilities(api) { saveRealm = api.saveRealm; },
+    loadGraph: async () => {
+      // Import only after the existing fixture installs its fences and collectors.
+      const { createJiti } = await import('jiti');
+      const jiti = createJiti(import.meta.url, { fsCache: false, jsx: { runtime: 'automatic' }, tsconfigPaths: true });
+      const i18n = await jiti.import('../hooks/useI18n.tsx');
+      const ui = await jiti.import('./SettingsUi.tsx');
+      const plugin = await jiti.import('./plugin-ui/BundledPluginSettings.tsx');
+      const policyData = await jiti.import('../plugins/git-workflow/manifest.ts');
+      const { PluginsConfig } = await jiti.import('./PluginsConfig.tsx');
+      const { SettingsPanel } = await jiti.import('./SettingsPanel.tsx');
+      const { sessionLaunchManifest } = await jiti.import('../plugins/session-launch/manifest.ts');
+      return { I18nProvider: i18n.I18nProvider, SettingsWorkContext: ui.SettingsWorkContext,
+        WorkflowSettings: plugin.BundledPluginSettings, PluginsConfig, SettingsPanel, sessionLaunchManifest, ...policyData };
+    },
+  });
+  const setup = window => {
+    // Unsupported APIs only: no native modal, inertness, geometry or Tab claim.
+    const proto = window.HTMLDialogElement.prototype;
+    if (typeof proto.showModal !== 'function') saveRealm(proto, 'showModal', function () { this.open = true; });
+    if (typeof proto.close !== 'function') saveRealm(proto, 'close', function () { this.open = false; });
+    if (typeof window.HTMLElement.prototype.scrollIntoView !== 'function') saveRealm(window.HTMLElement.prototype, 'scrollIntoView', function () {});
+  };
+  return { f, c: await f.load(), setup };
+}
+const matrixCell = (f, key, scope) => f.node(`[data-setting-cell="${key}:${scope}"]`);
+const matrixDialog = f => f.node('.plugin-matrix-dialog[open]');
+async function matrixDraft(f, key, scope, value, options) {
+  await f.click(matrixCell(f, key, scope), options);
+  await f.click(matrixDialog(f).querySelector('input[value="custom"]'), options);
+  if (value !== undefined) await f.input(matrixDialog(f).querySelector('[aria-label="Value"]'), value, options);
+}
+async function matrixPreset(f, scope, preset) {
+  const before = f.requests.length;
+  await f.click(f.button('Workflow presets'));
+  await f.input(matrixDialog(f).querySelector('[aria-label="Save workflow choices to"]'), scope);
+  await f.input(matrixDialog(f).querySelector('[aria-label="Workflow preset"]'), preset);
+  assert.equal(f.requests.length, before, 'choosing a preset and destination does not write');
+  assert.match(matrixDialog(f).textContent, /ask_user/);
+}
+function workflowSnapshot(manifest, sessionId = '55555555-5555-4555-8555-555555555555', cwd = '/repo') {
+  return { pluginId: manifest.id, schemaVersion: manifest.schemaVersion, project: cwd,
+    sessionId, sessionProject: cwd, sessionApplicable: true, sessionOverrides: {}, enabled: true,
+    global: { enabled: true, targetBranch: 'target' }, overrides: {},
+    effective: { ...Object.fromEntries(Object.entries(manifest.fields).map(([key, field]) => [key, structuredClone(field.default)])), enabled: true, targetBranch: 'target' },
+    sources: { ...Object.fromEntries(Object.keys(manifest.fields).map(key => [key, 'builtin'])), enabled: 'global', targetBranch: 'global' } };
+}
+
 test('actual bundled Git Workflow controls preserve scope bodies, effective sources and permission-neutral presets', async t => {
   const parentWork = [];
-  const f = await settingsFixture(t, { loadGraph: async () => {
-    // This callback is invoked only AFTER settingsFixture installs its fences,
-    // independent collectors, cleanup registration and exact HTTP capability.
-    const { createJiti } = await import('jiti');
-    const jiti = createJiti(import.meta.url, { fsCache: false, jsx: { runtime: 'automatic' }, tsconfigPaths: true });
-    const i18n = await jiti.import('../hooks/useI18n.tsx');
-    const ui = await jiti.import('./SettingsUi.tsx');
-    const plugin = await jiti.import('./plugin-ui/BundledPluginSettings.tsx');
-    const policyData = await jiti.import('../plugins/git-workflow/manifest.ts');
-    return { I18nProvider: i18n.I18nProvider, SettingsWorkContext: ui.SettingsWorkContext,
-      // Local alias for the REAL existing component, not a substitute renderer.
-      WorkflowSettings: plugin.BundledPluginSettings, ...policyData };
-  } });
-  const { WorkflowSettings, gitWorkflowManifest: manifest, workflowPresets } = await f.load();
+  const { f, c: { WorkflowSettings, gitWorkflowManifest: manifest, workflowPresets }, setup } = await workflowSettingsFixture(t);
   // Existing lower-owner identities: /repo HTTP capability and policy.test's
   // session UUID. They are NOT substitutes for a native browser checkout/handle.
   const cwd = '/repo', sessionId = '55555555-5555-4555-8555-555555555555';
@@ -623,11 +661,13 @@ test('actual bundled Git Workflow controls preserve scope bodies, effective sour
   f.route('PATCH', '/api/plugins/bundled', { body: () => expectedBody, reply: () => reply });
   const element = initialScope => h(WorkflowSettings, { cwd, id: 'git-workflow', sessionId, initialScope,
     onWork: work => { parentWork.push(work); } });
-  await f.mount(element('global'));
-  const scope = () => f.node('select[aria-label="Plugin settings scope"]');
-  const preset = () => f.node('select[aria-label="Workflow preset"]');
-  const commit = () => f.node('#plugin-commit');
-  const fieldText = key => f.node(`#plugin-${key}`).parentElement.textContent;
+  await f.mount(element('global'), { setup });
+  const commit = scope => matrixCell(f, 'commit', scope);
+  const fieldText = key => f.node(`[data-setting-row="${key}"]`).textContent;
+  assert.deepEqual([...f.view.container.querySelectorAll('[data-scope-heading]')].map(node => node.textContent),
+    ['All repositoriesShared defaults', 'repoRepository override', 'This sessionOwn repository only']);
+  assert.equal(f.view.container.querySelector('select[aria-label="Plugin settings scope"]') === null, true);
+  assert.equal(f.view.container.querySelectorAll('[role="columnheader"]').length, 4, 'one field heading plus exactly three scopes, no Effective scope');
   const save = async (expected, next, action) => {
     expectedBody = expected; reply = { data: { settings: next } };
     const from = f.requests.length, workFrom = f.works.length;
@@ -643,34 +683,37 @@ test('actual bundled Git Workflow controls preserve scope bodies, effective sour
     snapshot = next;
   };
   await save(body('global', { enabled: true }), enabled, () => f.click('#plugin-enabled'));
-  assert.match(fieldText('enabled'), /Effective: true · Source: global/);
-  await f.input(scope(), 'project');
-  await save(body('project', { commit: 'deny' }), projectDeny, () => f.input(commit(), 'deny'));
-  assert.match(fieldText('commit'), /Effective: "deny" · Source: project/);
-  await save(body('project', {}, ['commit']), enabled,
-    () => f.click(f.button('Use global default', commit().parentElement)));
-  assert.match(fieldText('commit'), /Effective: "ask" · Source: builtin/);
-  await f.input(scope(), 'session');
-  await save(body('session', { commit: 'allow' }), sessionAllow, () => f.input(commit(), 'allow'));
-  assert.match(fieldText('commit'), /Effective: "allow" · Source: session/);
-  await f.input(preset(), 'current-branch');
-  await save(body('session', currentValues), currentBranch, () => f.click(f.button('Apply workflow preset')));
-  assert.equal(f.node('#plugin-workspace').value, 'current-branch');
-  assert.match(fieldText('workspace'), /Effective: "current-branch" · Source: session/);
-  assert.equal(commit().value, 'allow', 'preset does not change operation permission');
-  assert.match(fieldText('commit'), /Effective: "allow" · Source: session/);
+  assert.equal(f.node('#plugin-enabled').checked, true);
+  assert.match(f.node('#plugin-enabled').parentElement.textContent, /App-wide only · Saved here/);
+  await matrixDraft(f, 'commit', 'project', 'deny');
+  await save(body('project', { commit: 'deny' }), projectDeny, () => f.click(f.button('Save changes', matrixDialog(f))));
+  assert.match(commit('project').textContent, /BlockSaved here/);
+  assert.equal(commit('project').dataset.winning, 'true');
+  await f.click(commit('project'));
+  await f.click(matrixDialog(f).querySelector('input[value="follow"]'));
+  await save(body('project', {}, ['commit']), enabled, () => f.click(f.button('Save changes', matrixDialog(f))));
+  assert.match(commit('project').textContent, /↳ Built-in fallbackRequire approval/);
+  assert.equal(commit('global').dataset.winning, 'true');
+  await matrixDraft(f, 'commit', 'session', 'allow');
+  await save(body('session', { commit: 'allow' }), sessionAllow, () => f.click(f.button('Save changes', matrixDialog(f))));
+  assert.match(commit('session').textContent, /Without approvalSaved here/);
+  assert.equal(commit('session').dataset.winning, 'true');
+  await matrixPreset(f, 'session', 'current-branch');
+  await save(body('session', currentValues), currentBranch, () => f.click(f.button('Apply workflow preset', matrixDialog(f))));
+  assert.match(matrixCell(f, 'workspace', 'session').textContent, /Current branchSaved here/);
+  assert.equal(matrixCell(f, 'workspace', 'session').dataset.winning, 'true');
+  assert.match(commit('session').textContent, /Without approvalSaved here/);
   const beforeProjectEditor = f.requests.length;
-  await f.input(scope(), 'project');
-  assert.equal(commit().value, 'ask', 'project editor never displays masking session Allow');
-  assert.match(fieldText('commit'), /Effective: "allow" · Source: session/);
-  assert.equal(f.requests.length, beforeProjectEditor, 'scope switch is not a settings write');
-  await f.input(scope(), 'session');
-  await f.input(preset(), 'always-ask');
-  await save(body('session', askValues), alwaysAsk, () => f.click(f.button('Apply workflow preset')));
-  assert.equal(f.node('#plugin-workspace').value, 'ask');
-  assert.equal(f.node('#plugin-workspace option:checked').textContent, 'Ask via ask_user');
-  assert.equal(commit().value, 'allow');
-  assert.match(fieldText('commit'), /Effective: "allow" · Source: session/);
+  assert.match(commit('project').textContent, /↳ Built-in fallbackRequire approval/);
+  await f.click(commit('project'));
+  assert.equal(matrixDialog(f).querySelector('[aria-label="Value"]').value, 'ask', 'project editor never displays masking session Allow');
+  assert.match(matrixDialog(f).textContent, /narrower override takes priority/);
+  await f.click(f.button('Cancel', matrixDialog(f)));
+  assert.equal(f.requests.length, beforeProjectEditor, 'opening and cancelling another scope is not a settings write');
+  await matrixPreset(f, 'session', 'always-ask');
+  await save(body('session', askValues), alwaysAsk, () => f.click(f.button('Apply workflow preset', matrixDialog(f))));
+  assert.match(matrixCell(f, 'workspace', 'session').textContent, /Ask each timeSaved here/);
+  assert.match(commit('session').textContent, /Without approvalSaved here/);
   assert.equal(snapshot.effective.targetBranch, 'target');
   assert.equal(snapshot.sources.targetBranch, 'global');
   assert.deepEqual(snapshot.effective.commitChecks, pluginSettings.effective.commitChecks);
@@ -682,15 +725,19 @@ test('actual bundled Git Workflow controls preserve scope bodies, effective sour
   expectedBody = body('session', {}, ['commit']);
   reply = { gate: resetGate, data: { settings: finalSettings } };
   const from = f.requests.length, workFrom = f.works.length;
-  await f.click(f.button('Use project default', commit().parentElement), { settle: false });
+  await f.click(commit('session'));
+  await f.click(matrixDialog(f).querySelector('input[value="follow"]'));
+  await f.click(f.button('Save changes', matrixDialog(f)), { settle: false });
   assert.deepEqual(f.requests.slice(from).map(request => request.body), [expectedBody]);
   const saves = f.works.slice(workFrom).filter(work => work.label === 'plugins.bundledSettings.save');
   assert.equal(saves.length, 1);
   const original = saves[0].promise;
   assert.equal(parentWork.includes(original), true);
   assert.equal(saves[0].settled, false);
-  assert.equal(commit().disabled, true);
-  assert.match(fieldText('commit'), /Effective: "ask" · Source: builtin/);
+  assert.equal(commit('session').disabled, true);
+  assert.equal(commit('session').dataset.saved, 'false');
+  assert.equal(commit('global').dataset.winning, 'true');
+  assert.match(fieldText('commit'), /Require approval/);
   await f.rerender(null);
   assert.equal(saves[0].settled, false, 'unmount is not save completion');
   await f.deliver(resetGate, 'plugins.bundledSettings.save');
@@ -700,10 +747,304 @@ test('actual bundled Git Workflow controls preserve scope bodies, effective sour
   snapshot = finalSettings;
   await f.rerender(element('session'));
   await f.commit();
-  assert.equal(scope().value, 'session');
-  assert.equal(commit().value, 'ask');
-  assert.match(fieldText('commit'), /Effective: "ask" · Source: builtin/);
-  assert.equal(f.node('#plugin-workspace').value, 'ask');
+  assert.equal(commit('session').dataset.saved, 'false');
+  assert.match(commit('session').textContent, /↳ Built-in fallbackRequire approval/);
+  assert.equal(commit('global').dataset.winning, 'true');
+  assert.match(matrixCell(f, 'workspace', 'session').textContent, /Ask each timeSaved here/);
   assert.equal(f.requests.filter(request => request.method === 'PATCH').length, 7);
   await f.cleanup();
+});
+
+test('actual matrix distinguishes pins, null, empty checks, ignored legacy values and unavailable scopes', async t => {
+  const { f, c: { WorkflowSettings, gitWorkflowManifest: manifest }, setup } = await workflowSettingsFixture(t);
+  const cwd = '/repo', sessionId = '55555555-5555-4555-8555-555555555555';
+  let snapshot = workflowSnapshot(manifest), query = { cwd, sessionId }, expectedBody, reply, outerCancels = 0;
+  snapshot.global.commit = 'ask';
+  snapshot.global.commitChecks = [{ name: 'Tests', command: 'never-executed --fixture' }];
+  snapshot.overrides.merge = 'ask';
+  snapshot.sessionOverrides = { commit: 'allow', discardResources: 'allow' };
+  snapshot.effective = { ...snapshot.effective, commit: 'allow', commitChecks: snapshot.global.commitChecks };
+  snapshot.sources = { ...snapshot.sources, commit: 'session', merge: 'project', commitChecks: 'global' };
+  f.route('GET', '/api/plugins/bundled', { query: () => query, reply: () => ({ data: { plugins: [{ manifest, settings: snapshot }] } }) });
+  f.route('PATCH', '/api/plugins/bundled', { body: () => expectedBody, reply: () => reply });
+  const element = (props = {}) => h('dialog', { open: true, onCancel() { outerCancels++; } },
+    h(WorkflowSettings, { cwd, id: manifest.id, sessionId, initialScope: 'project', initialField: 'targetBranch', ...props }));
+  await f.mount(element(), { setup });
+  assert.equal(f.view.window.document.activeElement.id, 'plugin-targetBranch-project', 'manager field link targets its own repository cell');
+  const beforeOpen = f.requests.length;
+  await f.click(matrixCell(f, 'commit', 'project'));
+  assert.equal(matrixDialog(f).querySelector('input[value="follow"]').checked, true);
+  assert.equal(f.button('Save changes', matrixDialog(f)).disabled, true, 'untouched inheritance cannot accidentally pin');
+  await act(async () => { matrixDialog(f).dispatchEvent(new f.view.window.Event('cancel', { cancelable: true })); });
+  f.check();
+  assert.equal(outerCancels, 0, 'inner cancel must not reach an enclosing manager dialog');
+  assert.equal(f.view.container.querySelector('.plugin-matrix-dialog') === null, true);
+  assert.equal(f.requests.length, beforeOpen);
+  assert.equal(f.view.window.document.activeElement === matrixCell(f, 'commit', 'project'), true);
+  const save = async (scope, set, reset, next) => {
+    expectedBody = { pluginId: manifest.id, cwd, sessionId, scope, set, reset };
+    reply = { data: { settings: next } };
+    await f.click(f.button('Save changes', matrixDialog(f)));
+    snapshot = next;
+  };
+  await matrixDraft(f, 'commit', 'project');
+  assert.match(matrixDialog(f).textContent, /Saving pins this value here/);
+  await save('project', { commit: 'ask' }, [], { ...snapshot, overrides: { ...snapshot.overrides, commit: 'ask' } });
+  assert.match(matrixCell(f, 'commit', 'project').textContent, /Same value, pinned/);
+  assert.equal(matrixCell(f, 'commit', 'session').dataset.winning, 'true');
+  await matrixDraft(f, 'targetBranch', 'project');
+  await f.click(matrixDialog(f).querySelector('input[type="checkbox"]'));
+  assert.match(matrixDialog(f).textContent, /does not answer that workflow question/);
+  await save('project', { targetBranch: null }, [], { ...snapshot, overrides: { ...snapshot.overrides, targetBranch: null },
+    effective: { ...snapshot.effective, targetBranch: null }, sources: { ...snapshot.sources, targetBranch: 'project' } });
+  assert.match(matrixCell(f, 'targetBranch', 'project').textContent, /No saved target/);
+  assert.equal(matrixCell(f, 'targetBranch', 'project').dataset.saved, 'true');
+  await matrixDraft(f, 'commitChecks', 'project');
+  await f.click(f.button('No checks ([])', matrixDialog(f)));
+  assert.equal(matrixDialog(f).querySelector('textarea').value, '[]');
+  await save('project', { commitChecks: [] }, [], { ...snapshot, overrides: { ...snapshot.overrides, commitChecks: [] },
+    effective: { ...snapshot.effective, commitChecks: [] }, sources: { ...snapshot.sources, commitChecks: 'project' } });
+  assert.match(matrixCell(f, 'commitChecks', 'project').textContent, /No checksSaved here/);
+  expectedBody = { pluginId: manifest.id, cwd, sessionId, scope: 'global', set: { enabled: false }, reset: [] };
+  const disabled = { ...snapshot, enabled: false, global: { ...snapshot.global, enabled: false }, effective: { ...snapshot.effective, enabled: false } };
+  reply = { data: { settings: disabled } };
+  await f.click('#plugin-enabled'); snapshot = disabled;
+  assert.equal(f.node('#plugin-enabled').checked, false);
+  assert.match(f.node('#plugin-enabled').parentElement.textContent, /Saved here/);
+  await f.click(f.node('.plugin-matrix-savedFilter input'));
+  await f.click(matrixCell(f, 'merge', 'project'));
+  await f.click(matrixDialog(f).querySelector('input[value="follow"]'));
+  const withoutMerge = { ...snapshot.overrides }; delete withoutMerge.merge;
+  await save('project', {}, ['merge'], { ...snapshot, overrides: withoutMerge, sources: { ...snapshot.sources, merge: 'builtin' } });
+  assert.equal(f.view.container.querySelector('[data-setting-row="merge"]') === null, true);
+  assert.equal(f.view.window.document.activeElement.type, 'search', 'filtered-away origin falls back to persistent search');
+  const discard = matrixCell(f, 'discardResources', 'session');
+  assert.equal(discard.tagName, 'DIV');
+  assert.match(discard.textContent, /Legacy override ignored/);
+  await f.click(f.button('Clear ignored value', discard));
+  assert.match(matrixDialog(f).textContent, /Ignored saved value: Allow · always confirm/);
+  expectedBody = { pluginId: manifest.id, cwd, sessionId, scope: 'session', set: {}, reset: ['discardResources'] };
+  const withoutDiscard = { ...snapshot.sessionOverrides }; delete withoutDiscard.discardResources;
+  reply = { data: { settings: { ...snapshot, sessionOverrides: withoutDiscard } } };
+  await f.click(f.button('Clear ignored value', matrixDialog(f)));
+  snapshot = { ...snapshot, sessionOverrides: withoutDiscard };
+  assert.equal(f.view.window.document.activeElement.type, 'search');
+  await f.click(f.node('.plugin-matrix-savedFilter input'));
+  const writes = f.requests.filter(request => request.method === 'PATCH').length;
+  query = { cwd };
+  snapshot = { ...snapshot, sessionId: undefined, sessionOverrides: {}, sessionApplicable: false };
+  await f.rerender(element({ sessionId: null })); await f.commit();
+  assert.match(f.text(), /No session selected/);
+  assert.equal(matrixCell(f, 'commit', 'session').tagName, 'DIV');
+  assert.equal(matrixCell(f, 'commit', 'global').tagName, 'BUTTON');
+  query = { cwd: '/foreign', sessionId };
+  snapshot = { ...snapshot, project: '/foreign', sessionId, sessionProject: cwd, sessionApplicable: false };
+  await f.rerender(element({ cwd: '/foreign' })); await f.commit();
+  assert.match(f.text(), /belongs to another repository/);
+  await f.click(matrixCell(f, 'commit', 'global'));
+  assert.match(matrixDialog(f).textContent, /cannot determine the session’s result in its own repository/);
+  await f.click(f.button('Cancel', matrixDialog(f)));
+  query = { cwd: '/unresolved', sessionId };
+  snapshot = { ...snapshot, project: null, sessionProject: null };
+  await f.rerender(element({ cwd: '/unresolved' })); await f.commit();
+  assert.match(f.text(), /own repository could not be resolved/);
+  assert.doesNotMatch(f.text(), /belongs to another repository/);
+  assert.equal(matrixCell(f, 'commit', 'project').tagName, 'DIV');
+  assert.equal(f.requests.filter(request => request.method === 'PATCH').length, writes, 'availability changes never write');
+  assert.equal(new Set([...f.view.container.querySelectorAll('[id]')].map(node => node.id)).size,
+    f.view.container.querySelectorAll('[id]').length, 'field/scope ids stay unique');
+});
+
+test('actual matrix retains drafts and rolls provenance back after complete HTTP, fetch and body failures', async t => {
+  for (const kind of ['http', 'fetch', 'body']) await t.test(kind, async st => {
+    const { f, c: { WorkflowSettings, gitWorkflowManifest: manifest }, setup } = await workflowSettingsFixture(st);
+    const snapshot = workflowSnapshot(manifest), cwd = '/repo', sessionId = snapshot.sessionId, parentWork = [];
+    const failure = new Error(`controlled ${kind} save failure`);
+    let reply = kind === 'http' ? { status: 400, data: { error: failure.message } }
+      : kind === 'fetch' ? { fetchError: failure } : { bodyError: failure };
+    const expected = { pluginId: manifest.id, cwd, sessionId, scope: 'project', set: { commit: 'deny' }, reset: [] };
+    f.route('GET', '/api/plugins/bundled', { query: { cwd, sessionId }, reply: { data: { plugins: [{ manifest, settings: snapshot }] } } });
+    f.route('PATCH', '/api/plugins/bundled', { body: expected, reply: () => reply });
+    await f.mount(h(WorkflowSettings, { cwd, id: manifest.id, sessionId, onWork: work => parentWork.push(work) }), { setup });
+    await matrixDraft(f, 'commit', 'project', 'deny');
+    await f.click(f.button('Save changes', matrixDialog(f)));
+    const original = f.works.filter(work => work.label === 'plugins.bundledSettings.save').at(-1);
+    assert.equal(parentWork.includes(original.promise), true);
+    assert.equal(original.settled, true, 'error body, catch and finally all settled');
+    assert.equal((await original.promise).ok, false);
+    assert.equal(matrixDialog(f).querySelector('[aria-label="Value"]').value, 'deny');
+    assert.match(matrixDialog(f).textContent, /Your draft is retained/);
+    assert.match(matrixDialog(f).textContent, new RegExp(`controlled ${kind} save failure`));
+    assert.equal(matrixCell(f, 'commit', 'project').dataset.saved, 'false');
+    assert.equal(matrixCell(f, 'commit', 'global').dataset.winning, 'true');
+    assert.equal(f.button('Save changes', matrixDialog(f)).disabled, false);
+    reply = { data: { settings: { ...snapshot, overrides: { commit: 'deny' },
+      effective: { ...snapshot.effective, commit: 'deny' }, sources: { ...snapshot.sources, commit: 'project' } } } };
+    const saveButton = f.button('Save changes', matrixDialog(f));
+    await act(async () => {
+      saveButton.dispatchEvent(new f.view.window.MouseEvent('click', { bubbles: true }));
+      saveButton.dispatchEvent(new f.view.window.MouseEvent('click', { bubbles: true }));
+      await f.join('plugins.bundledSettings.save');
+    });
+    f.check();
+    assert.equal(f.requests.filter(request => request.method === 'PATCH').length, 2, 'one failure and one retry; duplicate admission is fenced');
+    assert.equal(f.view.container.querySelector('.plugin-matrix-dialog') === null, true);
+    assert.equal(matrixCell(f, 'commit', 'project').dataset.winning, 'true');
+  });
+});
+
+test('actual keyed settings fence obsolete load/save success and error across session/cwd A-B-A reuse', async t => {
+  for (const operation of ['load', 'save']) for (const identity of ['session', 'cwd']) for (const outcome of ['success', 'error']) {
+    await t.test(`${operation} ${identity} ${outcome}`, async st => {
+      const { f, c: { WorkflowSettings, gitWorkflowManifest: manifest }, setup } = await workflowSettingsFixture(st);
+      const a = { cwd: '/repo', sessionId: '55555555-5555-4555-8555-555555555555' };
+      const b = identity === 'session' ? { ...a, sessionId: '66666666-6666-4666-8666-666666666666' } : { ...a, cwd: '/other' };
+      const oldSnapshot = workflowSnapshot(manifest, a.sessionId, a.cwd);
+      const currentSnapshot = { ...workflowSnapshot(manifest, a.sessionId, a.cwd), global: { ...oldSnapshot.global, commit: 'deny' },
+        effective: { ...oldSnapshot.effective, commit: 'deny' }, sources: { ...oldSnapshot.sources, commit: 'global' } };
+      const oldGate = f.gate('obsolete A complete body'), currentGate = f.gate('current identity complete read');
+      let phase = 'old', context = a, expectedBody, patchReply;
+      const oldReply = outcome === 'error' ? { gate: oldGate, status: 503, data: { error: 'obsolete A error' } }
+        : { gate: oldGate, data: { settings: { ...oldSnapshot, overrides: { commit: 'allow' } }, plugins: [{ manifest, settings: oldSnapshot }] } };
+      f.route('GET', '/api/plugins/bundled', { query: () => context, reply: () => phase === 'old'
+        ? operation === 'load' ? oldReply : { data: { plugins: [{ manifest, settings: oldSnapshot }] } }
+        : { gate: currentGate, data: { plugins: [{ manifest, settings: { ...currentSnapshot, project: context.cwd,
+          sessionId: context.sessionId, sessionProject: identity === 'cwd' ? a.cwd : context.cwd, sessionApplicable: context.cwd === a.cwd } }] } } });
+      f.route('PATCH', '/api/plugins/bundled', { body: () => expectedBody, reply: () => patchReply });
+      const element = value => h(WorkflowSettings, { ...value, id: manifest.id });
+      await f.mount(element(a), { setup, settle: operation !== 'load' });
+      let obsolete;
+      if (operation === 'load') obsolete = f.works.filter(work => work.label === 'plugins.bundledSettings.load');
+      else {
+        await matrixDraft(f, 'commit', 'project', 'allow');
+        expectedBody = { pluginId: manifest.id, ...a, scope: 'project', set: { commit: 'allow' }, reset: [] };
+        patchReply = oldReply;
+        await f.click(f.button('Save changes', matrixDialog(f)), { settle: false });
+        obsolete = [f.works.filter(work => work.label === 'plugins.bundledSettings.save').at(-1)];
+      }
+      assert.equal(obsolete.every(work => !work.settled), true);
+      const loadCurrent = async value => {
+        phase = 'current'; context = value;
+        const from = f.works.length;
+        await f.rerender(element(value));
+        const reads = f.works.slice(from).filter(work => work.label === 'plugins.bundledSettings.load');
+        assert.equal(reads.length > 0, true);
+        await act(async () => { currentGate.release(); await Promise.all(reads.map(work => work.promise)); });
+        f.check();
+      };
+      await loadCurrent(b);
+      assert.match(matrixCell(f, 'commit', 'global').textContent, /Block/);
+      assert.equal(f.view.container.querySelector('.plugin-matrix-dialog') === null, true, 'old draft does not cross identity');
+      await loadCurrent(a); // Same A tuple, new receiving instance—not the old request owner.
+      await matrixDraft(f, 'commit', 'project', 'ask', { settle: false });
+      expectedBody = { pluginId: manifest.id, ...a, scope: 'project', set: { commit: 'ask' }, reset: [] };
+      const errorGate = f.gate('current A2 rejected save');
+      patchReply = { gate: errorGate, status: 400, data: { error: 'current A2 save error' } };
+      await f.click(f.button('Save changes', matrixDialog(f)), { settle: false });
+      const currentSave = f.works.filter(work => work.label === 'plugins.bundledSettings.save').at(-1);
+      await act(async () => { errorGate.release(); await currentSave.promise; });
+      f.check();
+      assert.match(matrixDialog(f).textContent, /current A2 save error/);
+      await act(async () => { oldGate.release(); await Promise.all(obsolete.map(work => work.promise)); });
+      f.check();
+      assert.equal(obsolete.every(work => work.settled), true);
+      assert.match(matrixDialog(f).textContent, /current A2 save error/);
+      assert.doesNotMatch(f.text(), /obsolete A error/);
+      assert.equal(matrixDialog(f).querySelector('[aria-label="Value"]').value, 'ask');
+      assert.equal(f.button('Save changes', matrixDialog(f)).disabled, false, 'obsolete finally cannot disturb current retryability');
+      assert.equal(matrixCell(f, 'commit', 'global').dataset.winning, 'true');
+      assert.match(matrixCell(f, 'commit', 'global').textContent, /Block/);
+      assert.equal(matrixCell(f, 'commit', 'project').dataset.saved, 'false');
+    });
+  }
+});
+
+test('actual SettingsPanel/PluginsConfig preserves inner Escape, matrix opt-in and Session Launch legacy immediate save', async t => {
+  const { f, c: { SettingsPanel, gitWorkflowManifest: manifest, sessionLaunchManifest: launch }, setup } = await workflowSettingsFixture(t);
+  const cwd = '/repo', sessionId = '55555555-5555-4555-8555-555555555555';
+  const git = workflowSnapshot(manifest), initialLaunch = { pluginId: launch.id, schemaVersion: 1, project: cwd,
+    enabled: true, sessionId, sessionProject: cwd, sessionApplicable: true, sessionOverrides: {}, global: {}, overrides: {},
+    effective: { enabled: true, launch: 'ask' }, sources: { enabled: 'builtin', launch: 'builtin' } };
+  let launchSettings = initialLaunch;
+  f.route('GET', '/api/plugins', { query: { cwd }, reply: { data: { packages: [], standaloneExtensions: [], diagnostics: [],
+    totals: { extensions: 0, skills: 0, prompts: 0, themes: 0 } } } });
+  f.route('GET', '/api/plugins/bundled', { query: { cwd, sessionId }, reply: () => ({ data: { plugins: [
+    { manifest, settings: git }, { manifest: launch, settings: launchSettings }] } }) });
+  const expected = { pluginId: launch.id, cwd, sessionId, scope: 'session', set: { launch: 'allow' }, reset: [] };
+  f.route('PATCH', '/api/plugins/bundled', { body: expected, reply: () => {
+    launchSettings = { ...initialLaunch, sessionOverrides: { launch: 'allow' }, effective: { enabled: true, launch: 'allow' }, sources: { enabled: 'builtin', launch: 'session' } };
+    return { data: { settings: launchSettings } };
+  } });
+  let outerCloses = 0;
+  await f.mount(h(SettingsPanel, { cwd, sessionId, initialSection: 'plugins', initialPluginScope: 'session', onClose() { outerCloses++; },
+    onSessionReloaded() {}, trustStatus: null, onManageTrust() {}, quoteSelectionEnabled: false, onQuoteSelectionChange() {},
+    sessions: [], privacy: {}, sshController: {} }), { setup }); // Other sections are genuinely unmounted, not success doubles.
+  await f.click(f.button('Git Workflow'));
+  assert.equal(f.view.container.querySelectorAll('[data-scope-heading]').length, 3);
+  await f.click(matrixCell(f, 'commit', 'session'));
+  await act(async () => {
+    const dialog = matrixDialog(f);
+    const escape = new f.view.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    dialog.dispatchEvent(escape);
+    assert.equal(escape.defaultPrevented, false, 'idle Escape retains native close-watcher handling');
+    // JSDOM has no native close watcher: supply only its cancel event.
+    dialog.dispatchEvent(new f.view.window.Event('cancel', { cancelable: true }));
+  });
+  f.check();
+  assert.equal(outerCloses, 0);
+  assert.equal(f.view.container.querySelector('.plugin-matrix-dialog') === null, true);
+  assert.equal(f.view.container.querySelectorAll('.settings-dialog-backdrop').length, 1);
+  await f.click(f.button('Session Launch'));
+  assert.equal(f.view.container.querySelector('[data-plugin-settings-matrix]') === null, true);
+  assert.equal(f.node('[aria-label="Plugin settings scope"]').value, 'session');
+  const before = f.requests.length;
+  await f.input('#plugin-launch', 'allow');
+  const requests = f.requests.slice(before);
+  assert.deepEqual(requests.filter(request => request.method === 'PATCH').map(request => request.body), [expected]);
+  assert.equal(requests.filter(request => request.method === 'GET').every(request => request.path === '/api/plugins/bundled'), true);
+  assert.match(f.node('#plugin-launch').parentElement.textContent, /Effective: "allow" · Source: session/);
+  assert.equal(Boolean(f.button('Use project default', f.node('#plugin-launch').parentElement)), true);
+  assert.equal(f.view.container.querySelectorAll('.config-sidebar-item[aria-current="page"]').length, 1);
+});
+
+test('actual workflow preset preview follows a non-session destination while showing the masking session result', async t => {
+  const { f, c: { WorkflowSettings, gitWorkflowManifest: manifest }, setup } = await workflowSettingsFixture(t);
+  const cwd = '/repo', snapshot = workflowSnapshot(manifest), sessionId = snapshot.sessionId;
+  snapshot.global = { ...snapshot.global, workspace: 'worktree', commit: 'allow' };
+  snapshot.sessionOverrides = { workspace: 'current-branch' };
+  snapshot.effective = { ...snapshot.effective, workspace: 'current-branch', commit: 'allow' };
+  snapshot.sources = { ...snapshot.sources, workspace: 'session', commit: 'global' };
+  const askValues = { workspace: 'ask', completion: 'ask', targetSelection: 'ask', methodSelection: 'ask', cleanupWorktree: 'ask', cleanupBranch: 'ask', cleanupArtifacts: 'ask' };
+  const next = { ...snapshot, overrides: { ...askValues }, effective: { ...snapshot.effective, ...askValues, workspace: 'current-branch' },
+    sources: { ...snapshot.sources, ...Object.fromEntries(Object.keys(askValues).map(key => [key, 'project'])), workspace: 'session' } };
+  const expected = { pluginId: manifest.id, cwd, sessionId, scope: 'project', set: askValues, reset: [] };
+  f.route('GET', '/api/plugins/bundled', { query: { cwd, sessionId }, reply: { data: { plugins: [{ manifest, settings: snapshot }] } } });
+  f.route('PATCH', '/api/plugins/bundled', { body: expected, reply: { data: { settings: next } } });
+  await f.mount(h(WorkflowSettings, { cwd, id: manifest.id, sessionId }), { setup });
+  await matrixPreset(f, 'project', 'always-ask');
+  const preview = () => [...matrixDialog(f).querySelectorAll('.plugin-matrix-presetPreview > div')].find(node => node.querySelector('h3').textContent === 'Working location');
+  assert.equal(matrixDialog(f).querySelectorAll('.plugin-matrix-presetPreview > div').length, 7);
+  const destination = () => preview().querySelector('.plugin-matrix-previewFacts > div:first-child');
+  const resolved = () => preview().querySelector('.plugin-matrix-previewFacts > div:last-child');
+  assert.equal(destination().querySelector('dt').textContent, 'At repo');
+  assert.match(destination().querySelector('dd').textContent, /^Ask each time\s+Saved explicitly$/);
+  assert.match(resolved().textContent, /Resolved for this sessionCurrent branchFrom This session/);
+  assert.match(preview().textContent, /narrower override takes priority/);
+  await f.input(matrixDialog(f).querySelector('[aria-label="Save workflow choices to"]'), 'global');
+  assert.equal(destination().querySelector('dt').textContent, 'At All repositories');
+  assert.match(resolved().textContent, /Current branchFrom This session/);
+  await f.input(matrixDialog(f).querySelector('[aria-label="Save workflow choices to"]'), 'project');
+  assert.equal(f.requests.filter(request => request.method === 'PATCH').length, 0);
+  await f.click(f.button('Apply workflow preset', matrixDialog(f)));
+  assert.deepEqual(f.requests.filter(request => request.method === 'PATCH').map(request => request.body), [expected]);
+  assert.equal(matrixCell(f, 'workspace', 'project').dataset.saved, 'true');
+  assert.equal(matrixCell(f, 'workspace', 'session').dataset.winning, 'true');
+  assert.match(matrixCell(f, 'workspace', 'project').textContent, /Ask each timeSaved here/);
+  assert.match(matrixCell(f, 'commit', 'global').textContent, /Without approvalSaved here/);
+  assert.match(matrixCell(f, 'targetBranch', 'global').textContent, /targetSaved here/);
+  assert.equal(matrixCell(f, 'targetBranch', 'global').dataset.winning, 'true');
+  assert.equal(next.effective.targetBranch, 'target');
+  assert.equal(next.sources.targetBranch, 'global');
+  assert.deepEqual(next.effective.commitChecks, []);
+  assert.deepEqual(next.effective.mergeChecks, []);
 });

@@ -7,6 +7,7 @@ import { writePrivateFileAtomicSync } from "../atomic-file";
 import { gitExecEnv } from "../git-exec";
 import { samePath, toNativePath } from "../paths";
 import type { Overrides, PluginManifest, PluginSession, PluginSettings, SettingValue } from "./types";
+import { recomputePluginSettings } from "./settings-view";
 
 interface StoredSettings {
   version: number;
@@ -109,24 +110,15 @@ function read(manifest: PluginManifest, path: string): StoredSettings {
 }
 export function resolvePluginSettings(manifest: PluginManifest, stored: StoredSettings, project: string | null,
   session?: { id: string; project: string | null }): PluginSettings {
-  const effective: Overrides = {};
-  const sources: PluginSettings["sources"] = {};
   const overrides = project ? stored.projects[project] ?? {} : {};
   const saved = session ? stored.sessions?.[session.id] : undefined;
   // Both the operation and saved overrides must belong to the session's OWN project.
   // An explicit foreign checkout, a move, or a non-Git session never imports them.
   const sessionApplicable = Boolean(project && session?.project && samePath(session.project, project));
   const sessionOverrides = sessionApplicable && project && saved?.project && samePath(saved.project, project) ? saved.values : {};
-  for (const [key, field] of Object.entries(manifest.fields)) {
-    const source = !field.globalOnly && Object.hasOwn(sessionOverrides, key) ? "session"
-      : !field.globalOnly && Object.hasOwn(overrides, key) ? "project" : Object.hasOwn(stored.global, key) ? "global" : "builtin";
-    sources[key] = source;
-    effective[key] = structuredClone(source === "session" ? sessionOverrides[key]
-      : source === "project" ? overrides[key] : source === "global" ? stored.global[key] : field.default);
-  }
-  return { pluginId: manifest.id, schemaVersion: manifest.schemaVersion, project,
-    enabled: effective.enabled === true, global: stored.global, overrides, effective, sources,
-    ...(session ? { sessionId: session.id, sessionProject: session.project, sessionApplicable, sessionOverrides } : {}) };
+  return recomputePluginSettings(manifest, { pluginId: manifest.id, schemaVersion: manifest.schemaVersion, project,
+    enabled: false, global: stored.global, overrides, effective: {}, sources: {},
+    ...(session ? { sessionId: session.id, sessionProject: session.project, sessionApplicable, sessionOverrides } : {}) });
 }
 export function readPluginSettings(manifest: PluginManifest, cwd?: string, path = pluginSettingsPath(manifest), session?: PluginSession): PluginSettings {
   if (session) validateSession(session);
@@ -139,6 +131,10 @@ export function updatePluginSettings(manifest: PluginManifest, scope: "global" |
   if (scope !== "global" && scope !== "project" && scope !== "session") throw new Error("Invalid scope");
   if (session) validateSession(session);
   validateOverrides(manifest, set, scope !== "global");
+  // Reads tolerate legacy ignored values, and explicit reset can still remove them.
+  if (scope === "session" && Object.keys(set).some((key) => manifest.fields[key].sessionOverridable === false)) {
+    throw new Error("This setting does not support session overrides");
+  }
   if (!Array.isArray(reset) || reset.some((key) => typeof key !== "string" || !Object.hasOwn(manifest.fields, key)
     || (scope !== "global" && manifest.fields[key].globalOnly) || Object.hasOwn(set, key))) throw new Error("Invalid reset");
   const project = cwd ? pluginScopeIdentity(manifest, cwd) : null;

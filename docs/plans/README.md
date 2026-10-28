@@ -20,6 +20,21 @@ Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
 
+## Git Workflow override matrix
+
+The [verified matrix implementation](archived/2026-10-28_git-settings-override-matrix-plan.md)
+shows all three scopes together, preserves explicit values/inheritance/pins and
+policy authority, and keeps native scope-bound editors. The separately approved
+move/startup repair and exact guided-review maintenance-observer correction are
+also verified. Complete Nix acceptance on `738d5dec` passed **527 files / 4,361
+tests**, all **26 browser/terminal groups / 60 inputs**, and the genuine deployment
+VM in **498.632s**, with admitted four/four overlap and separately warmed inputs.
+[Git settings](../git-workflow-plugin.md), [session contracts](../session-internals.md),
+[review notebooks](../review-notebooks.md) and [test-writing recipes](../test-writing.md)
+own current behavior and proof limits. Exact local integration and cleanup remain
+with the receiving session's global Git lifecycle; archival is not deployment,
+publication or a Git execution receipt.
+
 ## Robot mascot and README capture
 
 The [verified mascot implementation](archived/2026-10-28_robot-branding-plan.md)

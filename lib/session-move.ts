@@ -2,7 +2,8 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { existsSync, linkSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { getRpcSession, getRpcSessionInfos } from "./rpc-manager";
+import { getRpcSession, getRpcSessionInfos, isRpcSessionStarting } from "./rpc-manager";
+import { reserveSessionRelocations, type SessionRelocationReservation } from "./session-relocation";
 import {
   cacheSessionPath, invalidateSessionListCache, invalidateSessionManagerCache,
   listAllSessions, mergeSessionLists, readSessionHeader, resolveSessionPath,
@@ -82,6 +83,16 @@ export async function moveSessionFamily(id: string, cwd: string, options: Sessio
 
 /** Move a persisted session family; forks are independent but their origin paths must be repaired. */
 async function moveSessionFamilyUnlocked(id: string, cwd: string, options: SessionMoveOptions): Promise<{ movedIds: string[]; skipped?: boolean }> {
+  if (isRpcSessionStarting(id)) throw new SessionMoveConflict("Wait for sessions to finish starting before moving");
+  const reservation = reserveSessionRelocations([{ id, source: "" }]);
+  let failure: { error: unknown } | undefined;
+  try { return await moveReservedSessionFamily(id, cwd, options, reservation); }
+  catch (error) { failure = { error }; throw error; }
+  finally { reservation.release(failure); }
+}
+
+async function moveReservedSessionFamily(id: string, cwd: string, options: SessionMoveOptions,
+  reservation: SessionRelocationReservation): Promise<{ movedIds: string[]; skipped?: boolean }> {
   const sessions = mergeSessionLists(await listAllSessions({ force: true }), getRpcSessionInfos({ includeTransient: true }));
   const byId = new Map<string, SessionInfo>(sessions.map((session) => [session.id, session]));
   const root = byId.get(id);
@@ -102,6 +113,8 @@ async function moveSessionFamilyUnlocked(id: string, cwd: string, options: Sessi
   for (const member of members) {
     if (member.transient || !existsSync(member.path)) throw new SessionMoveConflict("A subagent is not persisted");
   }
+  if (members.some(member => isRpcSessionStarting(member.id))) throw new SessionMoveConflict("Wait for sessions to finish starting before moving");
+  reservation.include(members.map(member => ({ id: member.id, source: member.path })));
   let fence = await options.validate?.(sessions, familyIds);
   const assertBindings = () => {
     for (const member of members) {
@@ -181,90 +194,105 @@ async function moveSessionFamilyUnlocked(id: string, cwd: string, options: Sessi
   if (files.length > 4096) throw new SessionMoveConflict("A move may affect at most 4096 sessions, including linked references");
   options.assertAffected?.(files.map(file => file.id));
 
-  // A new queued task may have appeared while preparing the family.
-  if (getQueuedSubagentSessionIds().some((queuedId) => movedIds.has(queuedId))) {
-    throw new SessionMoveConflict("Wait for queued subagents to finish before moving");
+  // Publish the exact write footprint before eviction yields. An already admitted
+  // constructor must finish first; later RPC reopenings wait and re-resolve it.
+  if (files.some(file => isRpcSessionStarting(file.id))) {
+    throw new SessionMoveConflict("Wait for sessions to finish starting before moving");
   }
-  // Evict idle wrappers before touching their files: their managers retain the
-  // old path and could otherwise append to a stale or moved transcript.
-  for (const file of files) {
-    if (getRpcSession(file.id)?.isRunning() || getQueuedSubagentSessionIds().includes(file.id)) {
-      throw new SessionMoveConflict("Stop linked sessions before moving");
-    }
-    await getRpcSession(file.id)?.shutdown();
-  }
-  fence = await options.validate?.(sessions, familyIds);
-  // Include late children and incoming links after all awaited shutdown/validation.
-  const finalSessions = mergeSessionLists(await listAllSessions({ force: true }), getRpcSessionInfos({ includeTransient: true }));
-  let finalFamily: string[];
-  try { finalFamily = sessionFamilyGraph(finalSessions).family(id); }
-  catch { throw new SessionMoveConflict("Session family changed; preview the move again"); }
-  const finalById = new Map(finalSessions.map(session => [session.id, session]));
-  if (!sameSessionIds(familyIds, finalFamily) || members.some(member => {
-    const current = finalById.get(member.id);
-    return !current || !samePath(current.path, member.path) || !samePath(current.cwd, member.cwd);
-  })) throw new SessionMoveConflict("Session family or source directories changed; preview the move again");
-  const plannedFiles = new Set(files.map(file => sessionPathKey(file.source)));
-  for (const session of finalSessions) {
-    if (movedIds.has(session.id) || (session.relation?.kind !== "fork" && session.relation?.kind !== "subagent")) continue;
-    const header = readSessionHeader(session.path);
-    if (header?.parentSession && relocated.has(sessionPathKey(header.parentSession)) && !plannedFiles.has(sessionPathKey(session.path))) {
-      throw new SessionMoveConflict("Linked sessions changed; preview the move again");
-    }
-  }
-  assertCurrent();
-  if (files.some(file => getRpcSession(file.id) || getQueuedSubagentSessionIds().includes(file.id))) {
-    throw new SessionMoveConflict("A session reopened while preparing the move; stop it and preview again");
-  }
-  const token = randomUUID();
-  const stages = files.map((file) => ({ ...file, stage: `${file.target}.${token}.tmp`, backup: `${file.source}.${token}.bak` }));
-  const staged: string[] = [];
-  const backedUp: typeof stages = [];
-  const installed: typeof stages = [];
+  reservation.include(files);
+  const releaseRelocation = reservation.release;
+  let relocationFailure: { error: unknown } | undefined;
   try {
-    for (const file of stages) {
-      if (fingerprint(file.source) !== file.fingerprint) throw new SessionMoveConflict("Session changed during move");
-      if (file.source !== file.target && existsSync(file.target)) throw new SessionMoveConflict("Destination session file already exists");
-      writeFileSync(file.stage, file.rewritten, { flag: "wx", mode: 0o600 });
-      staged.push(file.stage);
+    // A new queued task may have appeared while preparing the family.
+    if (getQueuedSubagentSessionIds().some((queuedId) => movedIds.has(queuedId))) {
+      throw new SessionMoveConflict("Wait for queued subagents to finish before moving");
+    }
+    // Evict idle wrappers before touching their files: their managers retain the
+    // old path and could otherwise append to a stale or moved transcript.
+    for (const file of files) {
+      if (getRpcSession(file.id)?.isRunning() || getQueuedSubagentSessionIds().includes(file.id)) {
+        throw new SessionMoveConflict("Stop linked sessions before moving");
+      }
+      await getRpcSession(file.id)?.shutdown();
+    }
+    fence = await options.validate?.(sessions, familyIds);
+    // Include late children and incoming links after all awaited shutdown/validation.
+    const finalSessions = mergeSessionLists(await listAllSessions({ force: true }), getRpcSessionInfos({ includeTransient: true }));
+    let finalFamily: string[];
+    try { finalFamily = sessionFamilyGraph(finalSessions).family(id); }
+    catch { throw new SessionMoveConflict("Session family changed; preview the move again"); }
+    const finalById = new Map(finalSessions.map(session => [session.id, session]));
+    if (!sameSessionIds(familyIds, finalFamily) || members.some(member => {
+      const current = finalById.get(member.id);
+      return !current || !samePath(current.path, member.path) || !samePath(current.cwd, member.cwd);
+    })) throw new SessionMoveConflict("Session family or source directories changed; preview the move again");
+    const plannedFiles = new Set(files.map(file => sessionPathKey(file.source)));
+    for (const session of finalSessions) {
+      if (movedIds.has(session.id) || (session.relation?.kind !== "fork" && session.relation?.kind !== "subagent")) continue;
+      const header = readSessionHeader(session.path);
+      if (header?.parentSession && relocated.has(sessionPathKey(header.parentSession)) && !plannedFiles.has(sessionPathKey(session.path))) {
+        throw new SessionMoveConflict("Linked sessions changed; preview the move again");
+      }
+    }
+    assertCurrent();
+    if (files.some(file => getRpcSession(file.id) || getQueuedSubagentSessionIds().includes(file.id))) {
+      throw new SessionMoveConflict("A session reopened while preparing the move; stop it and preview again");
+    }
+    const token = randomUUID();
+    const stages = files.map((file) => ({ ...file, stage: `${file.target}.${token}.tmp`, backup: `${file.source}.${token}.bak` }));
+    const staged: string[] = [];
+    const backedUp: typeof stages = [];
+    const installed: typeof stages = [];
+    try {
+      for (const file of stages) {
+        if (fingerprint(file.source) !== file.fingerprint) throw new SessionMoveConflict("Session changed during move");
+        if (file.source !== file.target && existsSync(file.target)) throw new SessionMoveConflict("Destination session file already exists");
+        writeFileSync(file.stage, file.rewritten, { flag: "wx", mode: 0o600 });
+        staged.push(file.stage);
+      }
+      for (const file of stages) {
+        if (fingerprint(file.source) !== file.fingerprint) throw new SessionMoveConflict("Session changed during move");
+        renameSync(file.source, file.backup);
+        backedUp.push(file);
+      }
+      for (const file of stages) {
+        // Unlike rename, hard-link creation refuses to overwrite a destination
+        // created concurrently after preflight. Stage and target share a dir.
+        linkSync(file.stage, file.target);
+        installed.push(file);
+        unlinkSync(file.stage);
+      }
+      for (const file of stages) {
+        if (readFileSync(file.target, "utf8") !== file.rewritten) throw new SessionMoveConflict("Installed session changed during move");
+      }
+    } catch (error) {
+      const recoveryErrors: unknown[] = [];
+      for (const file of installed.reverse()) {
+        try { unlinkSync(file.target); } catch (cause) { recoveryErrors.push(cause); }
+      }
+      for (const file of backedUp.reverse()) {
+        try { renameSync(file.backup, file.source); } catch (cause) { recoveryErrors.push(cause); }
+      }
+      for (const stage of staged) if (existsSync(stage)) {
+        try { unlinkSync(stage); } catch (cause) { recoveryErrors.push(cause); }
+      }
+      for (const file of files) { invalidateSessionManagerCache(file.source); invalidateSessionManagerCache(file.target); }
+      invalidateSessionListCache();
+      if (recoveryErrors.length) throw new AggregateError([error, ...recoveryErrors], "Move failed; recovery files may remain");
+      throw error;
     }
     for (const file of stages) {
-      if (fingerprint(file.source) !== file.fingerprint) throw new SessionMoveConflict("Session changed during move");
-      renameSync(file.source, file.backup);
-      backedUp.push(file);
+      try { unlinkSync(file.backup); } catch (error) { console.error("[brabbler] Session move backup retained:", file.backup, error); }
+      invalidateSessionManagerCache(file.source);
+      invalidateSessionManagerCache(file.target);
+      cacheSessionPath(file.id, file.target);
     }
-    for (const file of stages) {
-      // Unlike rename, hard-link creation refuses to overwrite a destination
-      // created concurrently after preflight. Stage and target share a dir.
-      linkSync(file.stage, file.target);
-      installed.push(file);
-      unlinkSync(file.stage);
-    }
-    for (const file of stages) {
-      if (readFileSync(file.target, "utf8") !== file.rewritten) throw new SessionMoveConflict("Installed session changed during move");
-    }
-  } catch (error) {
-    const recoveryErrors: unknown[] = [];
-    for (const file of installed.reverse()) {
-      try { unlinkSync(file.target); } catch (cause) { recoveryErrors.push(cause); }
-    }
-    for (const file of backedUp.reverse()) {
-      try { renameSync(file.backup, file.source); } catch (cause) { recoveryErrors.push(cause); }
-    }
-    for (const stage of staged) if (existsSync(stage)) {
-      try { unlinkSync(stage); } catch (cause) { recoveryErrors.push(cause); }
-    }
-    for (const file of files) { invalidateSessionManagerCache(file.source); invalidateSessionManagerCache(file.target); }
     invalidateSessionListCache();
-    if (recoveryErrors.length) throw new AggregateError([error, ...recoveryErrors], "Move failed; recovery files may remain");
+    return { movedIds: [...movedIds] };
+  } catch (error) {
+    relocationFailure = { error };
     throw error;
+  } finally {
+    releaseRelocation(relocationFailure);
   }
-  for (const file of stages) {
-    try { unlinkSync(file.backup); } catch (error) { console.error("[brabbler] Session move backup retained:", file.backup, error); }
-    invalidateSessionManagerCache(file.source);
-    invalidateSessionManagerCache(file.target);
-    cacheSessionPath(file.id, file.target);
-  }
-  invalidateSessionListCache();
-  return { movedIds: [...movedIds] };
 }

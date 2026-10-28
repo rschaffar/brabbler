@@ -8,15 +8,17 @@ export function observeGuidedReviewAgentRequest(request) {
   return { method: request.method(), path: url.pathname + url.search, body: request.postData() };
 }
 
-/** Normal UI focus/open can request the existing session's tool catalogue. That
- * one exact known non-prompt wire tuple is permitted. Every other non-GET agent
- * request (new session, prompt, steer, Bash, extra fields, other sessions, etc.)
- * fails. GET observations remain in the original array; no action resets it. */
+/** Normal UI focus/open can read the existing session's catalogue and renew its
+ * bodyless SSE lease. Only those exact non-executing wire tuples are permitted;
+ * every other non-GET (new session, prompt, steer, Bash, extra fields, other
+ * sessions, etc.) fails. Observations are retained; no action resets the array. */
 export function assertNoGuidedReviewAgentExecution(observations, sessionId) {
   for (const request of observations) {
     if (request.method === 'GET') continue;
-    assert.deepEqual(request, {
-      method: 'POST', path: `/api/agent/${encodeURIComponent(sessionId)}`, body: '{"type":"get_tools"}',
-    }, 'guided review may read the exact existing-session tool catalogue, but must not submit a model turn or agent-execution command');
+    const agentPath = `/api/agent/${encodeURIComponent(sessionId)}`;
+    const expected = request.path === `${agentPath}/lease`
+      ? { method: 'POST', path: `${agentPath}/lease`, body: null }
+      : { method: 'POST', path: agentPath, body: '{"type":"get_tools"}' };
+    assert.deepEqual(request, expected, 'guided review may use only the exact existing-session catalogue or bodyless lease renewal, but must not submit a model turn or agent-execution command');
   }
 }

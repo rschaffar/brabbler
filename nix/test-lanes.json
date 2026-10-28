@@ -1668,6 +1668,11 @@
       "estimatedMs": 2000
     },
     {
+      "path": "lib/plugins/settings-view.test.mjs",
+      "lane": "F",
+      "reason": "Actual client-safe settings projection, immutable patch preview, presence/equality and draft parsing with the pure Git manifest. Type-only imports are erased; literal in-process snapshots, no filesystem writes, native commands, timers, transport or process-global mutation. Jiti filesystem caching is disabled. Backend settings tests retain private native identity/storage proof; mounted and installed owners retain wiring and layout."
+    },
+    {
       "path": "lib/plugins/settings.test.mjs",
       "lane": "N",
       "reason": "Real settings and fresh Git/worktree identity effects use private repositories and explicit settings paths. Process-local builtin adapters forward actual native queries; query/gate children are independently joined before adapter restoration and root removal, including failure. No source writes or fixed ports.",
@@ -2452,7 +2457,7 @@
     }
   ],
   "holds": {
-    "lib/guided-review-browser-contract.test.mjs": "Actual installed-bridge agent-command observation/assertion helper over literal request capabilities, exact known get_tools tuple and adversarial prompt/new-session/extra-key/other-session matrices. Conservative E hold pending independent live isolation review; no browser transport, model execution or native closure claim.",
+    "lib/guided-review-browser-contract.test.mjs": "Actual installed-bridge agent-command observation/assertion helper over literal request capabilities, exact get_tools/bodyless same-session lease tuples and adversarial prompt/new-session/extra-key/other-session/query/body/method matrices. Conservative E hold pending independent live isolation review; no browser transport, model execution or native closure claim.",
     "components/ChatInput.review-handoff.test.mjs": "Actual composer plus current-destination handoff policy through the existing guarded composer fixture; exact retained text, cursor-selection replacement refusal, same attachment node and no Send callback. Conservative E pending independent changed-input/closure review; no full AppShell or browser image decoding claim.",
     "app/api/review-data/route.test.mjs": "Actual native route/store in private temporary roots with process-local allowed-root cache and an original async request-body identity-swap gate. Conservative E pending independent import/global-cache/teardown review; no host service or power-loss claim.",
     "components/NotebookReviewPanel.behavior.test.mjs": "Real persistent notebook form/tray React owner with guarded controlled GET/POST capabilities, current inspection/body gates and original onWork joins; inherited-property IDs and retained draft races included. Explicit E pending independent import/teardown review. Emulated DOM is not native storage, shell wiring, browser selection or geometry proof.",

@@ -24,16 +24,37 @@ A foreign-repository operation uses that target's project settings without any
 caller-project or session overrides. Projects and applicable sessions can replace
 action permissions, target, method and checks. Enablement is
 global-only: disabling prevents all new plugin execution in every project.
-The panel shows the effective value and its origin beside each field. **Use
-global default** deletes a project override; **Use built-in default** deletes a
-global override. Session **Use project default** removes that session field.
-Explicit false, null and empty check arrays are not inheritance. Saving a field
-changes subsequent invocations immediately; settings do not schedule any work.
+The panel compares **All repositories → named repository → This session** at once.
+Mobile retains all three scope columns, with each setting's name above its cells.
+Solid cells show saved values; dashed cells point to their actual inherited source.
+Only the winning source has a check/outline, including an explicitly labeled
+built-in fallback in the All repositories column. There is no fourth editable
+“Effective” scope. Enablement stays app-wide, outside the matrix.
+
+Click a cell to edit **that column**, even when its arrow names a different source.
+**Follow parent** (or global **Use built-in default**) deletes only that override;
+**Save an explicit value** creates a saved value even when it matches the parent.
+Opening/cancelling an inherited display does not pin it. Explicit false, null,
+empty text and empty check arrays are not inheritance. The editor previews both
+the destination and the resolved session/repository result; narrower overrides
+may mask the edit. Saved target/method defaults do not answer the agent's Ask
+questions; the browser manager can still use the target independently, including
+branch protections. An unavailable/foreign session is not an inherited editable
+scope, and its own-repository result cannot be inferred from a foreign snapshot.
+
+**Save changes** affects subsequent invocations immediately; settings do not
+schedule work. Enablement and its reset remain immediate app-wide controls.
+Failed responses retain the editor draft and restore the previous visible
+snapshot, not the server's state: a lost response can follow a committed write.
+Reopen settings to reconcile the actual stored state. Search and **Saved overrides
+only** help locate fields, including ignored legacy values. Other bundled plugins
+retain their existing scope-selector editor.
+
 The session header's **Policy** / **Session plugin settings** shortcut opens the
-existing plugin panel at session scope for the selected session's own cwd, not
-the sidebar's possibly different checkout. The regular plugin panel also offers
-Global / Selected project / This session scopes. Session scope is unavailable
-when the selected repository is not the session's own repository.
+matrix for the selected session's own cwd, not the sidebar's possibly different
+checkout. Manager field links focus the repository's saved target or the app-wide
+enablement control. Session scope is unavailable when the selected repository is
+not the session's own repository or that identity cannot be resolved.
 
 Session overrides survive wrapper recreation, compaction and in-session branch
 navigation. A moved session cannot use its old repository binding in its new
@@ -50,8 +71,10 @@ Answers do not silently write settings. Configured target/method selection uses
 the existing target/method fields; a missing target still needs a question.
 
 **Always ask**, **Isolated, retain**, **Isolated, clean up** and **Current branch**
-are explicit workflow-only recipes. Select then Apply to replace those choices in
-the selected scope; permissions, check commands, target branch and merge method
+are explicit workflow-only recipes. Open **Workflow presets**, choose the save
+destination and recipe, review the per-setting preview, then **Apply workflow
+preset**. Every listed choice is saved explicitly in that scope, including
+parent-equal values; permissions, check commands, target branch and merge method
 are unchanged. Isolated cleanup still asks about generated artifacts by default.
 Presets grant neither implementation nor remote-operation authority.
 
@@ -93,7 +116,11 @@ Each of `commit`, `rebase`, `merge`, `createWorktree`, `attachWorktree`,
 The browser manager additionally declares `discardResources` (**Manual manager
 discard**, browser only), default Ask. It has no agent tool: Deny refuses, while
 Ask **and Allow** require the exact live browser confirmation. Its resolution omits
-session overrides. Agent `cleanupFeature` remains integrated-only; manual discard
+session overrides, in both effective values and provenance. New session writes
+for this field are refused; valid legacy session entries remain readable but
+ignored, with **Clear ignored value** available in the bound own-session view.
+Explicit clearing preserves other saved values; there is no automatic migration
+or schema-version change. Agent `cleanupFeature` remains integrated-only; manual discard
 does not inherit completed-feature Keep choices, but cannot waive source, target,
 activity or artifact protections.
 
@@ -191,8 +218,8 @@ directories** (see [ADR 0017](adr/0017-cleanup-artifact-approval.md) and its
   size and content/metadata digest, distinguishing permitted artifacts from those
   needing approval. Approve authorizes only that captured operation; Reject/Cancel
   retains the resources. It never changes settings. Missing browser UI fails closed.
-- **Reusable allowlist:** **Settings → Plugins → Git Workflow → Permitted generated
-  files and directories** (`approvedArtifactRoots`) accepts comma-separated literal
+- **Reusable allowlist:** **Settings → Plugins → Git Workflow → Approved generated
+  paths** (`approvedArtifactRoots`) accepts comma-separated literal
   worktree-relative paths, with **no defaults or globs**. For example, explicitly permit
   `.codegraph, node_modules, next-env.d.ts, src/meetings/__pycache__`
   for a project if those paths are disposable there. Existing top-level entries

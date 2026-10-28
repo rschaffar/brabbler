@@ -491,7 +491,7 @@ let nativeToolsFixture;
     });
   } else if (group === "git-plugin") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/pagination-owned-v8@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/matrix-settings-v10@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage();
@@ -718,7 +718,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "markdown") {
-      await coverage.run(`markdown/${inputId === "legacy-desktop" ? "render-files-native-v3" : "render-touch-wiring-v2"}@${inputId}`, async () => {
+      await coverage.run(`markdown/${inputId === "legacy-desktop" ? "render-files-native-v4" : "render-touch-wiring-v3"}@${inputId}`, async () => {
       const finishMarkdownStage = stage.start(`markdown/${inputId}/chain`);
       // This added chunk-interception fixture needs no service worker. Existing
       // Markdown scenarios below retain their original, independent context.

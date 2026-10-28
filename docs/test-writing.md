@@ -227,6 +227,17 @@ retire old tests or constitute full candidate acceptance.
 
 ## Current cross-family recipes and limits
 
+- `components/SettingsUi.test.mjs` mounts the real bundled-settings editor and
+  SettingsPanel/PluginsConfig composition, including unchanged immediate-save
+  Session Launch behavior. Its observer owns complete inner `Settings.load/save`
+  I/O promises, not the void field/preset apply wrappers; DOM/act and native
+  dialog-hidden assertions separately cover visible editor settlement. The eight
+  session/cwd load/save A–B–A schedules protect the receiving instance's already
+  settled error/draft/result, not an independently held current in-flight busy
+  state. Jsdom dialog/scroll shims do not prove native layout or modality. The
+  existing Git bridge owns desktop/mobile geometry, saved/inherited border cues,
+  native focus/inertness/Escape and durable save/reset/readback, before its
+  retained Git approval/reader/receipt/Stop chain.
 - `ScratchpadPanel.policy.test.mjs` mounts the real Panel/Controller/default transport for Global + Project controls, independent history, parked saves, metadata A/B/A currentness and complete request/body/operation ownership. Declared metadata replies are external inputs, not a fake Git resolver. `scratchpad-server` and route tests retain real registered-worktree/folder identity, allowed-root refusal and unchanged Global/legacy storage. Appearance's project-native desktop receipt retains native keyboard/modal and one durable bridge, then selected-folder/no-chat and real linked-worktree shell connections; the distinct short-touch receipt only reads its persisted predecessor for native geometry/focus/reachability. Neither mount claims physical layout/native Git nor browser repeats the conflict policy matrix.
 - `components/MarkdownBody.behavior.test.mjs` mounts actual local/blocked/reader
   links and scoped anchors; `MarkdownMedia.behavior.test.mjs` owns activation,
