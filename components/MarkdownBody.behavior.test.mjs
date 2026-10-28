@@ -8,8 +8,109 @@ const jiti = createJiti(import.meta.url, { jsx: { runtime: 'automatic' }, tsconf
 async function production() {
   const { MarkdownBody } = await jiti.import('./MarkdownBody.tsx');
   const { I18nProvider } = await jiti.import('../hooks/useI18n.tsx');
-  return { MarkdownBody, I18nProvider };
+  const { FileMarkdownBody } = await jiti.import('./FileMarkdownBody.tsx');
+  const { setRemoteImagesEnabled, REMOTE_IMAGES_STORAGE_KEY } = await jiti.import('../hooks/useRemoteImages.ts');
+  return { MarkdownBody, FileMarkdownBody, I18nProvider, setRemoteImagesEnabled, REMOTE_IMAGES_STORAGE_KEY };
 }
+
+test('remote images default off across chat and file previews; explicit global enable and peer disable update immediately', async t => {
+  const f = markdownDom(t);
+  const { MarkdownBody, FileMarkdownBody, I18nProvider, setRemoteImagesEnabled, REMOTE_IMAGES_STORAGE_KEY } = await production();
+  const text = '![Remote](https://tracking.invalid/pixel?private=example)\n\n![Local](local.png)\n\n'
+    + '<img alt="Raw" src="https://tracking.invalid/raw.png" srcset="https://tracking.invalid/other.png 2x">\n\n'
+    + '[![Linked](https://tracking.invalid/linked.png)](https://example.test/docs)';
+  const view = await f.mount(createElement(I18nProvider, null, createElement('section', null,
+    createElement(MarkdownBody, { cwd: '/repo' }, text),
+    createElement(FileMarkdownBody, { baseDir: '/repo', markdown: text }),
+    createElement(FileMarkdownBody, { baseDir: '/repo', markdown: text, images: false }))));
+  const remote = () => view.container.querySelectorAll('img[src^="https://"]');
+  try {
+    assert.equal(remote().length, 0, 'no remote image element/source exists before opt-in');
+    assert.equal(view.container.querySelectorAll('img').length, 2, 'local images still render');
+    assert.equal(view.container.querySelector('[srcset]') === null, true, 'raw srcset cannot bypass the sanitizer');
+    assert.equal(view.container.querySelector('a button') === null, true, 'linked-image placeholders never nest buttons');
+    const buttons = [...view.container.querySelectorAll('button')].filter(button => button.textContent === 'Enable remote images');
+    assert.equal(buttons.length, 4, 'both ordinary renderers offer inline opt-in, guided prose does not');
+    assert.match(buttons[0].title, /all chats and Markdown previews in this browser/);
+    await f.click(buttons[0]);
+    assert.equal(remote().length, 6, 'one opt-in enables both ordinary renderers including linked and raw images');
+    assert.equal(view.window.localStorage.getItem(REMOTE_IMAGES_STORAGE_KEY), 'true');
+    assert.equal(view.container.querySelectorAll('img').length, 8, 'images=false remains inert even after opt-in');
+    view.window.localStorage.setItem(REMOTE_IMAGES_STORAGE_KEY, 'false');
+    await act(() => { view.window.dispatchEvent(new view.window.StorageEvent('storage', { key: REMOTE_IMAGES_STORAGE_KEY, storageArea: view.window.localStorage })); });
+    assert.equal(remote().length, 0, 'another tab can disable further automatic image loads');
+    await act(() => setRemoteImagesEnabled(true));
+    view.window.localStorage.removeItem(REMOTE_IMAGES_STORAGE_KEY);
+    await act(() => { view.window.dispatchEvent(new view.window.StorageEvent('storage', { key: null, storageArea: view.window.localStorage })); });
+    assert.equal(remote().length, 0, 'cleared storage returns to fail-closed default');
+    assert.deepEqual(f.requests, []);
+  } finally { await act(() => setRemoteImagesEnabled(false)); }
+});
+
+test('failed preference writes retain explicit disable over stale opt-in storage', async t => {
+  const f = markdownDom(t);
+  const { MarkdownBody, I18nProvider, setRemoteImagesEnabled, REMOTE_IMAGES_STORAGE_KEY } = await production();
+  const view = await f.mount(createElement(I18nProvider, null,
+    createElement(MarkdownBody, null, '![Remote](https://tracking.invalid/pixel)')));
+  await act(() => setRemoteImagesEnabled(true));
+  const write = t.mock.method(view.window.Storage.prototype, 'setItem', () => { throw new Error('storage blocked'); });
+  try {
+    await act(() => setRemoteImagesEnabled(false));
+    assert.equal(view.window.localStorage.getItem(REMOTE_IMAGES_STORAGE_KEY), 'true', 'stored old value deliberately survives');
+    assert.equal(view.container.querySelector('img') === null, true, 'failed disable stays authoritative in this tab');
+    await act(() => { view.window.dispatchEvent(new view.window.StorageEvent('storage', { key: REMOTE_IMAGES_STORAGE_KEY })); });
+    assert.equal(view.container.querySelector('img') === null, true, 'storage event cannot restore stale opt-in');
+  } finally {
+    write.mock.restore();
+    await act(() => setRemoteImagesEnabled(false));
+  }
+});
+
+test('peer disable overrides an unsaved enable; malformed and unreadable storage stay blocked', async t => {
+  const f = markdownDom(t);
+  const { MarkdownBody, I18nProvider, setRemoteImagesEnabled, REMOTE_IMAGES_STORAGE_KEY } = await production();
+  const view = await f.mount(createElement(I18nProvider, null,
+    createElement(MarkdownBody, null, '![Remote](https://tracking.invalid/pixel)')));
+  const event = async key => { await act(() => { view.window.dispatchEvent(new view.window.StorageEvent('storage', { key, storageArea: view.window.localStorage })); }); };
+  const write = t.mock.method(view.window.Storage.prototype, 'setItem', () => { throw new Error('storage blocked'); });
+  try {
+    await act(() => setRemoteImagesEnabled(true));
+    assert.equal(view.container.querySelectorAll('img').length, 1, 'explicit opt-in still works with blocked storage');
+    await event('unrelated-preference');
+    assert.equal(view.container.querySelectorAll('img').length, 1, 'unrelated storage event has no authority');
+    await event(REMOTE_IMAGES_STORAGE_KEY);
+    assert.equal(view.container.querySelector('img') === null, true, 'peer disable/missing preference wins over unsaved opt-in');
+  } finally { write.mock.restore(); await act(() => setRemoteImagesEnabled(false)); }
+  for (const invalid of ['TRUE', '1', 'yes', '{"enabled":true}']) {
+    view.window.localStorage.setItem(REMOTE_IMAGES_STORAGE_KEY, invalid);
+    await event(REMOTE_IMAGES_STORAGE_KEY);
+    assert.equal(view.container.querySelector('img') === null, true, 'only exact true is opt-in');
+  }
+  const read = t.mock.method(view.window.Storage.prototype, 'getItem', () => { throw new Error('storage unreadable'); });
+  try {
+    await event(REMOTE_IMAGES_STORAGE_KEY);
+    assert.equal(view.container.querySelector('img') === null, true, 'read failure is fail-closed');
+  } finally { read.mock.restore(); await act(() => setRemoteImagesEnabled(false)); }
+});
+
+test('an unpersisted opt-in cannot survive an unobserved peer-disable gap', async t => {
+  const f = markdownDom(t);
+  const { MarkdownBody, I18nProvider, setRemoteImagesEnabled, REMOTE_IMAGES_STORAGE_KEY } = await production();
+  const content = () => createElement(I18nProvider, null,
+    createElement(MarkdownBody, null, '![Remote](https://tracking.invalid/pixel)'));
+  const view = await f.mount(content());
+  const write = t.mock.method(view.window.Storage.prototype, 'setItem', () => { throw new Error('storage blocked'); });
+  try {
+    await act(() => setRemoteImagesEnabled(true));
+    assert.equal(view.container.querySelectorAll('img').length, 1);
+    await view.rerender(createElement('section'));
+    write.mock.restore();
+    view.window.localStorage.setItem(REMOTE_IMAGES_STORAGE_KEY, 'false');
+    await act(() => { view.window.dispatchEvent(new view.window.StorageEvent('storage', { key: REMOTE_IMAGES_STORAGE_KEY })); });
+    await view.rerender(content());
+    assert.equal(view.container.querySelector('img') === null, true, 'remount does not revive the missed unsaved enable');
+  } finally { write.mock.restore(); await act(() => setRemoteImagesEnabled(false)); }
+});
 
 test('mounted local links use current callbacks, cwd, PDF page and source coordinates', async t => {
   const f = markdownDom(t); // Guard imports too; no permitted network operations.

@@ -6,6 +6,7 @@ import { parseFileLineTarget, parsePdfPageFragment, resolveInlineFileReference, 
 import { encodeFilePathForApi } from "@/lib/file-paths";
 import { jumpToMarkdownFragment, markdownDocumentRehypePlugins, markdownMediaRehypePlugins, markdownRehypePlugins, markdownRemarkPlugins, markdownUrlTransform, normalizeDisplayMath } from "@/lib/markdown";
 import { ImagePreview } from "./ImagePreview";
+import { RemoteImageGate } from "./RemoteImageGate";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
 import { ReviewNotebookBlock } from "./ReviewNotebookBlock";
 import { BlockedFileLink } from "./BlockedFileLink";
@@ -69,12 +70,11 @@ function MarkdownImage({
   // Dynamic local paths are served directly by the file API.
   // eslint-disable-next-line @next/next/no-img-element
   const image = <img src={imageSrc} alt={alt ?? ""} loading="lazy" {...props} />;
-  if (!imageSrc || insideLink) return image;
-  return (
-    <ImagePreview src={imageSrc} alt={alt ?? ""} className="markdown-image">
+  return <RemoteImageGate src={imageSrc} alt={alt} insideLink={insideLink}>
+    {!imageSrc || insideLink ? image : <ImagePreview src={imageSrc} alt={alt ?? ""} className="markdown-image">
       {image}
-    </ImagePreview>
-  );
+    </ImagePreview>}
+  </RemoteImageGate>;
 }
 
 export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, onNavigateLink, enableInlineMedia = false, enableReviewBlocks = false, sourceSessionId }: MarkdownBodyProps) {

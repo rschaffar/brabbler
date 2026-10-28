@@ -6,6 +6,19 @@ import { createElement as h, act } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { generalFixture } from './general-settings.fixture.mjs';
 
+test('General exposes an off-by-default remote-image preference shared across chats in this browser', async t => {
+  const { f, graph: c, props } = await generalFixture(t);
+  await f.mount(h(c.GeneralSettings, props));
+  const control = f.node('[role="switch"][aria-label="Load remote images"]');
+  assert.equal(control.getAttribute('aria-checked'), 'false');
+  await f.click(control);
+  assert.equal(control.getAttribute('aria-checked'), 'true');
+  assert.equal(f.view.window.localStorage.getItem('brabbler-load-remote-images'), 'true');
+  await f.click(control);
+  assert.equal(control.getAttribute('aria-checked'), 'false');
+  assert.equal(f.view.window.localStorage.getItem('brabbler-load-remote-images'), 'false');
+});
+
 const modelView = { allEnabled: true, patterns: [], stalePatterns: [], providers: [], enabledTotal: 0, availableTotal: 0, scope: 'global', editable: true, settingsPath: '~/.pi/agent/settings.json' };
 test('actual Settings navigation keeps real visited General/Models mounted, remembers section, nested Escape and current close callback', async t => {
   let closed = 0;
@@ -97,8 +110,10 @@ test('actual General native palette radios, generated-title languages, typograph
   assert.equal(typography.querySelector('.settings-font-rows') !== null, true);
   assert.equal(typography.querySelector('#settings-chat-content-width') !== null, true);
   assert.equal(typography.querySelector('#settings-chat-content-font-size') !== null, true);
-  assert.equal(chat.querySelectorAll('[role="switch"]').length, 2);
-  assert.equal(chat.querySelectorAll('.settings-chat-option').length, 2);
+  assert.deepEqual([...chat.querySelectorAll('[role="switch"]')].map(node => node.getAttribute('aria-label')), [
+    'Load remote images', 'Expand thinking blocks by default', 'Show actions for selected text',
+  ]);
+  assert.equal(chat.querySelectorAll('.settings-chat-option').length, 3);
   assert.equal(chat.querySelector('input[type="range"]') === null, true);
 });
 

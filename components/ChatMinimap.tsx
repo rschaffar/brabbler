@@ -191,6 +191,8 @@ export const AssistantOutline = memo(function AssistantOutline({
           hr: () => null,
           a: ({ children }) => <>{children}</>,
           code: ({ children }) => <>{children}</>,
+          // Outline labels are inside navigation buttons, never media surfaces.
+          img: ({ alt }) => <>{alt ?? ""}</>,
         }}
       >
         {normalizedMarkdown}

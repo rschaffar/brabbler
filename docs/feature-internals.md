@@ -108,6 +108,37 @@ New Git operations save exact review bundles once in private `brabbler/reviews/`
 - Notebook forms reuse `QuestionFields`/selection logic, not the live blocking request. Required notebook questions gate Reviewed only; live required skip remains rejected. Context uses restricted file Markdown with work forwarding and per-view radios. Per-file-view browser recovery validates its full nested shape, keeps batch-bound JSON drafts/newer typing, and preserves malformed bytes for explicit export/discard. Full history and orphaned anchors remain inspectable; no automatic rebase or pruning.
 - Cross-chapter batches freeze exact item versions plus material/question identities. Preview captures an existing chat ID/label and raw reply destination; AppShell validates its latest session and appends a delimited composer draft without touching existing text/images. No automatic Send/session/agent/fix/test/Git action occurs. Agent files or pasted JSON enter the same strict immutable import pipeline; replies never resolve feedback. [ADR 0036](adr/0036-guided-review-recording.md) records these boundaries. No aliases or general URL deep links are added. [Review notebooks](review-notebooks.md) owns authoring; [ADR 0029](adr/0029-markdown-review-notebooks.md) records the boundaries. Synthetic Markdown browser checks cover both chat and file previews at desktop/touch widths, immutable-vs-working contents, lazy/full context, explicit/repeated/reordered reveal and read-only effects.
 
+### Remote Markdown images
+
+HTTP(S) and protocol-relative images are blocked by default in chat and ordinary
+Markdown-file previews, including sanitized raw `<img>` elements. No image or
+preview source is mounted before opt-in. Local images still use the existing
+file-API/access boundary. Guided prose's `images=false` stays inert even after
+opt-in; explicit audio/video activation is unchanged.
+
+Settings → General → Chat → **Load remote images** controls all chats and Markdown
+previews in this browser. Unlinked blocked images offer **Enable remote images**,
+which enables that same browser-wide preference and displays images immediately.
+The control explains the global scope and that image hosts receive the requested
+URL and the browser's IP address. Linked-image placeholders instead point to
+Settings, preserving the enclosing link without nested interactive controls.
+`hooks/useRemoteImages.ts` stores only explicit `true` opt-in under
+`brabbler-load-remote-images`; server rendering and missing/malformed/unreadable
+storage default to blocked. Storage events synchronize tabs; failed writes retain
+the explicit in-tab choice over stale storage; peer disable/clear wins over an
+unsaved enable, and an unsaved enable is dropped across an unsubscribed gap.
+Minimap outlines always reduce images to noninteractive alt text.
+Mermaid can load images while measuring labels before SVG publication. Its `@{`
+metadata (including quoted YAML keys), HTML/entities, Markdown-image syntax,
+custom initialization/frontmatter and CSS resource/escape syntax conservatively
+require the same opt-in, even for harmless metadata/local diagram images.
+Traditional diagrams and math remain automatic; Source stays available for
+blocked diagrams. This pre-parser gate deliberately avoids Mermaid-internal DB
+contracts and is not a general Mermaid resource sandbox. Disabling
+removes image sources, but cannot undo requests already made. This is not a network sandbox: explicit
+links, standalone HTML Preview/scripts, tools and the independent static demo
+retain their own behavior. Preferences are not shared across devices.
+
 ### Explicit inline chat media
 
 Settled user/assistant chat renders local `![label](recording.wav)` / `![label](demo.webm)` embeds as labelled **Load audio/video** controls. No media element, poster, metadata fetch or watcher exists before activation; loading exposes native controls, never autoplay. Each explicit load gets a new cache token so a repaired file is re-read even after a browser decode failure. Ordinary `[links](recording.wav)` still open Files. Recognized HTTP(S)/protocol-relative media embeds become safe links, never remote players. Linked embeds remain noninteractive labels inside their enclosing link. Relative traversal/missing-base embeds use the existing blocked-link feedback. File URIs, Windows drives and UNC paths are normalized only through the existing file helpers; opted-in chat has a scoped sanitized-source pipeline, not raw media HTML or unsafe-scheme support.

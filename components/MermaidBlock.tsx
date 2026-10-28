@@ -10,6 +10,8 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
+import { getRemoteImagesEnabled, useRemoteImages } from "@/hooks/useRemoteImages";
+import { RemoteImageNotice } from "./RemoteImageGate";
 
 interface MermaidBlockProps {
   code: string;
@@ -39,6 +41,15 @@ type RenderState =
   | { key: string; status: "error" }
   | { key: string; status: "ready"; svg: string };
 
+/** Conservative pre-parser gate, not a Mermaid parser or network sandbox.
+ * Metadata (including YAML escaped keys), HTML/entities, Markdown images, custom
+ * config and CSS resource/escape syntax can cause pre-publication image loads.
+ * Requiring opt-in avoids relying on Mermaid's internal DB/renderer contracts.
+ */
+export function mermaidNeedsImagePermission(code: string): boolean {
+  return /@\{|<[a-z!/]|&[#a-z0-9]|#[a-z0-9]+;|!\[|%%\s*\{|^\s*---|@import|\b(?:url|image-set)\s*\(|(?:^|\n)\s*(?:style|classDef|linkStyle)\b[^\n]*\\/im.test(code);
+}
+
 export function MermaidBlock({ code, isStreaming, defaultPreview = false, onWork }: MermaidBlockProps) {
   const workObserver = useRef(onWork); workObserver.current = onWork;
   const { isDark } = useTheme();
@@ -47,17 +58,24 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false, onWork
   const [renderState, setRenderState] = useState<RenderState | null>(null);
   const [zoomOpen, setZoomOpen] = useState(false);
   const previewRef = useRef<HTMLButtonElement>(null);
-  const currentKey = `${isDark ? "dark" : "light"}\n${code}`;
+  const { enabled: remoteImagesEnabled } = useRemoteImages();
+  // Mermaid can request images while measuring labels, before returning SVG.
+  // Admit only ordinary diagram syntax until opt-in; keep normal math rendering.
+  const resourcesBlocked = !remoteImagesEnabled && mermaidNeedsImagePermission(code);
+  const currentKey = `${isDark ? "dark" : "light"}:${remoteImagesEnabled}\n${code}`;
   const previewVisible = showPreview && !isStreaming;
 
   useEffect(() => {
-    if (!previewVisible) return;
+    if (!previewVisible || resourcesBlocked) return;
 
     let cancelled = false;
     setRenderState({ key: currentKey, status: "loading" });
 
     const render = async () => {
       const { default: mermaid } = await import("mermaid");
+      // Visibility/unmount still owns the originally admitted terminal work.
+      // Only a new privacy refusal cancels pre-render resource admission.
+      if (mermaidNeedsImagePermission(code) && !getRemoteImagesEnabled()) return;
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: "strict",
@@ -67,6 +85,7 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false, onWork
 
       const parsed = await mermaid.parse(code, { suppressErrors: true });
       if (!parsed) throw new Error("Invalid Mermaid diagram");
+      if (mermaidNeedsImagePermission(code) && !getRemoteImagesEnabled()) return;
 
       const id =
         typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -86,7 +105,7 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false, onWork
     return () => {
       cancelled = true;
     };
-  }, [code, currentKey, isDark, previewVisible]);
+  }, [code, currentKey, isDark, previewVisible, remoteImagesEnabled, resourcesBlocked]);
 
   const previewButton = useMemo(() => (
     <button
@@ -104,7 +123,9 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false, onWork
     return <CodeBlock code={code} lang="mermaid" headerAction={previewButton} isStreaming={isStreaming} onWork={onWork} />;
   }
 
-  const body = renderState?.key === currentKey && renderState.status === "error" ? (
+  const body = resourcesBlocked ? (
+      <div className="mermaid-block"><RemoteImageNotice label={t("chat.diagramImagesBlocked")} /></div>
+    ) : renderState?.key === currentKey && renderState.status === "error" ? (
       <div className="mermaid-block mermaid-block-error">{t("i18n.invalidMermaid")}</div>
     ) : renderState?.key !== currentKey || renderState.status !== "ready" ? (
       <div className="mermaid-block mermaid-block-loading" aria-label={t("i18n.renderingMermaid")} />

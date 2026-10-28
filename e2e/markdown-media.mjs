@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { createOwnedRoutes } from "./owned-routes.mjs";
+
+const REMOTE_IMAGE = "https://remote-images.invalid/pixel.png";
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jXioAAAAASUVORK5CYII=", "base64");
 
 // Authored offline with existing FFmpeg 9.0.2: color=c=blue:s=64x64:r=5:d=4,
 // libvpx, g=5, b:v=20k, no audio/metadata, bitexact. SHA256 of decoded WebM:
@@ -27,8 +31,10 @@ export function seedMarkdownMediaFixtures({ project, agentDir, writeSession, mes
   const videoBytes = Buffer.from(WEBM, "base64");
   assert.equal(createHash("sha256").update(videoBytes).digest("hex"), "fdaead5cf50df7704ea43acde3b06cb66ae143a3cbb32f670e0f1eea52dbc213");
   writeFileSync(video, videoBytes); writeFileSync(corrupt, "not an audio file");
+  const imageDiagram = '```mermaid\nflowchart TD\n A@{ "img": "' + REMOTE_IMAGE + '", label: "Remote diagram image" }\n```';
+  const htmlDiagram = '```mermaid\n%%{init: {"htmlLabels": true, "flowchart": {"htmlLabels": true}}}%%\nflowchart TD\n A["<img src=\'' + REMOTE_IMAGE + '\'>"]\n```';
   writeSession(id, [
-    message("media-user", null, "user", "Local media embeds\n\n![User recording](inline-take.wav)"),
+    message("media-user", null, "user", `Local media embeds\n\n![Remote image policy](${REMOTE_IMAGE})\n\n![User recording](inline-take.wav)\n\n${imageDiagram}\n\n${htmlDiagram}\n\n\`\`\`mermaid\nflowchart TD\n Safe[Ordinary diagram]\n\`\`\``),
     message("media-answer", "media-user", "assistant", [{ type: "text", text:
       `![Video demo](inline-demo.webm)\n\n![External recording](${external})\n\n![Corrupt recording](inline-corrupt.wav)\n\n![Remote demo](https://media.invalid/demo.mp4?v=2)\n\n![Encoded remote](https://media.invalid/clip.%6dp4)\n\n<img alt="Spaced remote" src="https://media.invalid/clip.mp4 ">\n\n![API media](/api/files/${audio.split("/").filter(Boolean).map(encodeURIComponent).join("/").replace(/wav$/, "%77av")}?type=read)\n\n[![Linked demo](inline-demo.webm)](https://media.invalid/docs)\n\n![Outside relative](../outside/other.wav)\n\n[Ordinary recording](inline-take.wav)` }]),
   ]);
@@ -40,7 +46,15 @@ export async function checkMarkdownMedia(page, { base, fixtures: f }) {
   writeFileSync(f.corrupt, "not an audio file"); // Each viewport exercises the same failure first.
   const fileUrl = (file, id = f.id, type = "read") => `${base}/api/files/${file.split("/").filter(Boolean).map(encodeURIComponent).join("/")}?type=${type}${id ? `&sessionId=${id}` : ""}`;
   const paths = new Set([f.audio, f.video, f.external, f.corrupt].map(file => new URL(fileUrl(file)).pathname));
-  const requests = [], forbidden = [], remote = [];
+  const requests = [], forbidden = [], remote = [], imageRequests = [];
+  const imageRoutes = createOwnedRoutes(async route => {
+    const request = route.request();
+    assert.equal(request.url(), REMOTE_IMAGE);
+    assert.equal(request.resourceType(), "image");
+    assert.equal(request.method(), "GET");
+    await route.fulfill({ status: 200, contentType: "image/png", body: PNG, headers: { "cache-control": "no-store" } });
+  }, route => route.abort());
+  await page.route(REMOTE_IMAGE, imageRoutes.handler);
   const observe = request => {
     const url = new URL(request.url());
     if (paths.has(decodeURIComponent(url.pathname))) {
@@ -49,6 +63,7 @@ export async function checkMarkdownMedia(page, { base, fixtures: f }) {
     }
     if (url.pathname === "/api/git/diff" && [f.audio, f.video, f.external, f.corrupt].includes(url.searchParams.get("path"))) forbidden.push(request.url());
     if (url.hostname === "media.invalid") remote.push(request.url());
+    if (url.hostname === "remote-images.invalid") imageRequests.push(request.url());
   };
   page.on("request", observe);
   const media = label => page.locator(".markdown-media").filter({ has: page.locator(".markdown-media-label", { hasText: new RegExp(`^${label}$`) }) });
@@ -96,6 +111,39 @@ export async function checkMarkdownMedia(page, { base, fixtures: f }) {
       const bounds = await box.boundingBox();
       assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= page.viewportSize().width + 1, "media fits narrow chat");
     }
+    const placeholder = page.locator(".remote-image-blocked").filter({ hasText: "Remote image policy" });
+    await placeholder.scrollIntoViewIfNeeded();
+    await page.getByText("Diagram resource-capable syntax blocked.", { exact: false }).first().waitFor();
+    await page.locator('.mermaid-block svg').first().waitFor();
+    assert.deepEqual(imageRequests, [], "off by default blocks ordinary images and Mermaid's pre-publication image requests");
+    assert.equal(await page.locator(`img[src="${REMOTE_IMAGE}"]`).count(), 0);
+    await placeholder.getByRole("button", { name: "Enable remote images", exact: true }).click();
+    const image = page.locator(`img[alt="Remote image policy"][src="${REMOTE_IMAGE}"]`);
+    await image.scrollIntoViewIfNeeded();
+    await page.waitForFunction(node => node.complete && node.naturalWidth === 1, await image.elementHandle());
+    await page.locator('.mermaid-block svg image').first().waitFor();
+    assert.ok(imageRequests.includes(REMOTE_IMAGE), "explicit opt-in admits real browser and Mermaid image networking/decoding");
+    assert.equal(await page.evaluate(() => localStorage.getItem("brabbler-load-remote-images")), "true");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await image.scrollIntoViewIfNeeded();
+    await page.waitForFunction(node => node.complete && node.naturalWidth === 1, await image.elementHandle());
+    const revealSettings = page.getByRole("button", { name: "Show sidebar", exact: true });
+    if (await revealSettings.isVisible()) await revealSettings.click();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    const sectionPicker = page.locator(".settings-mobile-section-picker");
+    if (await sectionPicker.isVisible()) await sectionPicker.selectOption("general");
+    else await page.getByRole("button", { name: "General", exact: true }).click();
+    const setting = page.getByRole("switch", { name: "Load remote images", exact: true });
+    assert.equal(await setting.getAttribute("aria-checked"), "true", "inline opt-in and Settings share the preference");
+    await setting.click();
+    assert.equal(await setting.getAttribute("aria-checked"), "false");
+    await page.keyboard.press("Escape");
+    if (page.viewportSize().width <= 640) {
+      await page.locator('.sidebar-overlay-backdrop').click({ position: { x: page.viewportSize().width - 10, y: 200 } });
+    }
+    await placeholder.waitFor();
+    assert.equal(await image.count(), 0, "disable removes further automatic image sources");
+
     const audio = await load("User recording", "audio"); await playAndSeek(audio);
     const audioHandle = await audio.elementHandle();
     await media("User recording").hover();
@@ -153,5 +201,8 @@ export async function checkMarkdownMedia(page, { base, fixtures: f }) {
     const deniedAgain = await fetch(fileUrl(f.external, "")); assert.equal(deniedAgain.status, 403); await deniedAgain.arrayBuffer();
     assert.deepEqual(remote, [], "remote media is a link, never a media/image request");
     console.log(`PASS: ${page.viewportSize().width}px explicit local media, real playback/seek, session authorization, errors and disposal`);
-  } finally { page.off("request", observe); }
+  } finally {
+    try { await imageRoutes.dispose(handler => page.unroute(REMOTE_IMAGE, handler)); }
+    finally { page.off("request", observe); }
+  }
 }
