@@ -6,6 +6,12 @@ Implement the user-approved sparse override matrix in the actual Git Workflow se
 
 Implementation is authorized by the user's “apply” request. Workspace creation was explicitly approved. Starting local main: `7aeb430f803556125abc24213ecd46f87c262efb`; receiving branch `feat/git-settings-override-matrix` in `/home/robert/projects/3rdparty/brabbler-worktrees/git-settings-override-matrix`.
 
+## Current state
+
+Complete acceptance passed on `7f8db1240863f1c27e6a595e500354c6617abeef`: `all --workers 4 --jobs 4`, source `03b88bbd3d6be3379045cfac66ff34cdbd4bcb4417beb640159a985bdf74419c`, 527/527 core files and 4,343/4,343 tests, 26/26 browser/terminal groups with 60/60 inputs, and the genuine Home Manager VM. Reports: `/tmp/brabbler-test-core.Yyem8O`, `/tmp/brabbler-test-browser.Ify7VH`, `/tmp/pwv-NC5qWW`; whole command 527.311s. Requested/effective core width 4/4; browser width 4. Browser support 4.186s, definitions 6.014s, group-client span 385.669s; core wrapper 521.683s (2.921s before first file, 518.364s first-file-to-last-settlement); VM wrapper 84.947s including realization, guest evidence 22.369s. Overlapping intervals are not additive and are not a cold/warm benchmark.
+
+Final review caught a provenance-cue conflict: the winning border shorthand made an unsaved built-in fallback solid, contradicting the saved/inherited legend. A native computed-style assertion failed exactly `solid !== dashed` for the 1280px global winner (`/tmp/brabbler-test-browser.LKoI5y`, 21.652s; `border-control.log` in the evidence directory). Preserve inherited dash style while highlighting the winner using color/width/background; assert saved-solid and reset-to-inherited transitions too. Both original inputs now dispatch matrix v10, with v9 retirement negatives; no downstream chain is removed. This bounded CSS/test follow-up needs fresh acceptance before integration. Latest admission observes 32 CPUs / 41,689 MiB (40.7 GiB) available and no other Nix clients: use fresh `all --workers 4 --jobs 4`, because 12/4 overlap's 43-GiB estimate still does not fit. The proposed archive was preserved as `/tmp/brabbler-matrix-checks.1zqn1r/archive-handoff-before-border-review.md`; the active plan remains the receiving owner.
+
 ## Context and scope
 
 - The selected design is the matrix, not the other standalone study layouts. Cell clicks edit their own column; inherited origins are not write destinations.

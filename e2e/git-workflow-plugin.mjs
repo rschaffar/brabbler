@@ -139,6 +139,9 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
         `${width}: ${scope} header aligns with its full-cell target`);
       assert.ok(target.width >= 70 && target.height >= 44, `${width}: readable, full-cell target`);
       assert.equal(await cell("commit", scope).evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true);
+      assert.equal(await cell("commit", scope).evaluate((node) => getComputedStyle(node).borderTopStyle),
+        await cell("commit", scope).getAttribute("data-saved") === "true" ? "solid" : "dashed",
+        `${width}: ${scope} border distinguishes saved values from inheritance even when winning`);
       assert.equal(await cell("commit", scope).evaluate((node) => {
         let left = 0, right = innerWidth;
         for (let parent = node.parentElement; parent; parent = parent.parentElement) {
@@ -189,6 +192,8 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     assert.equal(allowed.sessionOverrides.commit, "allow");
     assert.equal(allowed.sources.commit, "session");
     assert.equal(await sessionCell.getAttribute("data-winning"), "true");
+    assert.equal(await sessionCell.getAttribute("data-saved"), "true");
+    assert.equal(await sessionCell.evaluate((node) => getComputedStyle(node).borderTopStyle), "solid", "an explicit winning value retains its saved border");
     assert.match(await sessionCell.textContent(), /Without approvalSaved here/);
     assert.match(await cell("commit", "project").textContent(), /↳ Built-in fallbackRequire approval/);
     await page.screenshot({ path: join(artifacts, `git-settings-matrix-${width}.png`) });
@@ -207,7 +212,9 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     await uiSave(body("session", {}, ["commit"]), () => editor.getByRole("button", { name: "Save changes", exact: true }).click());
     await editor.waitFor({ state: "hidden" });
     assert.equal(await sessionCell.getAttribute("data-saved"), "false");
+    assert.equal(await sessionCell.evaluate((node) => getComputedStyle(node).borderTopStyle), "dashed", "Follow restores the inherited border");
     assert.equal(await cell("commit", "global").getAttribute("data-winning"), "true");
+    assert.equal(await cell("commit", "global").evaluate((node) => getComputedStyle(node).borderTopStyle), "dashed", "the winning built-in fallback is still inherited, not saved");
     const followed = await readSettings();
     assert.equal(Object.hasOwn(followed.sessionOverrides, "commit"), false);
     assert.equal(followed.sources.commit, "builtin");

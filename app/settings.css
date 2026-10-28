@@ -1445,7 +1445,7 @@
 .plugin-matrix-cellDetail > span { color: var(--text-muted); font-size: .7rem; line-height: 1.4; }
 .plugin-matrix-inherited { border-style: dashed; }
 .plugin-matrix-inherited strong { font-weight: 450; color: var(--text-muted); }
-.plugin-matrix-winning { border: 1.5px solid var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
+.plugin-matrix-winning { border-color: var(--accent); border-width: 1.5px; background: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
 .plugin-matrix-cellDetail .plugin-matrix-winner { margin-top: auto; padding-top: .25rem; color: var(--accent); font-weight: 650; }
 .plugin-matrix-cellDetail .plugin-matrix-pin { font-size: .65rem; }
 .plugin-matrix-unavailable { display: flex; flex-direction: column; justify-content: center; gap: .4rem; border-color: transparent; color: var(--text-muted); }
