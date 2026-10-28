@@ -762,7 +762,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "file-edit") {
-      await coverage.run(`file-edit/native-upload-caller-owned-v4@${inputId}`, async () => {
+      await coverage.run(`file-edit/native-upload-preview-notice-v5@${inputId}`, async () => {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       await checkFilePanel(page, previewFile);

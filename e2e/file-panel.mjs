@@ -305,10 +305,23 @@ export async function checkFilePanel(page, filePath) {
   const panel = page.locator("#file-panel");
   const iframe = panel.locator("iframe");
   await iframe.waitFor();
+  const notice = panel.getByRole("note");
+  await notice.waitFor();
+  assert.match(await notice.textContent(), /Single-file HTML preview/);
+  const noticeBounds = await notice.boundingBox();
+  const iframeBounds = await iframe.boundingBox();
+  assert.ok(noticeBounds.height > 0 && noticeBounds.y + noticeBounds.height <= iframeBounds.y + 1,
+    "Host notice stays above, not inside or over, the interactive preview");
+  assert.ok(noticeBounds.x >= 0 && noticeBounds.x + noticeBounds.width <= page.viewportSize().width + 1,
+    "Notice fits desktop and narrow touch viewports");
+  assert.equal(await notice.evaluate(el => el.scrollWidth <= el.clientWidth), true, "Notice text wraps without horizontal overflow");
+  assert.equal(await panel.getByRole("button", { name: "Source", exact: true }).isVisible(), true);
+  assert.equal(await panel.getByRole("link", { name: "Download file", exact: true }).isVisible(), true);
   const frame = await (await iframe.elementHandle()).contentFrame();
   await frame.locator("#notes").fill("Keep this note");
   await frame.locator("#filter").selectOption({ label: "Pending" });
   await frame.evaluate(() => scrollTo(0, 120));
+  assert.equal(await notice.isVisible(), true, "Child scrolling does not hide host guidance");
   const instance = await frame.evaluate(() => window.previewInstance);
   const width = () => panel.evaluate(async el => {
     await new Promise(requestAnimationFrame);
