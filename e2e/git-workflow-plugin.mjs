@@ -117,7 +117,7 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     return outcome.value;
   };
   const readSettings = async () => {
-    const response = await page.request.get(`${base}/api/plugins/bundled?${new URLSearchParams({ cwd: repo, sessionId })}`);
+    const response = await page.request.get(`${base}/api/plugins/bundled?${new URLSearchParams({ cwd: repo, sessionId })}`, { headers: { Connection: "close" } });
     const data = await response.json();
     assert.ok(response.ok(), data.error);
     return data.plugins.find((entry) => entry.manifest.id === "git-workflow").settings;
@@ -139,6 +139,18 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
         `${width}: ${scope} header aligns with its full-cell target`);
       assert.ok(target.width >= 70 && target.height >= 44, `${width}: readable, full-cell target`);
       assert.equal(await cell("commit", scope).evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true);
+      assert.equal(await cell("commit", scope).evaluate((node) => {
+        let left = 0, right = innerWidth;
+        for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+          if (["auto", "scroll", "hidden", "clip"].includes(getComputedStyle(parent).overflowX)) {
+            const bounds = parent.getBoundingClientRect();
+            left = Math.max(left, bounds.left + parent.clientLeft);
+            right = Math.min(right, bounds.left + parent.clientLeft + parent.clientWidth);
+          }
+        }
+        const bounds = node.getBoundingClientRect();
+        return bounds.left >= left - 1 && bounds.right <= right + 1;
+      }), true, `${width}: ${scope} cell is not horizontally clipped by its ancestors or viewport`);
     }
     await sessionCell.focus();
     await page.keyboard.press("Enter");

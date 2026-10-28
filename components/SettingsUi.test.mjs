@@ -1006,3 +1006,45 @@ test('actual SettingsPanel/PluginsConfig preserves inner Escape, matrix opt-in a
   assert.equal(Boolean(f.button('Use project default', f.node('#plugin-launch').parentElement)), true);
   assert.equal(f.view.container.querySelectorAll('.config-sidebar-item[aria-current="page"]').length, 1);
 });
+
+test('actual workflow preset preview follows a non-session destination while showing the masking session result', async t => {
+  const { f, c: { WorkflowSettings, gitWorkflowManifest: manifest }, setup } = await workflowSettingsFixture(t);
+  const cwd = '/repo', snapshot = workflowSnapshot(manifest), sessionId = snapshot.sessionId;
+  snapshot.global = { ...snapshot.global, workspace: 'worktree', commit: 'allow' };
+  snapshot.sessionOverrides = { workspace: 'current-branch' };
+  snapshot.effective = { ...snapshot.effective, workspace: 'current-branch', commit: 'allow' };
+  snapshot.sources = { ...snapshot.sources, workspace: 'session', commit: 'global' };
+  const askValues = { workspace: 'ask', completion: 'ask', targetSelection: 'ask', methodSelection: 'ask', cleanupWorktree: 'ask', cleanupBranch: 'ask', cleanupArtifacts: 'ask' };
+  const next = { ...snapshot, overrides: { ...askValues }, effective: { ...snapshot.effective, ...askValues, workspace: 'current-branch' },
+    sources: { ...snapshot.sources, ...Object.fromEntries(Object.keys(askValues).map(key => [key, 'project'])), workspace: 'session' } };
+  const expected = { pluginId: manifest.id, cwd, sessionId, scope: 'project', set: askValues, reset: [] };
+  f.route('GET', '/api/plugins/bundled', { query: { cwd, sessionId }, reply: { data: { plugins: [{ manifest, settings: snapshot }] } } });
+  f.route('PATCH', '/api/plugins/bundled', { body: expected, reply: { data: { settings: next } } });
+  await f.mount(h(WorkflowSettings, { cwd, id: manifest.id, sessionId }), { setup });
+  await matrixPreset(f, 'project', 'always-ask');
+  const preview = () => [...matrixDialog(f).querySelectorAll('.plugin-matrix-presetPreview > div')].find(node => node.querySelector('h3').textContent === 'Working location');
+  assert.equal(matrixDialog(f).querySelectorAll('.plugin-matrix-presetPreview > div').length, 7);
+  const destination = () => preview().querySelector('.plugin-matrix-previewFacts > div:first-child');
+  const resolved = () => preview().querySelector('.plugin-matrix-previewFacts > div:last-child');
+  assert.equal(destination().querySelector('dt').textContent, 'At repo');
+  assert.match(destination().querySelector('dd').textContent, /^Ask each time\s+Saved explicitly$/);
+  assert.match(resolved().textContent, /Resolved for this sessionCurrent branchFrom This session/);
+  assert.match(preview().textContent, /narrower override takes priority/);
+  await f.input(matrixDialog(f).querySelector('[aria-label="Save workflow choices to"]'), 'global');
+  assert.equal(destination().querySelector('dt').textContent, 'At All repositories');
+  assert.match(resolved().textContent, /Current branchFrom This session/);
+  await f.input(matrixDialog(f).querySelector('[aria-label="Save workflow choices to"]'), 'project');
+  assert.equal(f.requests.filter(request => request.method === 'PATCH').length, 0);
+  await f.click(f.button('Apply workflow preset', matrixDialog(f)));
+  assert.deepEqual(f.requests.filter(request => request.method === 'PATCH').map(request => request.body), [expected]);
+  assert.equal(matrixCell(f, 'workspace', 'project').dataset.saved, 'true');
+  assert.equal(matrixCell(f, 'workspace', 'session').dataset.winning, 'true');
+  assert.match(matrixCell(f, 'workspace', 'project').textContent, /Ask each timeSaved here/);
+  assert.match(matrixCell(f, 'commit', 'global').textContent, /Without approvalSaved here/);
+  assert.match(matrixCell(f, 'targetBranch', 'global').textContent, /targetSaved here/);
+  assert.equal(matrixCell(f, 'targetBranch', 'global').dataset.winning, 'true');
+  assert.equal(next.effective.targetBranch, 'target');
+  assert.equal(next.sources.targetBranch, 'global');
+  assert.deepEqual(next.effective.commitChecks, []);
+  assert.deepEqual(next.effective.mergeChecks, []);
+});
