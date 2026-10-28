@@ -4,8 +4,9 @@
 implementation on this release worktree and requested durable public-safe planning
 rules. Exact history filters, Git remote operations, publication, activation and
 resource cleanup retain their separate approval gates. Selected implementation
-checks have passed; full settled-candidate acceptance and native macOS verification
-remain pending. No release or platform-support claim follows from this status.
+checks and complete Linux Nix acceptance have passed for the candidate recorded
+below. Native macOS verification and the privacy/publication handoff remain pending.
+No release or untested-platform claim follows from this status.
 
 ## Goal
 
@@ -156,8 +157,8 @@ and **32 exporter contracts**, **40 seconds command wall**, source digest
 Independent review found no remaining SDK/lifecycle or new packaging/exporter
 blockers. A test-private Nix counterexample that ignored a nonempty source-version
 mismatch reached the named missing-exception runtime assertion; the normal owner
-passed. Fault material never replaced application source. Full composed Nix and
-native macOS acceptance remain pending.
+passed. Fault material never replaced application source. Full composed Nix
+acceptance subsequently passed as recorded below; native macOS remains pending.
 
 The first notice/source archive inventory passed all notice-byte/source-checksum
 checks: **923 package locations / 420 legal bodies**, with no tests, state or
@@ -178,6 +179,38 @@ findings**. Their lock identities still match the unchanged dependency graphs:
 root `9ce2e04f8d75aac6f999b2ea04b9f6da97d1691c14a9d9699b6f773ab05d60cf`;
 demo `d5cba47655563f060e0caa4fd7dc16e8ee675dac3695cbc6ca48cd21822a2dcd`.
 Raw results are retained privately. This does not alone clear embedded code.
+
+## Verified candidate and remaining handoff
+
+Candidate `ebe18d2c8af885aac5c9253564718f2f604f6d7e`, based on main `3b73cbfd`,
+passed `nix run --no-write-lock-file .#test -- all --workers 4 --jobs 12`:
+**4,390 tests / 530 files**, all **26 browser/terminal groups**, and the genuine
+Home Manager deployment VM, including enforced auth after runtime-file processing.
+Source digest: `66bc894d6aeaa89fcfe70baefdd20dd1bad9be4c6ff4e78a3747d569c1b1ce10`.
+Requested/effective core width was **12/12**, browser width **4**, overlap admitted.
+
+Command wall: **393 seconds**, including in-run static/support realization.
+Application/source/module prerequisites had been built beforehand; this is not a
+cold-cache or performance-comparison claim. Core level interval **340.545s**:
+**54.225s** before the first observed test file and **285.928s** from first file
+start to last end. Browser level **323.530s**, including **4.023s** support and
+**5.131s** definition preparation. Deployment level **62.787s**, including its
+realization; that report does not split preparation/execution. Intervals overlap
+and must not be added as serial phases. Full raw reports/manifests/logs are retained
+privately in persistent state, not only temporary directories.
+
+Fresh Gitleaks **8.30.1**, explicit built-in defaults/no repository or inline
+allowlist, scanned **1,483 diff-backed commits / 49.97 MB** at this candidate.
+Only the same two previously classified documentation-prose false positives were
+reported; scanner exit 1 is retained as findings, not relabeled exit 0. The exact
+seven-commit main/feature delta scanned all seven, **697.71 KB**, exit 0, no findings.
+No confirmed credential was identified. Binary/unmerged/tag-only clearance is not
+claimed. Final sanitized-history residual checks remain required.
+
+This status-only follow-up records those earlier tested inputs; it is not a new-tip
+application-suite run. Native macOS, approved privacy filters/cutover, real published
+source-asset availability, exact local integration, remote operations and cleanup
+retain their separate gates. Original private history has not been sanitized.
 
 ## Architecture
 
@@ -348,13 +381,13 @@ not come from the builder's platform. Packaging success is not portability proof
 
 ### P5 — settled candidate acceptance and local integration
 
-- [ ] Review the composed diff independently. Rebase onto current **local main**,
+- [x] Review the composed diff independently. Rebase onto current **local main**,
   reassess changed inputs and record exact candidate/locks/artifact identities.
-- [ ] Run focused checks while editing, then complete acceptance using
+- [x] Run focused checks while editing, then complete acceptance using
   `nix run .#test -- all --workers 4 --jobs 12` when admitted, or documented 4/4
   when resources/concurrent work require it. Preserve all core/static/plugin,
   browser/terminal and genuine Home Manager VM coverage and failure diagnostics.
-- [ ] Record command/preparation/test intervals separately, requested/effective
+- [x] Record command/preparation/test intervals separately, requested/effective
   widths, source identity and retained artifacts. Reuse unchanged input-bound
   evidence honestly; do not claim an old run tested a new input.
 - [ ] Refresh the secret/privacy review and advisories for the final candidate

@@ -89,9 +89,12 @@ The local application/source pair builds in isolated Nix and passed an ordinary
 Linux x86_64 / Node 24.21.0 smoke: runtime installation, native HTTP PTY, hidden
 password setup, login/restart/rotation, header/no-auth boundaries, preserved notice
 bytes, matching source checksum/version and actual HTTP notice/locator discovery.
-That is evidence for the named Linux candidate only, not all architectures,
-native macOS or complete settled-candidate Nix acceptance. No public release or
-hosted macOS result is claimed.
+Complete Linux Nix acceptance also passed for the recorded source candidate:
+4,390 tests in 530 files, all 26 browser/terminal groups, and the genuine
+Home Manager deployment VM. The owning plan records input identities and scope;
+a status-only follow-up is not a new application-suite run. This is not evidence
+for untested architectures or native macOS. No public release or hosted macOS
+result is claimed.
 
 Before publication:
 
