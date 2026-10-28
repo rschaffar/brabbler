@@ -7,13 +7,23 @@ const { createSshAgentRouter } = require("./ssh-agent-router");
 const { wireChildProcessLifecycle } = require("./process-lifecycle");
 const { getNextNodeArgs } = require("./brabbler-node-args");
 const { checkSdkCommandEnvironment } = require("./patch-sdk-command-env");
+const { getWebAuthPolicy } = require("./web-auth-policy");
+const { checkSdkRuntimePolicy } = require("./sdk-runtime-policy");
 
 async function launchManagedNext(options, services = {}) {
   // Read-only installed-root verification, before runtime allocation. Never
   // repair dependencies here or sanitize the trusted Next worker environment.
-  (services.checkSdkEnvironment || checkSdkCommandEnvironment)();
+  (services.checkSdkEnvironment || (() => {
+    checkSdkCommandEnvironment();
+    checkSdkRuntimePolicy();
+  }))();
   const parent = services.parentProcess || process;
   const environment = options.environment || process.env;
+  const authPolicy = getWebAuthPolicy(environment);
+  if (authPolicy === "invalid") throw new Error("Invalid web authentication configuration: no-auth cannot override required authentication.");
+  if (authPolicy === "disabled") (services.warn || console.warn)(
+    `WARNING: Brabbler web authentication is DISABLED on ${options.hostname}. Anyone who can reach this listener can access this coding workspace.`,
+  );
   const createRouter = services.createRouter || createSshAgentRouter;
   const spawnNext = services.spawn || spawn;
   let aborted = null, router;

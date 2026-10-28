@@ -4,6 +4,21 @@
   "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. Automatic selection remains capped at four; widths through eight are explicit opt-in experiments whose isolation review is not proof of native timing margins or complete acceptance. Re-review when resource/fixture behavior changes. The 2026-10-22 audit JSON is immutable historical evidence, not live authority or a current source-byte/reason/estimate requirement. Live unresolved holds carry the concerns still requiring review; source digests alone do not prove isolation. Original73 plus12 finite additional clients re-reviewed at coherent union; SessionTools pending Apply peer fixed with actual failure-settlement contrast. Native closed gates bind configured Jiti L, eager SDK I/V and actual external-root X; 3 bounded guarded in-process F, 9 native N eligible, runtime generation/catalogue and invoked trust discovery are now separately source-bound N at their selected inputs. Fresh combined four-job run required; no worker/deadline/runner policy change. Current explicit Source/input projection closes finite Worktree/Terminal, Cards/Pierre/FDIFF, Usage/SSH UI, runtime/trust and actual queue domains, with passive native SSH/RPC error-retention remedies. No browser/native retirement or universal constructor/escaped/future work certification; complete combined four-job validation remains required.",
   "files": [
     {
+      "path": "lib/third-party-notices.test.mjs",
+      "lane": "N",
+      "reason": "Runs the real notice collector/version guard on per-case mkdtemp dependency/metadata/legal-text/symlink fixtures. All I/O and JSON-only module resolution are synchronous; fixture removal is registered before writes. No dependency JavaScript, source writes, installer, network, child, native signal or shared environment mutation. Deterministic root-independent output, preserved bytes/ownership, and refusal boundaries are covered; final installed artifact/source access remains a separate native bridge."
+    },
+    {
+      "path": "lib/release-artifact.test.mjs",
+      "lane": "N",
+      "reason": "Imports inert smoke helpers and reads tracked manifests/workflow; checksum cases use synchronous files under per-case mkdtemp with registered removal. Lifecycle cases use only per-instance fake child/pipe capabilities, awaited microtasks, cleared real wait timers or deterministic injected wait outcomes; no real installer, server, PTY, child/group signal, network, source write or ambient environment mutation. Native bridge is the separately executed exact-artifact smoke, not these bounded assertions."
+    },
+    {
+      "path": "lib/sdk-runtime-policy.test.mjs",
+      "lane": "N",
+      "reason": "Real SDK policy reads immutable installed metadata, then uses per-case mkdtemp owned manifests/regular files/symlink fixtures only. All effects are synchronous; registered root removal follows completed assertions even on failure. No source writes, dependency mutation, child process, listener, model or shared environment change; cases remain serial. This is bounded refusal/idempotence coverage; actual known-bundle removal is also exercised by Nix realization and portable installation."
+    },
+    {
       "path": "lib/web-auth-store.test.mjs",
       "lane": "N",
       "reason": "Real credential/CLI/proxy/login/SSH admission owners use per-case mkdtemp agent/HOME, private regular/symlink/hardlink fixtures and process-local auth symbols. Every asynchronous scrypt attempt is awaited (including all concurrent outcomes), native controlling-PTY CLI exits are joined, synchronous CLI refusals have no service children, and registered teardown restores environment/throttle before private-root removal. SSH tests reject before managed dispatch. Title settings writes use explicit fixture paths with restored process-local umask; whole-launcher VM execution replaces only argument/build-artifact/child-launch capabilities and uses the real store, without source extraction or copied authentication policy. No native SDK operation, SSH listener, fixed port, provider or source-relative write is admitted. Cases stay serial."

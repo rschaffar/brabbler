@@ -1,0 +1,16 @@
+ELK / elkjs source availability
+
+This archive provides the preferred-form sources assembled from the upstream
+elkjs 0.9.3 release's declared ELK v0.9.1 plus PR955 lineage, the JS wrapper and
+build configuration, and the runtime source JARs identified in MANIFEST.json.
+Source/patch copyrights and original license notices are preserved.
+
+ELK/elkjs and Xbase/Xtend sources are available under their included EPL-2.0
+terms. EMF-GWT common/ecore sources retain EPL-1.0 terms. Original Apache and
+additional notices are retained for GWT/Guava. See notices/ and source headers.
+Brabbler has not added functional engine-source modifications.
+
+README.md describes source identities, validation and the upstream traceability
+limitation. No legal certification or byte-identical upstream build is claimed.
+The separate source asset accompanies the Brabbler release; its application
+NOTICE and SOURCE-AVAILABILITY.json identify the versioned locator and checksum.

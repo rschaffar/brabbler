@@ -42,8 +42,8 @@ function notAvailable(command: string): ShellResult {
   const zh = currentDemoLocale() === "zh";
   return {
     output: zh
-      ? `${command}: 这是 Brabbler 的静态演示，没有真实的 shell。\n可以试试：ls、pwd、cat <文件>、git status、git log、git branch、node -v、date、echo、help\n运行真实版本：nix run /path/to/brabbler -- --no-open`
-      : `${command}: this is a static Brabbler demo, so there is no real shell.\nTry: ls, pwd, cat <file>, git status, git log, git branch, node -v, date, echo, help\nRun the real thing: nix run /path/to/brabbler -- --no-open`,
+      ? `${command}: 这是 Brabbler 的静态演示，没有真实的 shell。\n可以试试：ls、pwd、cat <文件>、git status、git log、git branch、node -v、date、echo、help\nSee README for installation instructions.`
+      : `${command}: this is a static Brabbler demo, so there is no real shell.\nTry: ls, pwd, cat <file>, git status, git log, git branch, node -v, date, echo, help\nSee README for installation instructions.`,
     exitCode: 127,
   };
 }
@@ -90,11 +90,11 @@ async function runSingle(commandLine: string, cwd: string): Promise<ShellResult>
     case "date":
       return { output: new Date().toString(), exitCode: 0 };
     case "node":
-      return flags.includes("-v") || flags.includes("--version") ? { output: "v22.19.0", exitCode: 0 } : notAvailable(commandLine);
+      return flags.includes("-v") || flags.includes("--version") ? { output: "v24.21.0", exitCode: 0 } : notAvailable(commandLine);
     case "npm":
-      return flags.includes("-v") || flags.includes("--version") ? { output: "10.9.3", exitCode: 0 } : notAvailable(commandLine);
+      return flags.includes("-v") || flags.includes("--version") ? { output: "11.19.0", exitCode: 0 } : notAvailable(commandLine);
     case "brabbler":
-      return { output: "brabbler 0.9.2 — you are looking at it. ✨", exitCode: 0 };
+      return { output: "brabbler 0.1.0 — static illustration, not a release-status check. ✨", exitCode: 0 };
     case "help":
       return notAvailable("help");
     case "ls": {

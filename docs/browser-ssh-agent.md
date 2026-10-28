@@ -44,7 +44,8 @@ key files and other authentication methods may still work.
 - Unix sockets (Linux/macOS server), writable private runtime/state directories,
   and socket pathnames within 100 bytes. Windows server sockets are unsupported.
 - Configured local CLI authentication (`brabbler auth setup`) or explicit `BRABBLER_PASSWORD`, and a signed web login. Basic/API authentication
-  alone cannot manage SSH. Exact same-origin/public-Host checks apply.
+  alone cannot manage SSH. Explicit no-auth mode grants no signed-login authority,
+  so browser SSH management remains unavailable. Exact same-origin/public-Host checks apply.
 - Browser signing needs a secure top-level DNS origin: trusted HTTPS or
   `http://localhost`, not an IP literal. Native selection/status also works on
   loopback IPs. Reverse proxies must preserve public Host and browser Origin;

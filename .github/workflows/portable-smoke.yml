@@ -1,0 +1,77 @@
+name: Portable release smoke
+
+# Test-only, manually approved candidate. Never deploys or publishes a release.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Build once in an isolated Nix builder
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=$(nix build --no-write-lock-file --no-link --print-out-paths .#brabbler-tarball)
+          version=$(nix eval --no-write-lock-file --raw .#brabbler.version)
+          sources=$(nix build --no-write-lock-file --no-link --print-out-paths .#brabbler-sources)
+          mkdir dist
+          cp "$out/brabbler-$version.tgz" dist/brabbler.tgz
+          cp "$sources/brabbler-$version-third-party-sources.tar.gz" dist/third-party-sources.tar.gz
+          sha256sum dist/brabbler.tgz | cut -d' ' -f1 > dist/SHA256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-input
+          path: dist/
+          if-no-files-found: error
+
+  smoke:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: portable-input
+          path: dist
+      - name: Install and verify the exact tarball without Nix
+        shell: bash
+        run: |
+          set -euo pipefail
+          node nix/portable-smoke.mjs "$PWD/dist/brabbler.tgz" "$(tr -d '\r\n' < dist/SHA256)" "$PWD/dist/third-party-sources.tar.gz" 2>&1 | tee smoke.log
+      - name: Collect synthetic report only, never credential state
+        if: always()
+        shell: bash
+        run: |
+          if test -f smoke.log; then
+            root=$(awk -F': ' '/^Portable smoke evidence:/ { print $2; exit }' smoke.log)
+            if test -n "$root" && test -f "$root/report.json"; then cp "$root/report.json" portable-report.json; fi
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ matrix.os }}
+          path: |
+            smoke.log
+            portable-report.json

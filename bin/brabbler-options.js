@@ -9,6 +9,7 @@ const CLI_OPTIONS = {
   port: { type: "string", short: "p" },
   hostname: { type: "string", short: "H" },
   "no-open": { type: "boolean" },
+  "no-auth": { type: "boolean" },
   help: { type: "boolean", short: "h" },
 };
 
@@ -41,6 +42,7 @@ Options:
   -p, --port <port>          Server port (default: 30141, or PORT)
   -H, --hostname <host>      Bind hostname (default: 127.0.0.1, or BRABBLER_HOSTNAME)
       --no-open              Do not open a browser automatically
+      --no-auth              Disable web login (dangerous on any reachable bind)
   -h, --help                 Show this help message and exit
 
 Environment:
@@ -49,7 +51,8 @@ Environment:
   BRABBLER_NO_OPEN             Set to 1/true/yes/on to disable browser open
   BRABBLER_APP_NAME            PWA manifest name (trimmed; default Brabbler)
   BRABBLER_PASSWORD            Explicit env password (conflicts with local credentials)
-  BRABBLER_REQUIRE_AUTH        Set to 1 to lock until authentication is configured
+  BRABBLER_REQUIRE_AUTH        Set to 1 to prohibit an authentication bypass
+  BRABBLER_NO_AUTH             Set to 1 for explicit no-auth mode; default is protected
   PI_CODING_AGENT_DIR          Agent state root (default ~/.pi/agent)
   BRABBLER_ALLOWED_HOSTS       Extra exact proxy/custom hostnames, comma-separated
   BRABBLER_SKIP_VERSION_CHECK  Set to 1 to disable running-version reload prompts
@@ -90,6 +93,7 @@ function parseLaunchOptions(args = process.argv.slice(2), env = process.env) {
     port: normalizePort(values.port ?? env.PORT ?? "30141"),
     hostname: values.hostname ?? env.BRABBLER_HOSTNAME ?? "127.0.0.1",
     openBrowser: !values["no-open"] && !isEnabled(env.BRABBLER_NO_OPEN),
+    noAuth: values["no-auth"] === true,
   };
 }
 

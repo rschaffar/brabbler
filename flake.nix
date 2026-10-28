@@ -91,7 +91,12 @@
           src = (sources pkgs).application;
           nodejs = pkgs.nodejs_24;
           modules = modules pkgs;
+          thirdPartySources = brabbler-sources;
         };
+        brabbler-sources = pkgs.callPackage ./nix/third-party-sources.nix {
+          version = (builtins.fromJSON (builtins.readFile ./package.json)).version;
+        };
+        brabbler-tarball = brabbler.tarball;
         default = brabbler;
       });
       apps = forSystems systems (pkgs: {

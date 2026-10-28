@@ -63,6 +63,7 @@ export default function RootLayout({
     <html lang="en" translate="no" className={`${notoSansMono.variable} notranslate`} suppressHydrationWarning>
       <head>
         <meta name="google" content="notranslate" />
+        <link rel="license" href="/third-party/NOTICE.md" type="text/markdown" />
         <script
           dangerouslySetInnerHTML={{
             __html: THEME_INIT_SCRIPT,

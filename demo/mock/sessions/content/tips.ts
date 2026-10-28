@@ -49,7 +49,7 @@ export const tipsSession: SessionScript = {
         {
           seconds: 7,
           text: {
-            en: "The latest release is **v0.9.2**. Since then: a leaner production install with dependency bumps (#948). Before the release: faster session loading (#940), per-turn tool-call counts in the minimap preview (#939), and a **Refresh catalog** button in the Models panel (#938).",
+            en: "This inherited example describes historical **Pi Web v0.9.2**, not Brabbler's current release. In that example: a leaner production install with dependency bumps (#948). Before the release: faster session loading (#940), per-turn tool-call counts in the minimap preview (#939), and a **Refresh catalog** button in the Models panel (#938).",
             zh: "最新版本是 **v0.9.2**。发布之后：精简了生产环境安装并升级依赖（#948）。发布之前：会话加载提速（#940）、小地图预览中显示每轮的工具调用次数（#939），以及模型面板新增 **刷新模型目录** 按钮（#938）。",
           },
         },

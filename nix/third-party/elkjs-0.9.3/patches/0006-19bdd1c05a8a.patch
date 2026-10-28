@@ -1,0 +1,23 @@
+From 19bdd1c05a8a9b4f528107064f4da5cbbef8f3fd Mon Sep 17 00:00:00 2001
+From: Max Kasperowski <mka@informatik.uni-kiel.de>
+Date: Tue, 17 Oct 2023 11:05:46 +0200
+Subject: [PATCH 6/7] Revert changes to test case
+
+---
+ .../src/org/eclipse/elk/alg/layered/issues/Issue701Test.java    | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java b/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java
+index a1ba0b3825..26c8416d5f 100644
+--- a/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java
++++ b/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java
+@@ -481,7 +481,7 @@ private void assertNodeHeightAccordingToPortHeight(ElkNode node, ElkPort port, E
+                                     + Math.max(spacingBetweenPort, nodePadding.getBottom()));
+ 
+             assertEquals("Wrong node height according to port label height.",
+-                    Math.max(portHeightPlusPadding, spacingBetweenPort), node.getHeight(), 0);
++                    Math.max(portHeightPlusPadding, oppositePortHeightPlusPadding), node.getHeight(), 0);
+             assertEquals("Wrong node label location.", ElkUtil.absolutePosition(node).y + nodeLabelPadding.getTop(),
+                     ElkUtil.absolutePosition(nodeLabel).y, 0);
+         } else {
+

@@ -1,0 +1,37 @@
+From b7941dfd52a3363b628951bc44c8ea933fe3333e Mon Sep 17 00:00:00 2001
+From: Max Kasperowski <mka@informatik.uni-kiel.de>
+Date: Thu, 7 Sep 2023 15:08:19 +0200
+Subject: [PATCH 1/7] Consider node's size when computing available space in
+ port placement
+
+---
+ .../internal/algorithm/NodeSizeCalculator.java            | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java b/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
+index dae9ee8e85..a2886d03a4 100644
+--- a/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
++++ b/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
+@@ -46,8 +46,8 @@ public static void setNodeWidth(final NodeContext nodeContext) {
+             // Simply use the node's current width
+             width = nodeSize.x;
+         } else {
+-            // Ask the cell system how wide it would like to be
+-            width = nodeContext.nodeContainer.getMinimumWidth();
++            // Ask the cell system how wide it would like to be or take the node's width if it has already been set
++            width = Math.max(nodeSize.x, nodeContext.nodeContainer.getMinimumWidth());
+             
+             // If we include node labels and outside node labels are not to overhang, we need to include those as well
+             if (nodeContext.sizeConstraints.contains(SizeConstraint.NODE_LABELS)
+@@ -95,8 +95,8 @@ public static void setNodeHeight(final NodeContext nodeContext) {
+             // Simply use the node's current height
+             height = nodeSize.y;
+         } else {
+-            // Ask the cell system how heigh it would like to be
+-            height = nodeContext.nodeContainer.getMinimumHeight();
++            // Ask the cell system how heigh it would like to be or take the node's height if it has already been set
++            height = Math.max(nodeSize.y, nodeContext.nodeContainer.getMinimumHeight());
+             
+             // If we include node labels and outside node labels are not to overhang, we need to include those as well
+             if (nodeContext.sizeConstraints.contains(SizeConstraint.NODE_LABELS)
+

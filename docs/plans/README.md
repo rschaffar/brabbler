@@ -10,6 +10,7 @@ on 2026-10-27.
 
 | Plan | Remaining scope |
 | --- | --- |
+| [Brabbler 0.1.0 public release](2026-10-28_public-release-plan.md) | Implementation authorized and in progress: portable default-on authentication, fixed modular SDK policy and prebuilt archive are checkpointed; ELK is retained with separate source materials and notices. Full settled-candidate acceptance, native macOS verification, exact privacy filters/cutover and publication remain separately gated. |
 | [Multi-provider accounts](2026-09-25_multi-provider-accounts-plan.md) | Account-scoped real OAuth/device completion, cancellation and provider refresh evidence, plus explicit isolation-review disposition; implementation is integrated. Synthetic browser authorization is not live-provider proof. |
 | [Claude CLI sessions](2026-09-26_claude-cli-sessions-plan.md) | Backend/policy/protocol work is not delivered on main. Retained feature branches are not integration evidence. |
 | [Explorer fullscreen](2026-10-13_git-explorer-fullscreen-plan.md) | Dedicated already-paginated history/graph and unsupported/non-Git fullscreen browser cases, including expand/restore state retention. |

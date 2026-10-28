@@ -1,5 +1,5 @@
-// node-pty 1.1.0 ships macOS spawn-helper binaries without executable bits.
-// Remove this workaround once the upstream package preserves those modes.
+// Some node-pty macOS archives lack spawn-helper executable bits.
+// Keep this idempotent repair scoped to the owned installed helper files.
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { chmodSync, statSync } = require("node:fs");
 const { dirname, join } = require("node:path");

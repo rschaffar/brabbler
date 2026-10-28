@@ -1,0 +1,385 @@
+From b7941dfd52a3363b628951bc44c8ea933fe3333e Mon Sep 17 00:00:00 2001
+From: Max Kasperowski <mka@informatik.uni-kiel.de>
+Date: Thu, 7 Sep 2023 15:08:19 +0200
+Subject: [PATCH 1/7] Consider node's size when computing available space in
+ port placement
+
+---
+ .../internal/algorithm/NodeSizeCalculator.java            | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java b/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
+index dae9ee8e85..a2886d03a4 100644
+--- a/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
++++ b/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
+@@ -46,8 +46,8 @@ public static void setNodeWidth(final NodeContext nodeContext) {
+             // Simply use the node's current width
+             width = nodeSize.x;
+         } else {
+-            // Ask the cell system how wide it would like to be
+-            width = nodeContext.nodeContainer.getMinimumWidth();
++            // Ask the cell system how wide it would like to be or take the node's width if it has already been set
++            width = Math.max(nodeSize.x, nodeContext.nodeContainer.getMinimumWidth());
+             
+             // If we include node labels and outside node labels are not to overhang, we need to include those as well
+             if (nodeContext.sizeConstraints.contains(SizeConstraint.NODE_LABELS)
+@@ -95,8 +95,8 @@ public static void setNodeHeight(final NodeContext nodeContext) {
+             // Simply use the node's current height
+             height = nodeSize.y;
+         } else {
+-            // Ask the cell system how heigh it would like to be
+-            height = nodeContext.nodeContainer.getMinimumHeight();
++            // Ask the cell system how heigh it would like to be or take the node's height if it has already been set
++            height = Math.max(nodeSize.y, nodeContext.nodeContainer.getMinimumHeight());
+             
+             // If we include node labels and outside node labels are not to overhang, we need to include those as well
+             if (nodeContext.sizeConstraints.contains(SizeConstraint.NODE_LABELS)
+
+From 6a15c2c39646ce5574ced8e574e6ffe75e1ddb2d Mon Sep 17 00:00:00 2001
+From: Max Kasperowski <mka@informatik.uni-kiel.de>
+Date: Mon, 16 Oct 2023 16:02:40 +0200
+Subject: [PATCH 2/7] fix typo
+
+---
+ .../nodespacing/internal/algorithm/NodeSizeCalculator.java      | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java b/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
+index a2886d03a4..91c48ca286 100644
+--- a/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
++++ b/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
+@@ -95,7 +95,7 @@ public static void setNodeHeight(final NodeContext nodeContext) {
+             // Simply use the node's current height
+             height = nodeSize.y;
+         } else {
+-            // Ask the cell system how heigh it would like to be or take the node's height if it has already been set
++            // Ask the cell system how high it would like to be or take the node's height if it has already been set
+             height = Math.max(nodeSize.y, nodeContext.nodeContainer.getMinimumHeight());
+             
+             // If we include node labels and outside node labels are not to overhang, we need to include those as well
+
+From 9403c6f27fa0e0c6127c5a66fea8a24b8563d2ea Mon Sep 17 00:00:00 2001
+From: Max Kasperowski <mka@informatik.uni-kiel.de>
+Date: Mon, 16 Oct 2023 16:42:36 +0200
+Subject: [PATCH 3/7] expand comments
+
+---
+ .../internal/algorithm/NodeSizeCalculator.java            | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java b/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
+index 91c48ca286..0e063f7387 100644
+--- a/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
++++ b/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
+@@ -46,8 +46,10 @@ public static void setNodeWidth(final NodeContext nodeContext) {
+             // Simply use the node's current width
+             width = nodeSize.x;
+         } else {
+-            // Ask the cell system how wide it would like to be or take the node's width if it has already been set
++            // Ask the cell system how wide it would like to be or take the node's width if it has already been set to a
++            // greater value
+             width = Math.max(nodeSize.x, nodeContext.nodeContainer.getMinimumWidth());
++//            width = nodeContext.nodeContainer.getMinimumWidth();
+             
+             // If we include node labels and outside node labels are not to overhang, we need to include those as well
+             if (nodeContext.sizeConstraints.contains(SizeConstraint.NODE_LABELS)
+@@ -95,8 +97,10 @@ public static void setNodeHeight(final NodeContext nodeContext) {
+             // Simply use the node's current height
+             height = nodeSize.y;
+         } else {
+-            // Ask the cell system how high it would like to be or take the node's height if it has already been set
++            // Ask the cell system how high it would like to be or take the node's height if it has already been set to 
++            // a greater value
+             height = Math.max(nodeSize.y, nodeContext.nodeContainer.getMinimumHeight());
++//            height = Math.max(0, nodeContext.nodeContainer.getMinimumHeight());
+             
+             // If we include node labels and outside node labels are not to overhang, we need to include those as well
+             if (nodeContext.sizeConstraints.contains(SizeConstraint.NODE_LABELS)
+
+From 86d8fbeb9698e95388e87bbd1b48a08069b7014a Mon Sep 17 00:00:00 2001
+From: Max Kasperowski <mka@informatik.uni-kiel.de>
+Date: Mon, 16 Oct 2023 17:01:25 +0200
+Subject: [PATCH 4/7] Update test
+
+Let test also allow node's set height as correct if it is greater than
+the the minimum height needed according to the ports. This may not be
+the desired solution.
+---
+ .../src/org/eclipse/elk/alg/layered/issues/Issue701Test.java | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java b/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java
+index 26c8416d5f..d9abb6578e 100644
+--- a/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java
++++ b/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java
+@@ -415,7 +415,8 @@ private void assertNodeWidthAccordingToPortWidth(ElkNode node, ElkPort port, Elk
+             // org.eclipse.elk.alg.common.nodespacing.internal.algorithm.HorizontalPortPlacementSizeCalculator.calculateHorizontalNodeSizeRequiredByFreePorts(NodeContext,
+             // PortSide)
+             assertEquals("Wrong node width according to port(s) label width.",
+-                    spacingBetweenPort + Math.max(portLabelWidth, oppositePortLabelWidth) + spacingBetweenPort,
++                    Math.max(spacingBetweenPort + Math.max(portLabelWidth, oppositePortLabelWidth) + spacingBetweenPort,
++                            node.getWidth()),
+                     node.getWidth(), 0);
+         } else {
+             double spacingLabelPort = port.getProperty(CoreOptions.SPACING_LABEL_PORT_HORIZONTAL);
+@@ -481,7 +482,7 @@ private void assertNodeHeightAccordingToPortHeight(ElkNode node, ElkPort port, E
+                                     + Math.max(spacingBetweenPort, nodePadding.getBottom()));
+ 
+             assertEquals("Wrong node height according to port label height.",
+-                    Math.max(portHeightPlusPadding, oppositePortHeightPlusPadding), node.getHeight(), 0);
++                    Math.max(portHeightPlusPadding, Math.max(spacingBetweenPort, node.getHeight())), node.getHeight(), 0);
+             assertEquals("Wrong node label location.", ElkUtil.absolutePosition(node).y + nodeLabelPadding.getTop(),
+                     ElkUtil.absolutePosition(nodeLabel).y, 0);
+         } else {
+
+From d665f4436cff7ce477bc144a6eb534125fff5349 Mon Sep 17 00:00:00 2001
+From: Max Kasperowski <mka@informatik.uni-kiel.de>
+Date: Tue, 17 Oct 2023 11:02:22 +0200
+Subject: [PATCH 5/7] Add top-down property to nodeContext
+
+Only consider existing node height in the top-down layout case
+---
+ .../common/nodespacing/internal/NodeContext.java   |  5 +++++
+ .../internal/algorithm/NodeSizeCalculator.java     | 14 ++++++++++----
+ .../elk/alg/layered/issues/Issue701Test.java       |  5 ++---
+ 3 files changed, 17 insertions(+), 7 deletions(-)
+
+diff --git a/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/NodeContext.java b/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/NodeContext.java
+index a86770ef85..e69ad4b31c 100644
+--- a/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/NodeContext.java
++++ b/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/NodeContext.java
+@@ -86,6 +86,8 @@ public final class NodeContext {
+     public final double portLabelSpacingVertical;
+     /** Margin to leave around the set of ports on each side. */
+     public final ElkMargin surroundingPortMargins;
++    /** Whether node is being laid out in top-down layout mode. */
++    public final boolean topdownLayout;
+ 
+ 
+     /////////////////////////////////////////////////////////////////////////////////
+@@ -131,6 +133,9 @@ public NodeContext(final GraphAdapter<?> parentGraph, final NodeAdapter<?> node)
+         this.node = node;
+         this.nodeSize = new KVector(node.getSize());
+         
++        // Top-down layout
++        topdownLayout = node.getProperty(CoreOptions.TOPDOWN_LAYOUT);
++        
+         // Compound node
+         treatAsCompoundNode = node.isCompoundNode() || node.getProperty(CoreOptions.INSIDE_SELF_LOOPS_ACTIVATE);
+         
+diff --git a/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java b/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
+index 0e063f7387..b03f1341a7 100644
+--- a/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
++++ b/plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java
+@@ -48,8 +48,11 @@ public static void setNodeWidth(final NodeContext nodeContext) {
+         } else {
+             // Ask the cell system how wide it would like to be or take the node's width if it has already been set to a
+             // greater value
+-            width = Math.max(nodeSize.x, nodeContext.nodeContainer.getMinimumWidth());
+-//            width = nodeContext.nodeContainer.getMinimumWidth();
++            if (nodeContext.topdownLayout) {
++                width = Math.max(nodeSize.x, nodeContext.nodeContainer.getMinimumWidth());
++            } else {
++                width = nodeContext.nodeContainer.getMinimumWidth();
++            }
+             
+             // If we include node labels and outside node labels are not to overhang, we need to include those as well
+             if (nodeContext.sizeConstraints.contains(SizeConstraint.NODE_LABELS)
+@@ -99,8 +102,11 @@ public static void setNodeHeight(final NodeContext nodeContext) {
+         } else {
+             // Ask the cell system how high it would like to be or take the node's height if it has already been set to 
+             // a greater value
+-            height = Math.max(nodeSize.y, nodeContext.nodeContainer.getMinimumHeight());
+-//            height = Math.max(0, nodeContext.nodeContainer.getMinimumHeight());
++            if (nodeContext.topdownLayout) {
++                height = Math.max(nodeSize.y, nodeContext.nodeContainer.getMinimumHeight());
++            } else {
++                height = nodeContext.nodeContainer.getMinimumHeight();
++            }
+             
+             // If we include node labels and outside node labels are not to overhang, we need to include those as well
+             if (nodeContext.sizeConstraints.contains(SizeConstraint.NODE_LABELS)
+diff --git a/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java b/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java
+index d9abb6578e..a1ba0b3825 100644
+--- a/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java
++++ b/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java
+@@ -415,8 +415,7 @@ private void assertNodeWidthAccordingToPortWidth(ElkNode node, ElkPort port, Elk
+             // org.eclipse.elk.alg.common.nodespacing.internal.algorithm.HorizontalPortPlacementSizeCalculator.calculateHorizontalNodeSizeRequiredByFreePorts(NodeContext,
+             // PortSide)
+             assertEquals("Wrong node width according to port(s) label width.",
+-                    Math.max(spacingBetweenPort + Math.max(portLabelWidth, oppositePortLabelWidth) + spacingBetweenPort,
+-                            node.getWidth()),
++                    spacingBetweenPort + Math.max(portLabelWidth, oppositePortLabelWidth) + spacingBetweenPort,
+                     node.getWidth(), 0);
+         } else {
+             double spacingLabelPort = port.getProperty(CoreOptions.SPACING_LABEL_PORT_HORIZONTAL);
+@@ -482,7 +481,7 @@ private void assertNodeHeightAccordingToPortHeight(ElkNode node, ElkPort port, E
+                                     + Math.max(spacingBetweenPort, nodePadding.getBottom()));
+ 
+             assertEquals("Wrong node height according to port label height.",
+-                    Math.max(portHeightPlusPadding, Math.max(spacingBetweenPort, node.getHeight())), node.getHeight(), 0);
++                    Math.max(portHeightPlusPadding, spacingBetweenPort), node.getHeight(), 0);
+             assertEquals("Wrong node label location.", ElkUtil.absolutePosition(node).y + nodeLabelPadding.getTop(),
+                     ElkUtil.absolutePosition(nodeLabel).y, 0);
+         } else {
+
+From 19bdd1c05a8a9b4f528107064f4da5cbbef8f3fd Mon Sep 17 00:00:00 2001
+From: Max Kasperowski <mka@informatik.uni-kiel.de>
+Date: Tue, 17 Oct 2023 11:05:46 +0200
+Subject: [PATCH 6/7] Revert changes to test case
+
+---
+ .../src/org/eclipse/elk/alg/layered/issues/Issue701Test.java    | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java b/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java
+index a1ba0b3825..26c8416d5f 100644
+--- a/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java
++++ b/test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java
+@@ -481,7 +481,7 @@ private void assertNodeHeightAccordingToPortHeight(ElkNode node, ElkPort port, E
+                                     + Math.max(spacingBetweenPort, nodePadding.getBottom()));
+ 
+             assertEquals("Wrong node height according to port label height.",
+-                    Math.max(portHeightPlusPadding, spacingBetweenPort), node.getHeight(), 0);
++                    Math.max(portHeightPlusPadding, oppositePortHeightPlusPadding), node.getHeight(), 0);
+             assertEquals("Wrong node label location.", ElkUtil.absolutePosition(node).y + nodeLabelPadding.getTop(),
+                     ElkUtil.absolutePosition(nodeLabel).y, 0);
+         } else {
+
+From 285f9b6965bd20962e69d884b965f845b704e295 Mon Sep 17 00:00:00 2001
+From: Max Kasperowski <mka@informatik.uni-kiel.de>
+Date: Thu, 19 Oct 2023 09:04:28 +0200
+Subject: [PATCH 7/7] Add test
+
+Tests that in the bottom-up case and in the top-down case
+port positions are calculated as expected.
+---
+ .../test/PortPlacementCalculationTest.java    | 119 ++++++++++++++++++
+ 1 file changed, 119 insertions(+)
+ create mode 100644 test/org.eclipse.elk.alg.topdown.test/src/org/eclipse/elk/alg/topdown/layered/test/PortPlacementCalculationTest.java
+
+diff --git a/test/org.eclipse.elk.alg.topdown.test/src/org/eclipse/elk/alg/topdown/layered/test/PortPlacementCalculationTest.java b/test/org.eclipse.elk.alg.topdown.test/src/org/eclipse/elk/alg/topdown/layered/test/PortPlacementCalculationTest.java
+new file mode 100644
+index 0000000000..8c128f517e
+--- /dev/null
++++ b/test/org.eclipse.elk.alg.topdown.test/src/org/eclipse/elk/alg/topdown/layered/test/PortPlacementCalculationTest.java
+@@ -0,0 +1,119 @@
++/*******************************************************************************
++ * Copyright (c) 2023 Kiel University and others.
++ * 
++ * This program and the accompanying materials are made available under the
++ * terms of the Eclipse Public License 2.0 which is available at
++ * http://www.eclipse.org/legal/epl-2.0.
++ * 
++ * SPDX-License-Identifier: EPL-2.0 
++ *******************************************************************************/
++package org.eclipse.elk.alg.topdown.layered.test;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.fail;
++
++import java.util.EnumSet;
++
++import org.eclipse.elk.alg.test.PlainJavaInitialization;
++import org.eclipse.elk.core.LayoutConfigurator;
++import org.eclipse.elk.core.RecursiveGraphLayoutEngine;
++import org.eclipse.elk.core.UnsupportedGraphException;
++import org.eclipse.elk.core.data.LayoutAlgorithmResolver;
++import org.eclipse.elk.core.options.CoreOptions;
++import org.eclipse.elk.core.options.SizeConstraint;
++import org.eclipse.elk.core.options.TopdownNodeTypes;
++import org.eclipse.elk.core.util.BasicProgressMonitor;
++import org.eclipse.elk.core.util.ElkUtil;
++import org.eclipse.elk.graph.ElkNode;
++import org.eclipse.elk.graph.ElkPort;
++import org.eclipse.elk.graph.util.ElkGraphUtil;
++import org.junit.Test;
++
++/**
++ * Test interaction between top-down layout and the node size calculation 
++ * performed for port placement in layered layout.
++ *
++ */
++public class PortPlacementCalculationTest {
++    
++    /**
++     * Tests that during a bottom-up layout the port positions are calculated
++     * according to the minimum size they require.
++     */
++    @Test
++    public void testBottomUp() {
++        PlainJavaInitialization.initializePlainJavaLayout();
++        ElkNode graph = ElkGraphUtil.createGraph();
++ 
++        final double portSpacing = 10.0;
++        
++        ElkNode node = ElkGraphUtil.createNode(graph);
++        node.setProperty(CoreOptions.NODE_SIZE_CONSTRAINTS, EnumSet.of(SizeConstraint.PORT_LABELS, SizeConstraint.PORTS));
++        node.setProperty(CoreOptions.SPACING_PORT_PORT, portSpacing);
++        node.setDimensions(20, 60);
++        
++        // create three ports that would require less than 60 height
++        ElkPort port1 = ElkGraphUtil.createPort(node);
++        ElkPort port2 = ElkGraphUtil.createPort(node);
++        ElkPort port3 = ElkGraphUtil.createPort(node);
++        
++        // prepare layout engine
++        LayoutConfigurator config = new LayoutConfigurator();
++        ElkUtil.applyVisitors(graph, config, new LayoutAlgorithmResolver());
++        // call layout with layout engine
++        try {
++            new RecursiveGraphLayoutEngine().layout(graph, new BasicProgressMonitor());
++        } catch (UnsupportedGraphException exception) {
++            fail(exception.toString());
++        }
++        
++        assertEquals(portSpacing, Math.abs(port1.getY() - port2.getY()), 0.0001);
++        assertEquals(portSpacing, Math.abs(port2.getY() - port3.getY()), 0.0001);
++    }
++    
++    /**
++     * Tests that during a top-down layout the actually set node size is considered
++     * beside the port placement requirements. If the node is already larger the 
++     * ports will need to be placed further apart.
++     */
++    @Test
++    public void testTopDown() {
++        PlainJavaInitialization.initializePlainJavaLayout();
++        ElkNode graph = ElkGraphUtil.createGraph();
++        graph.setProperty(CoreOptions.TOPDOWN_LAYOUT, true);
++        graph.setProperty(CoreOptions.TOPDOWN_NODE_TYPE, TopdownNodeTypes.ROOT_NODE);
++        
++        final double portSpacing = 10.0;
++        final double fixedNodeHeight = 60.0;
++        
++        ElkNode node = ElkGraphUtil.createNode(graph);
++        node.setProperty(CoreOptions.TOPDOWN_LAYOUT, true);
++        node.setProperty(CoreOptions.TOPDOWN_NODE_TYPE, TopdownNodeTypes.HIERARCHICAL_NODE);
++        node.setProperty(CoreOptions.NODE_SIZE_FIXED_GRAPH_SIZE, true);
++        node.setProperty(CoreOptions.NODE_SIZE_CONSTRAINTS, EnumSet.of(SizeConstraint.PORT_LABELS, SizeConstraint.PORTS));
++        node.setProperty(CoreOptions.SPACING_PORT_PORT, portSpacing);
++        node.setDimensions(20, fixedNodeHeight);
++        
++        // create three ports that would require less than 60 height
++        ElkPort port1 = ElkGraphUtil.createPort(node);
++        ElkPort port2 = ElkGraphUtil.createPort(node);
++        ElkPort port3 = ElkGraphUtil.createPort(node);
++        
++        // prepare layout engine
++        LayoutConfigurator config = new LayoutConfigurator();
++        ElkUtil.applyVisitors(graph, config, new LayoutAlgorithmResolver());
++        // call layout with layout engine
++        try {
++            new RecursiveGraphLayoutEngine().layout(graph, new BasicProgressMonitor());
++        } catch (UnsupportedGraphException exception) {
++            fail(exception.toString());
++        }
++        
++        // Since the node size is fixed, the port spacing should now be the height
++        // divided by the number of ports plus one
++        double expectedPortSpacing = fixedNodeHeight / 4;
++        assertEquals(expectedPortSpacing, Math.abs(port1.getY() - port2.getY()), 0.0001);
++        assertEquals(expectedPortSpacing, Math.abs(port2.getY() - port3.getY()), 0.0001);
++    }
++
++}

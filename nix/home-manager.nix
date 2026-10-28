@@ -36,8 +36,8 @@ in
     };
     requireAuth = mkOption {
       type = types.bool;
-      default = false;
-      description = "Fail closed until local brabbler auth setup or an explicit runtime BRABBLER_PASSWORD is configured. No passphrase enters the Nix store.";
+      default = true;
+      description = "Require local brabbler auth setup or an explicit runtime password by default. Setting false deliberately disables web authentication and warns at startup. No passphrase enters the Nix store.";
     };
     environmentFile = mkOption {
       type = types.nullOr types.str;
@@ -54,12 +54,20 @@ in
   };
 
   config = mkIf cfg.enable {
+    assertions = [ {
+      assertion = !cfg.requireAuth || (
+        (cfg.environment.BRABBLER_REQUIRE_AUTH or "1") == "1"
+        && (cfg.environment.BRABBLER_NO_AUTH or "0") != "1"
+      );
+      message = "Brabbler requireAuth=true cannot be combined with authentication-bypass environment settings.";
+    } ];
     home.packages = [ cfg.package ];
     systemd.user.services.brabbler = {
       Unit.Description = "Brabbler";
       Service = {
         Type = "simple";
-        ExecStart = "${lib.getExe cfg.package} --hostname ${cfg.hostname} --port ${toString cfg.port} --no-open";
+        # Enforce mandatory policy after EnvironmentFile processing as well.
+        ExecStart = "${lib.optionalString cfg.requireAuth "${pkgs.coreutils}/bin/env BRABBLER_REQUIRE_AUTH=1 "}${lib.getExe cfg.package} --hostname ${cfg.hostname} --port ${toString cfg.port} --no-open${lib.optionalString (!cfg.requireAuth) " --no-auth"}";
         Restart = "on-failure";
         RestartSec = 5;
         # The Node launcher forwards SIGTERM and reports the conventional

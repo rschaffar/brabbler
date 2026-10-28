@@ -4,7 +4,8 @@ let
   paths = names: fileset.unions (map (name: fileset.maybeMissing (root + "/${name}")) names);
   # Install-time SDK policy is also a dependency realization input.
   manifests = paths [ "package.json" "package-lock.json"
-    "bin/patch-sdk-command-env.js" "bin/sdk-command-env-payload.js" ];
+    "bin/patch-sdk-command-env.js" "bin/sdk-command-env-payload.js"
+    "bin/sdk-runtime-policy.js" ];
   applicationFiles = fileset.union
     (paths [
       "package.json" "package-lock.json" "LICENSE" "tsconfig.json" "next.config.ts"

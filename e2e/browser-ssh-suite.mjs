@@ -143,6 +143,7 @@ export async function runBrowserSshSuite() {
   const coverage = createCoverage("ssh-agent", artifacts);
   const webPassword = "synthetic-browser-ssh-password";
   env.BRABBLER_REQUIRE_AUTH = "1";
+  env.BRABBLER_NO_AUTH = "0";
   applyFixtureEnvironment(env);
   const project = join(fixtureRoot, "project"); mkdirSync(project);
   const fixtures = seedSshRuntimeFixtures({ root, agentDir, project });

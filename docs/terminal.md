@@ -81,20 +81,23 @@ not require `navigator.onLine`: a reachable local application can work while the
 browser reports no external network. Actual HTTP/SSE failures still determine
 connection state; closing, disposal and same-ID restoration guards remain binding.
 
-`bin/prepare-terminal.js` repairs node-pty 1.1.0's macOS spawn-helper executable
-bits during installation, including published/npm-installed Brabbler packages.
+`bin/prepare-terminal.js` restores executable bits on macOS spawn-helper files
+when an upstream archive lacks them. Brabbler pins node-pty to `1.2.0-beta.15`.
+Native module loading is deferred until terminal creation, so missing/incompatible
+binaries produce a JSON error. Empty/non-JSON API errors show the HTTP status and
+point to the server log. Only actual platform tests establish native compatibility.
 
-Brabbler pins node-pty to `1.2.0-beta.15`, which includes Linux x64 and ARM64
-prebuilt binaries. Native module loading is deferred until terminal creation,
-so missing or incompatible binaries produce a JSON error with repair instructions.
-Empty or non-JSON API errors show the HTTP status and direct users to the server log.
+For a [prebuilt application archive](portable-installation.md), first check the
+Node/OS/architecture and the exact installation log. In that **owned application
+directory**, a deliberate
+`npm rebuild node-pty --build-from-source --ignore-scripts=false --foreground-scripts`
+needs Python and a working native compiler/toolchain. Preserve the original
+failure, then restart the owned launcher after a justified repair. Never copy
+another installation's native module.
 
-If a native binary cannot load, run
-`npm rebuild node-pty --build-from-source --ignore-scripts=false --foreground-scripts` from the
-installation directory (for npx, the cache directory containing `node_modules`).
-On Debian/Ubuntu, install `python3` and `build-essential` first. This forces a
-source build instead of reusing a missing or incompatible prebuilt binary.
-Restart Brabbler after repair.
+For a Nix installation, use the pinned package/dependency recipe and declarative
+configuration. Do not run npm rebuild inside the immutable store or mutate its
+shared dependency tree; inspect the isolated build/acceptance evidence instead.
 
 ## Verification
 
