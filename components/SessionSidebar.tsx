@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useNavigationWork } from "@/lib/navigation-work";
 import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import type { SessionInfo } from "@/lib/types";
@@ -390,13 +391,15 @@ function BrabblerTitle() {
       onClick={handleClick}
       style={{
         background: "none", border: "none", padding: 0, cursor: "default",
+        display: "inline-flex", alignItems: "center", gap: 7,
         fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em",
         color: showVersion ? "var(--accent)" : "var(--text)",
         fontFamily: "var(--font-mono)",
-        minWidth: "6ch",
+        minWidth: 0,
       }}
     >
-      {display}
+      <Image src="/brand/robot.svg" width={36} height={32} alt="" priority style={{ flexShrink: 0 }} />
+      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{display}</span>
     </button>
   );
 }

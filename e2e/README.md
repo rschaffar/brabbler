@@ -173,7 +173,12 @@ Activity keeps the complete native subagent/Pause/Acceptance chains once at desk
 plus both named responsive inputs and their genuine layout/input/default bridges;
 Markdown keeps both preview/line-link chains.
 Base/other-project Git resources remain. Independent exact startup inventories have
-16 appearance, 20 Activity and 27 Markdown IDs. Their direct contracts exercise the
+16 base appearance, 20 Activity and 27 Markdown IDs. Appearance additionally seeds
+three explicitly expected synthetic README illustration sessions; these are not new
+functional scenarios. Its final documentation capture writes `readme-dark.png`
+using the real packaged app, dark desktop preferences and a private example
+project, without model turns or live data. See [branding](../docs/branding.md).
+The base recipes' direct contracts exercise the
 real comparator; installed whole chains prove the runner's assembled expectations.
 Removing unrelated rows/roots intentionally changes catalogue/history/root exposure,
 not every observable behavior's equivalence. `assertStartupSessionCatalogue`
