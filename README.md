@@ -280,7 +280,7 @@ Brabbler exists because of the work that came before it:
 - **[binaryplease/git-graph](https://github.com/binaryplease/git-graph)**—the adapted active-lane graph-layout algorithm ([MIT notice](./lib/git-graph-layout.LICENSE)).
 - **[pi-usage](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-usage)**—provider query-format reference ([MIT notice](./lib/provider-usage.LICENSE)).
 
-Bundled font and glyph notices are preserved under [public/fonts](./public/fonts/README.md). Other component licenses and covered-source requirements follow the actual distribution inventory; the root MIT license does not relicense dependencies.
+Bundled font and glyph notices are preserved under [public/fonts](./public/fonts/README.md). See the [third-party notice index](./public/third-party/NOTICE.md) for incorporated code and [ELK source access](./public/third-party/SOURCE-AVAILABILITY.md). Matching sources accompany the application as a separate release asset; the root MIT license does not relicense dependencies.
 
 This fork is maintained independently. Credit for the original project remains with its authors; the changes maintained here do not imply upstream endorsement or support.
 

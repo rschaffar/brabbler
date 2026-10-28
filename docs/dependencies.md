@@ -387,10 +387,22 @@ for shipped copies rather than treating the old lockfile label as authoritative.
 
 Review source-availability obligations for MPL components (including web-push and
 Lightning CSS) and LGPL source/relinking obligations for redistributed libvips.
-Mermaid 12 introduces elkjs under **EPL-2.0**, requiring separate license/source
-review if its optional layout engine is shipped. `images.unoptimized` and optional
-feature use do not prove these components are absent from the shipped artifact.
-Existing first-party/asset notices are not a dependency-wide notice inventory.
+Mermaid **12.2** ships elkjs **0.9.3** and uses ELK by default; it is not an
+unused optional engine in Brabbler. The application preserves EPL-2.0 and the
+incorporated EMF-GWT runtime's EPL-1.0 notices. A separate checksummed
+`brabbler-sources` output supplies the upstream-declared ELK 0.9.1 + seven PR955
+patches, editable wrapper/build sources, runtime source JARs and original notices.
+Its documented upstream checkout traceability limitation is not a claim of an
+identified missing source or a legal certification.
+
+The inspected application archive externalizes web-push and contains neither
+Lightning CSS nor libvips native payloads; trace references alone are not payload.
+Reassess if an artifact actually redistributes them, including any separately
+published Nix/native closure. `images.unoptimized` or optional feature use alone
+would not prove absence. The archive ships a human-readable notice, full legal
+texts, a build-dependency notice collection (which can include unbundled packages)
+and its exact source locator/hash. Verify the final packed bytes and served paths,
+not only the first-party/asset notices or lock labels.
 [Release](release.md) owns final artifact inspection; no full license-compliance
 certification or production artifact review is implied by development acceptance.
 

@@ -59,6 +59,38 @@ class SourceExportTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(self.manifest.stat().st_mode), 0o600)
         self.assertEqual(json.loads(self.manifest.read_text())['contentModeSha256'], report['contentModeSha256'])
 
+    def test_public_source_materials_and_contributor_guides_are_preserved(self):
+        files = ['CONTRIBUTING.md', 'SECURITY.md',
+                 'nix/third-party/elkjs-0.9.3/patches/change.patch',
+                 'nix/third-party/elkjs-0.9.3/originals/runtime.pom']
+        for name in files:
+            self.put(name, 'synthetic public source material\n')
+        report = self.run_export()
+        for name in files:
+            self.assertIn(name, report['before'])
+            self.assertEqual((self.output / name).read_bytes(), (self.source / name).read_bytes())
+
+    def test_source_material_extensions_remain_rejected_outside_exact_tree(self):
+        for name in ['lib/unapproved.patch', 'lib/unapproved.pom',
+                     'nix/third-party-similar/unapproved.patch']:
+            with self.subTest(name=name):
+                path = self.put(name, 'DO_NOT_READ')
+                original_open = os.open
+                def guarded_open(file, *args, **kwargs):
+                    self.assertNotEqual(os.fspath(file), path.name)
+                    return original_open(file, *args, **kwargs)
+                with patch.object(exporter.os, 'open', side_effect=guarded_open):
+                    with self.assertRaisesRegex(exporter.ExportError, 'Unapproved source file'):
+                        self.run_export()
+                path.unlink()
+        self.assertFalse(self.manifest.exists())
+
+    def test_hidden_metadata_is_not_admitted_by_source_material_exception(self):
+        self.put('nix/third-party/elkjs-0.9.3/.gitattributes', 'DO_NOT_READ')
+        with self.assertRaisesRegex(exporter.ExportError, 'Unapproved hidden source entry'):
+            self.run_export()
+        self.assertFalse(self.manifest.exists())
+
     def test_secret_and_generated_paths_are_not_opened_or_traversed(self):
         for name in ['.env', '.env.local', '.npmrc', 'auth.json', 'private/config.json',
                      '.next/cache/data.json', 'node_modules/pkg/index.js', 'test-results/private.json',

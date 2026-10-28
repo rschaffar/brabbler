@@ -1,0 +1,92 @@
+{
+  "base": "ELK v0.9.1",
+  "strip": 1,
+  "fuzz": 0,
+  "patch_count": 7,
+  "results": [
+    {
+      "order": 1,
+      "file": "patches/0001-b7941dfd52a3.patch",
+      "upstream_commit": "b7941dfd52a3363b628951bc44c8ea933fe3333e",
+      "sha256": "8c8fb5301866617f37a48f2e82d1753f75b48becce521e07d53c3a2d2856a18f",
+      "dry_run_exit": 0,
+      "dry_run_stdout": "checking file plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java\n",
+      "dry_run_stderr": "",
+      "apply_exit": 0,
+      "apply_stdout": "patching file plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java\n",
+      "apply_stderr": ""
+    },
+    {
+      "order": 2,
+      "file": "patches/0002-6a15c2c39646.patch",
+      "upstream_commit": "6a15c2c39646ce5574ced8e574e6ffe75e1ddb2d",
+      "sha256": "b763b4b471cf82ca459ee13f0e5e8e656bc82b0af32315e1b2c9525dda836151",
+      "dry_run_exit": 0,
+      "dry_run_stdout": "checking file plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java\n",
+      "dry_run_stderr": "",
+      "apply_exit": 0,
+      "apply_stdout": "patching file plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java\n",
+      "apply_stderr": ""
+    },
+    {
+      "order": 3,
+      "file": "patches/0003-9403c6f27fa0.patch",
+      "upstream_commit": "9403c6f27fa0e0c6127c5a66fea8a24b8563d2ea",
+      "sha256": "816f7918c8fb109d1bf67fbf68fbc9f2bbbf79888d47812347bf5c7393eab89c",
+      "dry_run_exit": 0,
+      "dry_run_stdout": "checking file plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java\n",
+      "dry_run_stderr": "",
+      "apply_exit": 0,
+      "apply_stdout": "patching file plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java\n",
+      "apply_stderr": ""
+    },
+    {
+      "order": 4,
+      "file": "patches/0004-86d8fbeb9698.patch",
+      "upstream_commit": "86d8fbeb9698e95388e87bbd1b48a08069b7014a",
+      "sha256": "03e2bea9a8c77bf66cd4d021b9aecba5967c649ce6d5480aac4584415e618076",
+      "dry_run_exit": 0,
+      "dry_run_stdout": "checking file test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java\n",
+      "dry_run_stderr": "",
+      "apply_exit": 0,
+      "apply_stdout": "patching file test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java\n",
+      "apply_stderr": ""
+    },
+    {
+      "order": 5,
+      "file": "patches/0005-d665f4436cff.patch",
+      "upstream_commit": "d665f4436cff7ce477bc144a6eb534125fff5349",
+      "sha256": "c4f1025e630b541c155def006b22487b46a7c1ed6bb4b359fc01f2082ba9a713",
+      "dry_run_exit": 0,
+      "dry_run_stdout": "checking file plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/NodeContext.java\nchecking file plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java\nchecking file test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java\n",
+      "dry_run_stderr": "",
+      "apply_exit": 0,
+      "apply_stdout": "patching file plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/NodeContext.java\npatching file plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java\npatching file test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java\n",
+      "apply_stderr": ""
+    },
+    {
+      "order": 6,
+      "file": "patches/0006-19bdd1c05a8a.patch",
+      "upstream_commit": "19bdd1c05a8a9b4f528107064f4da5cbbef8f3fd",
+      "sha256": "397a4b2322acc9972d517afc1c9539c3d530ca397f2df3942b8e09fb0e66cf6c",
+      "dry_run_exit": 0,
+      "dry_run_stdout": "checking file test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java\n",
+      "dry_run_stderr": "",
+      "apply_exit": 0,
+      "apply_stdout": "patching file test/org.eclipse.elk.alg.layered.test/src/org/eclipse/elk/alg/layered/issues/Issue701Test.java\n",
+      "apply_stderr": ""
+    },
+    {
+      "order": 7,
+      "file": "patches/0007-285f9b6965bd.patch",
+      "upstream_commit": "285f9b6965bd20962e69d884b965f845b704e295",
+      "sha256": "19f459b447043c6d6c293e5bc4b932b0096dc839f14c1f6ef2cb70d4b53d2916",
+      "dry_run_exit": 0,
+      "dry_run_stdout": "checking file test/org.eclipse.elk.alg.topdown.test/src/org/eclipse/elk/alg/topdown/layered/test/PortPlacementCalculationTest.java\n",
+      "dry_run_stderr": "",
+      "apply_exit": 0,
+      "apply_stdout": "patching file test/org.eclipse.elk.alg.topdown.test/src/org/eclipse/elk/alg/topdown/layered/test/PortPlacementCalculationTest.java\n",
+      "apply_stderr": ""
+    }
+  ]
+}

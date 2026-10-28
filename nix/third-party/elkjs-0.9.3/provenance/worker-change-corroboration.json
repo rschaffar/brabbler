@@ -1,0 +1,45 @@
+{
+  "scope": "Named PR955 runtime changes only, not global source completeness",
+  "reference_files": [
+    {
+      "member": "lib/elk.bundled.js",
+      "sha256": "b0745abd7f23cd91690a1587e377edbe19fd7233c783300290936720546216d4",
+      "source_tag_equals_npm": true
+    },
+    {
+      "member": "lib/elk-worker.js",
+      "sha256": "90ab078ad34ff826ca0ece1ee338ae98071a6b3e6cfbb00ce2eb671b32eacd88",
+      "source_tag_equals_npm": true
+    },
+    {
+      "member": "lib/elk-worker.min.js",
+      "sha256": "114c4f17aea4b297a2d3dd6c86bdfccb45e12040da964ea8f9766345fce4f538",
+      "source_tag_equals_npm": true
+    },
+    {
+      "member": "lib/elk-api.js",
+      "sha256": "b5866a7495d7d4731d4ec66342e2a090061f95fe9c80817846e807f0bb38a785",
+      "source_tag_equals_npm": true
+    }
+  ],
+  "functions_read_not_executed": [
+    {
+      "source_member": "elkjs lib/elk-worker.js",
+      "function": "function NodeContext(node){",
+      "line_one_based": 22946,
+      "body": "function NodeContext(node){\n  var symmetry;\n  this.portContexts = create(new NodeContext$0methodref$comparePortSides$Type, new NodeContext$1methodref$comparePortContexts$Type);\n  this.insidePortLabelCells = new EnumMap(castTo(checkNotNull(Lorg_eclipse_elk_core_options_PortSide_2_classLit), 297));\n  this.outsideNodeLabelContainers = new EnumMap(castTo(checkNotNull(Lorg_eclipse_elk_core_options_PortSide_2_classLit), 297));\n  this.nodeLabelCells = new EnumMap(castTo(checkNotNull(Lorg_eclipse_elk_alg_common_nodespacing_internal_NodeLabelLocation_2_classLit), 297));\n  this.node = node;\n  this.nodeSize = new KVector_2(node.getSize());\n  this.topdownLayout = $booleanValue(castToBoolean(node.getProperty(($clinit_CoreOptions() , TOPDOWN_LAYOUT_2))));\n  this.treatAsCompoundNode = node.isCompoundNode() || $booleanValue(castToBoolean(node.getProperty(INSIDE_SELF_LOOPS_ACTIVATE_0)));\n  this.sizeConstraints = castTo(node.getProperty(NODE_SIZE_CONSTRAINTS_6), 21);\n  this.sizeOptions = castTo(node.getProperty(NODE_SIZE_OPTIONS_6), 21);\n  this.portConstraints = castTo(node.getProperty(PORT_CONSTRAINTS_1), 101);\n  this.portLabelsPlacement = castTo(node.getProperty(PORT_LABELS_PLACEMENT_5), 21);\n  if (!isValid_1(this.portLabelsPlacement)) {\n    throw toJs(new UnsupportedConfigurationException_0('Invalid port label placement: ' + this.portLabelsPlacement));\n  }\n  this.portLabelsTreatAsGroup = $booleanValue(castToBoolean(node.getProperty(PORT_LABELS_TREAT_AS_GROUP_0)));\n  this.nodeLabelPlacement = castTo(node.getProperty(NODE_LABELS_PLACEMENT_5), 21);\n  if (!isValid_0(this.nodeLabelPlacement)) {\n    throw toJs(new UnsupportedConfigurationException_0('Invalid node label placement: ' + this.nodeLabelPlacement));\n  }\n  this.nodeLabelsPadding = castTo(getIndividualOrInherited_0(node, NODE_LABELS_PADDING_0), 107);\n  this.nodeLabelSpacing = $doubleValue(castToDouble(getIndividualOrInherited_0(node, SPACING_LABEL_NODE_0)));\n  this.labelLabelSpacing = $doubleValue(castToDouble(getIndividualOrInherited_0(node, SPACING_LABEL_LABEL_0)));\n  this.portPortSpacing = $doubleValue(castToDouble(getIndividualOrInherited_0(node, SPACING_PORT_PORT_0)));\n  this.portLabelSpacingHorizontal = $doubleValue(castToDouble(getIndividualOrInherited_0(node, SPACING_LABEL_PORT_HORIZONTAL_0)));\n  this.portLabelSpacingVertical = $doubleValue(castToDouble(getIndividualOrInherited_0(node, SPACING_LABEL_PORT_VERTICAL_0)));\n  this.surroundingPortMargins = castTo(getIndividualOrInherited_0(node, SPACING_PORTS_SURROUNDING_0), 140);\n  this.labelCellSpacing = 2 * this.labelLabelSpacing;\n  symmetry = !this.sizeOptions.contains(($clinit_SizeOptions() , ASYMMETRICAL));\n  this.nodeContainer = new StripContainerCell(0, symmetry, 0);\n  this.nodeContainerMiddleRow = new StripContainerCell(1, symmetry, 0);\n  $setCell_0(this.nodeContainer, ($clinit_ContainerArea() , CENTER), this.nodeContainerMiddleRow);\n}\n"
+    },
+    {
+      "source_member": "elkjs lib/elk-worker.js",
+      "function": "function setNodeWidth(nodeContext){",
+      "line_one_based": 23802,
+      "body": "function setNodeWidth(nodeContext){\n  var minNodeSize, nodeCellRectangle, nodeSize, width_0;\n  nodeSize = nodeContext.nodeSize;\n  $clinit_NodeLabelAndSizeUtilities();\n  if (nodeContext.sizeConstraints.isEmpty() || equals_Ljava_lang_Object__Z__devirtual$(nodeContext.sizeConstraints, EFFECTIVELY_FIXED_SIZE_CONSTRAINTS)) {\n    width_0 = nodeSize.x_0;\n  }\n   else {\n    nodeContext.topdownLayout?(width_0 = $wnd.Math.max(nodeSize.x_0, $getMinimumWidth_0(nodeContext.nodeContainer))):(width_0 = $getMinimumWidth_0(nodeContext.nodeContainer));\n    if (nodeContext.sizeConstraints.contains(($clinit_SizeConstraint() , NODE_LABELS)) && !nodeContext.sizeOptions.contains(($clinit_SizeOptions() , OUTSIDE_NODE_LABELS_OVERHANG))) {\n      width_0 = $wnd.Math.max(width_0, $getMinimumWidth_0(castTo($get_14(nodeContext.outsideNodeLabelContainers, ($clinit_PortSide() , NORTH_3)), 252)));\n      width_0 = $wnd.Math.max(width_0, $getMinimumWidth_0(castTo($get_14(nodeContext.outsideNodeLabelContainers, SOUTH_2), 252)));\n    }\n    minNodeSize = getMinimumNodeSize(nodeContext);\n    !!minNodeSize && (width_0 = $wnd.Math.max(width_0, minNodeSize.x_0));\n  }\n  $booleanValue(castToBoolean(nodeContext.node.getGraph().getProperty(($clinit_CoreOptions() , NODE_SIZE_FIXED_GRAPH_SIZE_3))))?(nodeSize.x_0 = $wnd.Math.max(nodeSize.x_0, width_0)):(nodeSize.x_0 = width_0);\n  nodeCellRectangle = nodeContext.nodeContainer.cellRectangle;\n  nodeCellRectangle.x_0 = 0;\n  nodeCellRectangle.width_0 = width_0;\n  $layoutChildrenHorizontally(nodeContext.nodeContainer);\n}\n"
+    },
+    {
+      "source_member": "elkjs lib/elk-worker.js",
+      "function": "function setNodeHeight(nodeContext){",
+      "line_one_based": 23773,
+      "body": "function setNodeHeight(nodeContext){\n  var height, minNodeSize, nodeCellRectangle, nodeSize;\n  nodeSize = nodeContext.nodeSize;\n  $clinit_NodeLabelAndSizeUtilities();\n  if (nodeContext.sizeConstraints.isEmpty() || equals_Ljava_lang_Object__Z__devirtual$(nodeContext.sizeConstraints, EFFECTIVELY_FIXED_SIZE_CONSTRAINTS)) {\n    height = nodeSize.y_0;\n  }\n   else {\n    nodeContext.topdownLayout?(height = $wnd.Math.max(nodeSize.y_0, $getMinimumHeight_1(nodeContext.nodeContainer))):(height = $getMinimumHeight_1(nodeContext.nodeContainer));\n    if (nodeContext.sizeConstraints.contains(($clinit_SizeConstraint() , NODE_LABELS)) && !nodeContext.sizeOptions.contains(($clinit_SizeOptions() , OUTSIDE_NODE_LABELS_OVERHANG))) {\n      height = $wnd.Math.max(height, $getMinimumHeight_1(castTo($get_14(nodeContext.outsideNodeLabelContainers, ($clinit_PortSide() , EAST_2)), 252)));\n      height = $wnd.Math.max(height, $getMinimumHeight_1(castTo($get_14(nodeContext.outsideNodeLabelContainers, WEST_2), 252)));\n    }\n    minNodeSize = getMinimumNodeSize(nodeContext);\n    !!minNodeSize && (height = $wnd.Math.max(height, minNodeSize.y_0));\n    if (nodeContext.sizeConstraints.contains(PORTS_0)) {\n      if (nodeContext.portConstraints == ($clinit_PortConstraints() , FIXED_RATIO) || nodeContext.portConstraints == FIXED_POS) {\n        height = $wnd.Math.max(height, $getMinimumHeight(castTo($get_14(nodeContext.insidePortLabelCells, ($clinit_PortSide() , EAST_2)), 127)));\n        height = $wnd.Math.max(height, $getMinimumHeight(castTo($get_14(nodeContext.insidePortLabelCells, WEST_2), 127)));\n      }\n    }\n  }\n  $booleanValue(castToBoolean(nodeContext.node.getGraph().getProperty(($clinit_CoreOptions() , NODE_SIZE_FIXED_GRAPH_SIZE_3))))?(nodeSize.y_0 = $wnd.Math.max(nodeSize.y_0, height)):(nodeSize.y_0 = height);\n  nodeCellRectangle = nodeContext.nodeContainer.cellRectangle;\n  nodeCellRectangle.y_0 = 0;\n  nodeCellRectangle.height = height;\n  $layoutChildrenVertically(nodeContext.nodeContainer);\n}\n"
+    }
+  ]
+}

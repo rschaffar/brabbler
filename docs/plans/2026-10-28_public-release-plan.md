@@ -3,8 +3,9 @@
 **Status: implementation authorized; in progress.** The owner approved local
 implementation on this release worktree and requested durable public-safe planning
 rules. Exact history filters, Git remote operations, publication, activation and
-resource cleanup retain their separate approval gates. Implementation is not yet
-verified; no release or platform-support claim follows from this status.
+resource cleanup retain their separate approval gates. Selected implementation
+checks have passed; full settled-candidate acceptance and native macOS verification
+remain pending. No release or platform-support claim follows from this status.
 
 ## Goal
 
@@ -18,7 +19,8 @@ on by default, portable, and explicitly bypassable at startup.
 
 - Initial investigation: local main `0c239e29d96753e81a82ba9ad0f87ea8fa14a042`.
   Receiving branch `plan/public-release`, linked worktree `public-release`, is now
-  rebased onto local main `dee459bb1909ef7808407e6bf15d0cad9af68cdd`.
+  rebased onto local main `3b73cbfd871ce42302444450a1ee742e390b109a`, including
+  the remote-Markdown-image opt-in merge. Recheck the target before integration.
 - Completed local-only remote change: upstream is `pi-web-origin`; `origin` is
   `https://github.com/rschaffar/brabbler.git`. No Git remote has been contacted.
   New-origin tracking, repository creation/settings and publication are not done.
@@ -78,8 +80,9 @@ release does not reopen their backlogs or certify live-provider behavior.
 - Main then advanced by nine commits. The feature was rebased onto `dee459bb`;
   a merge-inclusive scan of that exact incremental range processed all **nine**,
   **376.62 KB**, exit 0, zero findings. Targeted changed-doc checks add one local
-  evidence-path location to the privacy inventory. Current main has **1,480**
-  reachable commits. Tags/unmerged refs are not cleared for publication.
+  evidence-path location to the privacy inventory. That main tip had **1,480**
+  reachable commits; the later Markdown-image change/merge adds two. The final
+  delta still needs scanning. Tags/unmerged refs are not cleared for publication.
 - Fresh public lock-only npm audits on **2026-10-28** completed for root/demo,
   each full and `--omit=dev`: root reports **two affected package records**,
   representing **eight Undici advisories**, highest severity high; demo reports
@@ -99,8 +102,9 @@ release does not reopen their backlogs or certify live-provider behavior.
   Refresh final-candidate scans/audits and retain their raw output durably before
   publication. The counts above describe observed prior runs, not reruns.
 - Earlier application acceptance remains evidence for its recorded inputs only.
-  No fresh full acceptance, portable installation or native macOS test was run
-  for this plan. Installed checkout dependencies were not used as lock evidence.
+  Later selected checks and the Linux installation spike are recorded below;
+  neither supplies full settled-candidate or native macOS evidence. Installed
+  checkout dependencies were not used as lock evidence.
 
 ## Current implementation checkpoint
 
@@ -132,11 +136,48 @@ remediation proof.
 layout in Brabbler. Exact Mermaid **12.2.0** source and official v12 documentation
 show `layout: elk` is the default; the wrapper inherits it. The low-impact-removal
 recommendation is retracted. The owner explicitly selected keeping ELK and finishing
-notices/corresponding-source access. No engine removal was implemented. Complete
-source mapping and final packed notice/source checks remain publication gates.
+notices/corresponding-source access. No engine removal was implemented.
 
-The next source checkpoint must incorporate local main's remote-Markdown-image
-opt-in merge `3b73cbfd871ce42302444450a1ee742e390b109a` before final candidate checks.
+The source set now follows authoritative elkjs **0.9.3** release metadata:
+**ELK 0.9.1 + seven PR955 content patches**, all exactly applied. It includes
+editable Java/JS/GWT, runtime source JARs, build configuration and original legal
+material. Upstream's external build checkout is unrecorded; no positive mismatch
+or additional change was found. An earlier reviewer requirement for an explicitly
+exhaustive upstream certificate was a stronger agent-selected standard and is
+retracted, not imposed as a new release gate. The traceability limitation remains
+visible; no independent engine compilation or legal certification is claimed.
+
+A separate Nix `brabbler-sources` output and the application's embedded source
+locator/SHA-256 are implemented, with offline Nix access. Original build-dependency
+legal text is collected without executing it; source/notice access is exercised by
+the exact-artifact smoke. Focused Nix/static checks passed **12 tests in two files**
+and **32 exporter contracts**, **40 seconds command wall**, source digest
+`e30777bb0179082db8a81ed4207582aa0f69911456be431748ac43e1497ddf0a`.
+Independent review found no remaining SDK/lifecycle or new packaging/exporter
+blockers. A test-private Nix counterexample that ignored a nonempty source-version
+mismatch reached the named missing-exception runtime assertion; the normal owner
+passed. Fault material never replaced application source. Full composed Nix and
+native macOS acceptance remain pending.
+
+The first notice/source archive inventory passed all notice-byte/source-checksum
+checks: **923 package locations / 420 legal bodies**, with no tests, state or
+checkout modules. It also found build-only Next traces; those are now explicitly
+excluded along with diagnostics. The rebuilt application/source pair passed the
+ordinary Linux x86_64 / Node 24.21.0 smoke, including all notice bytes, matching
+source archive and installed ELK version, actual HTTP notice/locator access,
+`rel=license`, and absence of those build-only artifacts. Application SHA-256:
+`298870166049cee3df6eda3bcec0ac28e8c8b819cbdb4ecf8718b9a34c53d9d8`;
+source SHA-256:
+`273c8741aa391629884ccaaa8e95e8a159c7537ffa04e0d211ba4030f57e98bc`.
+The command took **186 seconds** including container setup/teardown; the smoke's
+reported interval was **14.214 seconds**. Container preparation and cleanup were
+not individually timed. This is not full Nix or native macOS acceptance.
+
+The recorded root/demo full/runtime lock audits all returned exit 0, **zero
+findings**. Their lock identities still match the unchanged dependency graphs:
+root `9ce2e04f8d75aac6f999b2ea04b9f6da97d1691c14a9d9699b6f773ab05d60cf`;
+demo `d5cba47655563f060e0caa4fd7dc16e8ee675dac3695cbc6ca48cd21822a2dcd`.
+Raw results are retained privately. This does not alone clear embedded code.
 
 ## Architecture
 
@@ -234,25 +275,25 @@ not come from the builder's platform. Packaging success is not portability proof
 
 ### P2 — current advisories and redistribution obligations
 
-- [ ] Update `docs/dependencies.md` with all eight current SDK/Undici advisory IDs,
+- [x] Update `docs/dependencies.md` with all eight current SDK/Undici advisory IDs,
   exact scopes, the two withdrawals and bounded embedded-path observations.
-- [ ] Review the smallest fixed-Undici remediation, including SDK prebundled copies;
+- [x] Review the smallest fixed-Undici remediation, including SDK prebundled copies;
   prefer a coordinated fixed SDK when available. If evaluating a parent-scoped
   override, verify modular/bundled coverage, patch fingerprints, proxy/fetch/SDK
   behavior and lock/Nix-cache changes. No downgrade or forced audit fix.
-- [ ] Bring unresolved advisory exposure back for owner disposition before release:
+- [x] Bring unresolved advisory exposure back for owner disposition before release:
   validated fix, wait, or explicit scoped risk acceptance. An override/audit result
   alone must not be called whole-artifact remediation.
-- [ ] Resolve `pi-usage` adaptation provenance/full-notice requirements; inspect
+- [x] Resolve `pi-usage` adaptation provenance/full-notice requirements; inspect
   actual shipped font notices, including Noto and the patched terminal font.
-- [ ] Inventory actual redistributed code/assets and required license/NOTICE/source
+- [x] Inventory actual redistributed code/assets and required license/NOTICE/source
   material, including relevant MPL/EPL/LGPL obligations. Retain original MIT,
   bundled algorithm/icon notices and upstream credit. Ship notices in the actual
   tarball, not only in a development guide.
 
 ### P3 — isolated portable-tarball spike, then packaging
 
-- [ ] Extend `nix/package.nix`/flake outputs with an inspectable `.tgz` output;
+- [x] Extend `nix/package.nix`/flake outputs with an inspectable `.tgz` output;
   inspect its inventory for built assets, launcher, source and notices, and absence
   of credentials/state, test support, writable dependencies and checkout artifacts.
 - [x] Prove the coherent extraction/root-install spike in a clean non-Nix Linux
@@ -265,9 +306,9 @@ not come from the builder's platform. Packaging success is not portability proof
   dependency-install refusal and a fixture cwd-authorization error were retained
   before fixes; neither was an unchanged retry. This preliminary archive predates
   final notices/source changes and is not final-candidate acceptance.
-- [ ] Repeat ordinary Linux smoke against the final settled archive/checksum and
+- [x] Repeat ordinary Linux smoke against the final settled archive/checksum and
   retain its exact script/source identity and dependency resolution.
-- [ ] Prove production install/postinstall, SDK guard, startup/static assets,
+- [x] Prove production install/postinstall, SDK guard, startup/static assets,
   password setup/login/rotation/restart, no-auth warning and a genuine terminal.
   Use synthetic state/providers, not personal credentials or paid turns.
 - [ ] Run the same concise artifact smoke contract on real macOS: install/start,
@@ -285,23 +326,23 @@ not come from the builder's platform. Packaging success is not portability proof
 
 ### P4 — release identity, public docs and no demo deployment
 
-- [ ] Reset root/demo manifests and their matching lock metadata to **0.1.0**;
+- [x] Reset root/demo manifests and their matching lock metadata to **0.1.0**;
   update only current-facing mock version/toolchain claims, not historical records
   or unrelated package versions. Maintain the Nix dependency hash deliberately.
-- [ ] Add owned repository/homepage/issue metadata; retain `private: true` and
+- [x] Add owned repository/homepage/issue metadata; retain `private: true` and
   manual update behavior. Do not add automatic update queries or registry release
   scripts as incidental polish.
-- [ ] Remove `.github/workflows/demo-pages.yml`; inspect remaining workflows for
+- [x] Remove `.github/workflows/demo-pages.yml`; inspect remaining workflows for
   implicit publication and inherited targets. Verify no remaining demo deploy job
   or push-triggered deployment path. Do not delete the demo merely to remove deploy.
-- [ ] Apply focused README/guide cleanup: self-contained contribution rules,
+- [x] Apply focused README/guide cleanup: self-contained contribution rules,
   prerequisites/platform support, a user/contributor/history docs index, accurate
   terminal repair/install guidance and concise authentication instructions. Keep
   Nix examples declarative and preserve the owner's specific onboarding exclusions.
 - [ ] Apply the approved current-tree privacy cleanup, including the proposed
   archived-plan omission and updated index/link references. Do not relabel old
   acceptance or create replacement evidence for omitted records.
-- [ ] Add `SECURITY.md` describing private GitHub reporting; explain that public
+- [x] Add `SECURITY.md` describing private GitHub reporting; explain that public
   issues are not the place for credentials or exploit details. Keep enablement as
   a separately authorized repository-settings gate until verified.
 

@@ -25,17 +25,36 @@ Production application builds run only inside isolated Nix builders. From the
 selected source candidate:
 
 ```sh
-nix build --no-write-lock-file --no-link --print-out-paths .#brabbler-tarball
+nix build --no-write-lock-file --no-link --print-out-paths .#brabbler-tarball .#brabbler-sources
 ```
 
-This produces an output directory containing `brabbler-0.1.0.tgz`.
+This produces an application output containing `brabbler-0.1.0.tgz` and a separate
+source output containing `brabbler-0.1.0-third-party-sources.tar.gz`, its checksum
+and `SOURCE-AVAILABILITY.json`. Publish the source asset alongside the application,
+with the exact name/URL/checksum recorded inside the application. The main download
+does not embed the large source archive. Nix recipients also have offline access
+under the installed package's `share/brabbler/third-party-sources/`.
+
 The Nix package extracts that same archive and adds its immutable module tree and
 launcher wrapper; do not distribute those store paths as a portable installation.
 
 The archive includes compiled assets, first-party source, the font input/notices
 and a generated `npm-shrinkwrap.json` derived from the reviewed lock. It must not
 contain credentials, agent/session state, tests, checkout dependencies or arbitrary
-build output. Inspect the **actual** archive and generated browser/server chunks,
+build output; cache/dev directories, build traces and diagnostics are excluded.
+The archive contains `/third-party/NOTICE.md`, full legal texts, original legal
+text collected from pinned build dependencies and a generated source locator/hash.
+The application advertises the notice via `rel="license"`.
+
+ELK remains the Mermaid 12.2 default. Its source asset follows upstream elkjs
+0.9.3's documented ELK 0.9.1 + PR955 lineage: seven exactly applied patches,
+editable Java/JS/GWT sources, runtime source JARs, original build configuration,
+notices and input/tree hashes. Upstream did not record its external ELK checkout;
+no positive mismatch or additional change was found. No legal certification,
+independent upstream compilation or bit-identical regeneration is claimed.
+See [source access](../public/third-party/SOURCE-AVAILABILITY.md).
+
+Inspect the **actual** archive and generated browser/server chunks,
 not just the source allowlist. Dependency source/notice obligations follow what is
 redistributed, separately from dependencies fetched by the consumer or a Nix build.
 
@@ -66,11 +85,13 @@ See [dependency dispositions](dependencies.md) for scope and remaining obligatio
 
 ## Current evidence and release gates
 
-Local source implementation is in progress. A preliminary archive passed a clean
-non-Nix Linux x86_64 / Node 24.21.0 smoke, including native HTTP PTY, hidden password
-setup, login, restart, rotation, header guard and warned no-auth boundaries. This
-spike is not final-candidate, all-architecture, macOS or complete Nix acceptance.
-No public release or hosted macOS result is claimed.
+The local application/source pair builds in isolated Nix and passed an ordinary
+Linux x86_64 / Node 24.21.0 smoke: runtime installation, native HTTP PTY, hidden
+password setup, login/restart/rotation, header/no-auth boundaries, preserved notice
+bytes, matching source checksum/version and actual HTTP notice/locator discovery.
+That is evidence for the named Linux candidate only, not all architectures,
+native macOS or complete settled-candidate Nix acceptance. No public release or
+hosted macOS result is claimed.
 
 Before publication:
 
@@ -78,6 +99,8 @@ Before publication:
    inventory/checksum, ordinary Linux smoke and native hosted macOS evidence.
 2. Resolve applicable bundled-license/covered-source obligations and update exact
    advisory evidence; a clean npm lock audit is not a bundled-code clearance.
+   Verify both application/source checksums, included notice bodies and the real
+   published source URL. A proposed locator is not proof of remote availability.
 3. Approve exact privacy filters and prepare/verify a separate sanitized public
    history copy. Preserve private originals; never push all branches, tags or a
    mirror. Current-tree cleanup alone does not remove historical disclosures.

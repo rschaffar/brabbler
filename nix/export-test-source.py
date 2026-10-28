@@ -19,7 +19,7 @@ import uuid
 
 ROOT_FILES = frozenset({
     '.gitignore', 'AGENTS.md', 'CONTEXT.md', 'LICENSE',
-    'README.md',
+    'README.md', 'CONTRIBUTING.md', 'SECURITY.md',
     'flake.nix', 'flake.lock', 'package.json', 'package-lock.json',
     'tsconfig.json', 'next.config.ts', 'eslint.config.mjs',
     'postcss.config.mjs', 'tailwind.config.ts', 'instrumentation.ts',
@@ -35,6 +35,10 @@ SUFFIXES = frozenset({'.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json',
     '.md', '.nix', '.sh', '.py', '.c', '.h', '.css', '.svg', '.html',
     '.woff', '.woff2', '.ttf', '.otf', '.png', '.jpg', '.jpeg', '.gif',
     '.webp', '.ico', '.txt', '.yaml', '.yml', '.license', '.webmanifest'})
+# Preserved public patch/POM inputs are data for the corresponding-source kit,
+# not a general extension admission in application or private/config trees.
+SOURCE_MATERIAL_TREE = 'nix/third-party/'
+SOURCE_MATERIAL_SUFFIXES = frozenset({'.patch', '.pom'})
 EXCLUDED_NAMES = frozenset({'.git', 'node_modules', '.next', 'test-results',
     'coverage', 'build', 'out', '__pycache__', '.cache', '.config', '.local',
     '.pi', '.ssh', '.gnupg', '.npm', '.npmrc', '.yarnrc', '.yarnrc.yml',
@@ -218,7 +222,10 @@ def snapshot(root_fd, destination_fd=None, expected=None):
                 if stat.S_ISDIR(cs.st_mode):
                     directory(fd, child, child_rel, output)
                 else:
-                    require(Path(child).suffix.lower() in SUFFIXES or child in ('LICENSE', 'NOTICE'),
+                    suffix = Path(child).suffix.lower()
+                    source_material = (child_rel.startswith(SOURCE_MATERIAL_TREE)
+                                       and suffix in SOURCE_MATERIAL_SUFFIXES)
+                    require(suffix in SUFFIXES or child in ('LICENSE', 'NOTICE') or source_material,
                             f'Unapproved source file: {child_rel}')
                     copy_file(fd, child, child_rel, output, cs)
             require(identity(os.fstat(fd), True) == identity(s, True)

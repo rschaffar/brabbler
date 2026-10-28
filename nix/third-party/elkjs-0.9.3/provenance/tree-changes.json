@@ -1,0 +1,14 @@
+[
+  {
+    "path": "plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/NodeContext.java",
+    "status": "modified"
+  },
+  {
+    "path": "plugins/org.eclipse.elk.alg.common/src/org/eclipse/elk/alg/common/nodespacing/internal/algorithm/NodeSizeCalculator.java",
+    "status": "modified"
+  },
+  {
+    "path": "test/org.eclipse.elk.alg.topdown.test/src/org/eclipse/elk/alg/topdown/layered/test/PortPlacementCalculationTest.java",
+    "status": "added"
+  }
+]

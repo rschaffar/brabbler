@@ -5,17 +5,18 @@ import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createRequire } from 'node:module';
-import { mkdtempSync, mkdirSync, realpathSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, readFileSync, writeFileSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { setupInstalledAuth } from './auth-setup.fixture.mjs';
+import { verifySourceVersion } from './collect-notices.mjs';
 
-export function verifyArchive(file, expected) {
+export function verifyArchive(file, expected, extension = '.tgz') {
   assert.match(expected ?? '', /^[a-f0-9]{64}$/, 'exact tarball SHA-256 required');
-  assert.ok(file.endsWith('.tgz') && statSync(file).isFile(), 'regular npm tarball required');
+  assert.ok(file.endsWith(extension) && statSync(file).isFile(), 'regular release archive required');
   assert.equal(createHash('sha256').update(readFileSync(file)).digest('hex'), expected, 'tarball identity');
 }
 export function smokeEnvironment(root, executablePath = process.env.PATH) {
@@ -175,7 +176,7 @@ async function terminal(server, cookie, cwd) {
   });
 }
 export async function main(args) {
-  assert.equal(args.length, 2, 'Usage: node nix/portable-smoke.mjs /absolute/brabbler.tgz SHA256');
+  assert.equal(args.length, 3, 'Usage: node nix/portable-smoke.mjs /absolute/brabbler.tgz SHA256 /absolute/third-party-sources.tar.gz');
   assert.ok(['linux', 'darwin'].includes(process.platform), 'Linux/macOS smoke only');
   const archive = resolve(args[0]); verifyArchive(archive, args[1]);
   process.umask(0o077);
@@ -189,6 +190,21 @@ export async function main(args) {
   try {
     const app = join(work, 'application'); mkdirSync(app);
     await command('tar', ['-xzf', archive, '-C', app, '--strip-components=1'], env, work);
+    for (const entry of ['.next/trace', '.next/trace-build', '.next/diagnostics', '.next/cache', '.next/dev']) assert.equal(existsSync(join(app, entry)), false, `No build-only artifact: ${entry}`);
+    const sourceInfo = JSON.parse(readFileSync(join(app, 'public/third-party/SOURCE-AVAILABILITY.json'), 'utf8'));
+    const sourceArchive = resolve(args[2]);
+    verifyArchive(sourceArchive, sourceInfo.sha256, '.tar.gz');
+    const sourceManifest = JSON.parse(await command('tar', ['-xOf', sourceArchive, 'elkjs-0.9.3-source-materials/MANIFEST.json'], env, work));
+    assert.equal(sourceManifest.elkjs_gitHead, 'a8304cf79fde75bc2ab1a89d28320f53f8637436');
+    assert.equal(sourceManifest.patch_series.length, 7);
+    assert.ok(sourceManifest.source_trees.elk.files > 0);
+    const dependencyNotices = JSON.parse(readFileSync(join(app, 'public/third-party/DEPENDENCIES.json'), 'utf8'));
+    assert.ok(dependencyNotices.components.length > 0);
+    for (const component of dependencyNotices.components) for (const notice of component.notices) {
+      assert.equal(createHash('sha256').update(readFileSync(join(app, 'public/third-party', notice.file))).digest('hex'), notice.sha256);
+    }
+    report.source = sourceInfo;
+    report.checks.push('matching-source-archive-and-preserved-dependency-notices');
     // Run as the application root, not an npm dependency: only the root's
     // overrides are honored by npm. Never install over another app's modules.
     await command('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], env, app);
@@ -197,6 +213,8 @@ export async function main(args) {
     const sdkPolicy = require('./bin/sdk-runtime-policy.js'); sdkPolicy.checkSdkRuntimePolicy();
     require('./bin/patch-sdk-command-env.js').checkSdkCommandEnvironment();
     assert.equal(require('./package.json').version, '0.1.0');
+    assert.equal(sourceInfo.applicationVersion, require('./package.json').version);
+    verifySourceVersion(join(app, 'node_modules'), sourceInfo);
     report.checks.push('production-install-sdk-policy');
     server = await start(app, env);
     assert.equal((await request(server, '/api/sessions')).status, 503);
@@ -204,6 +222,12 @@ export async function main(args) {
     assert.equal(statSync(join(env.PI_CODING_AGENT_DIR, 'brabbler/auth/credentials.json')).mode & 0o777, 0o600);
     const cookie = await login(server, 'synthetic portable passphrase');
     assert.equal((await request(server, '/api/sessions', { cookie })).status, 200);
+    const noticePage = await request(server, '/third-party/NOTICE.md', { cookie });
+    assert.equal(noticePage.status, 200); assert.match(noticePage.text, /Corresponding ELK sources/);
+    const servedSource = await request(server, '/third-party/SOURCE-AVAILABILITY.json', { cookie });
+    assert.equal(servedSource.status, 200); assert.deepEqual(JSON.parse(servedSource.text), sourceInfo);
+    assert.match((await request(server, '/', { cookie })).text, /rel="license"/);
+    report.checks.push('http-notice-discovery-and-versioned-source-locator');
     const workspace = await request(server, '/api/default-cwd', { cookie, body: {} });
     assert.equal(workspace.status, 200, workspace.text);
     const { cwd } = JSON.parse(workspace.text);

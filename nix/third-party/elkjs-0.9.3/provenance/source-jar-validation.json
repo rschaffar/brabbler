@@ -1,0 +1,38 @@
+[
+  {
+    "file": "originals/emf-common-2.12.4-sources.jar",
+    "java_files": 58,
+    "entries": 79,
+    "zip_crc_validation": "passed"
+  },
+  {
+    "file": "originals/emf-ecore-2.12.4-sources.jar",
+    "java_files": 143,
+    "entries": 186,
+    "zip_crc_validation": "passed"
+  },
+  {
+    "file": "originals/guava-31.1-jre-sources.jar",
+    "java_files": 619,
+    "entries": 649,
+    "zip_crc_validation": "passed"
+  },
+  {
+    "file": "originals/gwt-user-2.10.0-sources.jar",
+    "java_files": 4110,
+    "entries": 4110,
+    "zip_crc_validation": "passed"
+  },
+  {
+    "file": "originals/xtend-lib-2.28.0-sources.jar",
+    "java_files": 19,
+    "entries": 56,
+    "zip_crc_validation": "passed"
+  },
+  {
+    "file": "originals/xtext-xbase-lib-2.28.0-sources.jar",
+    "java_files": 49,
+    "entries": 63,
+    "zip_crc_validation": "passed"
+  }
+]

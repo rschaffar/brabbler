@@ -48,6 +48,15 @@ and bundled RPC entry points. The embedded modular SDK remains available. A
 separate Pi CLI installation is unaffected. Do not share this dependency directory
 with other applications or use it as their SDK/CLI installation.
 
+## Licenses and source access
+
+The application includes third-party notices under `public/third-party/`, served
+at `/third-party/NOTICE.md`. Its generated `SOURCE-AVAILABILITY.json` identifies
+the corresponding ELK source archive, versioned release URL and SHA-256. That
+separate asset accompanies the application on the same release; verify its hash
+if downloading it. Normal users do not need it, Java or a compiler to run the
+application. Brabbler's MIT license does not replace third-party terms.
+
 ## Update and recovery
 
 Extract a new verified release into a new directory, install its locked runtime
@@ -65,10 +74,13 @@ another machine's `node_modules`.
 ## Additional artifact verification
 
 Maintainers build the archive only in an isolated Nix builder via
-`brabbler-tarball`, then run `node nix/portable-smoke.mjs ARCHIVE SHA256` from the
-source checkout on ordinary Linux/macOS Node. The script extracts a fresh copy,
+`brabbler-tarball` and `brabbler-sources`, then run
+`node nix/portable-smoke.mjs ARCHIVE SHA256 SOURCE_ARCHIVE` from the source checkout on ordinary Linux/macOS Node. The script extracts a fresh copy,
 uses isolated synthetic state, runs the same root `npm ci`, and verifies setup,
-login, terminal I/O, restart, rotation and explicit bypass boundaries. It does not
+login, terminal I/O, restart, rotation and explicit bypass boundaries. It also
+checks the source archive against the application's embedded hash, the installed
+ELK version, all collected notice bytes, HTTP notice/source-locator access and
+absence of build-only artifacts. It does not
 replace full Nix acceptance, build the application, or use operator credentials.
 The manual-only hosted workflow performs no deployment or publication. Remote
 execution needs its own approval; do not upload unsanitized history to enable CI.

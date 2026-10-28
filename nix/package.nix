@@ -1,4 +1,4 @@
-{ lib, stdenv, makeWrapper, nodejs, git, util-linux, noto-fonts, src, modules }:
+{ lib, stdenv, makeWrapper, nodejs, git, util-linux, noto-fonts, src, modules, thirdPartySources }:
 let
   manifest = builtins.fromJSON (builtins.readFile (src + "/package.json"));
 in
@@ -24,6 +24,8 @@ stdenv.mkDerivation {
     mkdir -p "$HOME"
     cp -R --reflink=auto ${modules}/node_modules ./node_modules
     chmod -R u+w node_modules
+    cp ${thirdPartySources}/SOURCE-AVAILABILITY.json public/third-party/
+    node ${./collect-notices.mjs} node_modules public/third-party public/third-party/SOURCE-AVAILABILITY.json
     npm run build
     runHook postBuild
   '';
@@ -39,15 +41,19 @@ stdenv.mkDerivation {
     npm pack --ignore-scripts --offline --pack-destination "$tarball" >/dev/null
     tar -xzf "$tarball"/*.tgz --strip-components=1 -C "$app"
     ln -s ${modules}/node_modules "$app/node_modules"
+    # Nix recipients also have offline source access; the portable application
+    # stays small and points to the separate, checksummed release source asset.
+    mkdir -p "$out/share/brabbler"
+    ln -s ${thirdPartySources} "$out/share/brabbler/third-party-sources"
     makeWrapper ${nodejs}/bin/node "$out/bin/brabbler" \
       --add-flags "$app/bin/brabbler.js" \
       --prefix PATH : ${lib.makeBinPath ([ nodejs git ] ++ lib.optionals stdenv.hostPlatform.isLinux [ util-linux ])}
     runHook postInstall
   '';
-  passthru = { inherit modules; };
+  passthru = { inherit modules thirdPartySources; };
   meta = {
     description = "A Pi-based agent development workspace";
-    license = [ lib.licenses.mit lib.licenses.ofl ];
+    license = [ lib.licenses.mit lib.licenses.ofl lib.licenses.asl20 lib.licenses.epl10 lib.licenses.epl20 ];
     mainProgram = "brabbler";
     platforms = lib.platforms.unix;
   };

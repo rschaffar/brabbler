@@ -99,6 +99,12 @@ effectful tests afresh through the fresh entry point. `static-inputs.json` and
 `static.log` distinguish declared-input evidence (possibly cached) from execution.
 `--inventory-only` is neither static nor execution evidence.
 
+The source exporter admits preserved `.patch`/`.pom` data only under
+`nix/third-party/`; it does not admit those extensions elsewhere, hidden metadata,
+archive/JAR payloads or symlinks. The source-output builder fetches large original
+archives by pinned hashes instead of placing them in the checkout. Root public
+contributor/security guides are included in the source snapshot.
+
 Application inputs exclude `*.test.*`, `*.fixture.*` and `lib/testing`; test/static
 inputs still admit their required support. Keep `package.json`'s packed-file
 exclusions in agreement and verify the realized package inventory and dependency
@@ -126,11 +132,14 @@ publish an artifact. Manual `nix develop`/`npm run dev` is separate, not accepta
 ## Portable archive evidence
 
 The `brabbler-tarball` output is built once in an isolated Nix builder, then tested
-by `nix/portable-smoke.mjs ARCHIVE SHA256` on ordinary Linux/macOS Node. It extracts
+by `nix/portable-smoke.mjs ARCHIVE SHA256 SOURCE_ARCHIVE` on ordinary Linux/macOS Node. It extracts
 a fresh owned application and runs root `npm ci --omit=dev`; it does not compile
 Next, inherit operator credentials, or use the working checkout/host service.
 Record the archive checksum, source/script identity, dependency resolution,
-Node/OS/architecture, command wall time and report. Real native PTY/TTY/auth behavior
+Node/OS/architecture, command wall time and report. The source archive is checked
+against the application's embedded source SHA-256; the smoke also checks notice
+bytes, installed ELK/source version agreement and actual HTTP notice/locator access.
+The separate source asset keeps the main download small. Real native PTY/TTY/auth behavior
 must be observed on the named OS; Linux is not macOS evidence.
 
 A local Linux container can supply the ordinary environment without exposing the
