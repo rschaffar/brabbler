@@ -19,6 +19,8 @@ import { acceptancePlugin } from "../plugins/acceptance";
 import { withSessionModelSpeed } from "./session-model-speed-runtime";
 import { samePath } from "./paths";
 import { readSessionHeader } from "./session-reader";
+import { pendingSessionRelocation, recentSessionRelocation } from "./session-relocation";
+import { sessionPathKey } from "./session-path";
 import { SESSION_SPAWN_TYPE, sessionSpawnFromEntries } from "./session-spawn";
 import { sessionLaunchHost } from "./session-launch-runtime";
 import { invalidateModelsCache } from "./models-cache";
@@ -2682,6 +2684,10 @@ export function getRpcSession(sessionId: string): AgentSessionWrapper | undefine
   return getRegistry().get(sessionId);
 }
 
+export function isRpcSessionStarting(sessionId: string): boolean {
+  return getLocks().has(sessionId);
+}
+
 export interface SetRpcSessionToolsResult {
   session: AgentSessionWrapper;
   sessionId: string;
@@ -3028,6 +3034,7 @@ export async function startRpcSession(
 /** Recreation state is internal only, never a caller-controlled startup grant. */
 async function startRpcSessionInternal(
   sessionId: string, sessionFile: string, cwd: string | undefined, options: RpcSessionStartOptions,
+  expectedSessionId?: string, missingRelocationPaths?: ReadonlySet<string>,
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const { initialModel, allowInitialModelFallback, thinkingLevel, modelSpeed } = options;
   if (options.initialPromptOwner !== undefined && sessionFile) throw new Error("Initial prompt ownership requires a fresh session");
@@ -3040,8 +3047,42 @@ async function startRpcSessionInternal(
   const registry = getRegistry();
   const locks = getLocks();
 
-  const header = sessionFile ? readSessionHeader(sessionFile) : undefined;
+  // Look up the barrier before touching a path that may have disappeared, but
+  // retain header authority for readable files and fail closed on unknown aliases.
+  let relocation = sessionFile ? pendingSessionRelocation(undefined, sessionFile) : undefined;
+  let header: ReturnType<typeof readSessionHeader> = null;
+  let missingHeader = false;
+  if (sessionFile) {
+    try { header = readSessionHeader(sessionFile); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      missingHeader = true;
+      const knownId = expectedSessionId ?? sessionId;
+      if (relocation?.id !== knownId) {
+        const recent = recentSessionRelocation(sessionFile);
+        if (!expectedSessionId && recent?.id !== sessionId) throw error;
+        const key = sessionPathKey(sessionFile);
+        if (missingRelocationPaths?.has(key)) throw error;
+        const currentFile = await resolveSessionPath(knownId);
+        if (!currentFile || samePath(currentFile, sessionFile)) throw error;
+        return startRpcSessionInternal(sessionId, currentFile, cwd, options, knownId,
+          new Set([...(missingRelocationPaths ?? []), key]));
+      }
+    }
+  }
   const startupSessionId = sessionFile ? header?.id : sessionId;
+  if (sessionFile && !header && !missingHeader) throw new Error("Cannot prove persisted SDK session ID");
+  relocation ??= sessionFile ? pendingSessionRelocation(startupSessionId, sessionFile) : undefined;
+  if (relocation) {
+    const knownId = header?.id ?? expectedSessionId ?? sessionId;
+    if (relocation.id !== knownId || (expectedSessionId && relocation.id !== expectedSessionId)) throw new Error("Cannot resolve relocated session");
+    const failure = await relocation.settled;
+    if (failure) throw failure.error;
+    const currentFile = await resolveSessionPath(relocation.id);
+    if (!currentFile) throw new Error("Cannot resolve relocated session");
+    return startRpcSessionInternal(sessionId, currentFile, cwd, options, relocation.id, missingRelocationPaths);
+  }
+  if (expectedSessionId && startupSessionId !== expectedSessionId) throw new Error("Cannot resolve relocated session");
   if (!startupSessionId) throw new Error("Cannot prove persisted SDK session ID");
   const existing = registry.get(startupSessionId);
   if (existing?.isAlive()) {
