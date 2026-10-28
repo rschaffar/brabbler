@@ -2,13 +2,26 @@ import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 
 export type SettingValue = boolean | string | null | RequiredCheck[];
 export interface RequiredCheck { name: string; command: string; /** Omitted or zero means no deadline. */ timeoutMs?: number }
+export type PluginSettingScope = "global" | "project" | "session";
 export interface PluginField {
   label: string;
+  /** Optional catalog keys and display-only dependencies; never execution authority. */
+  presentation?: {
+    labelKey?: string;
+    descriptionKey?: string;
+    groupKey?: string;
+    optionLabelKeys?: Readonly<Record<string, string>>;
+    nullLabelKey?: string;
+    emptyLabelKey?: string;
+    relatedChoice?: { field: string; unresolvedValue: SettingValue };
+  };
   kind: "boolean" | "text" | "enum" | "checks";
   default: SettingValue;
   options?: readonly string[];
   nullable?: boolean;
   globalOnly?: boolean;
+  /** False for operations whose policy deliberately omits session overrides. */
+  sessionOverridable?: boolean;
   description?: string;
   group?: string;
 }
@@ -18,6 +31,8 @@ export interface PluginManifest {
   schemaVersion: number;
   /** Allow canonical directory scopes outside Git; Git plugins keep repository-only identity. */
   directoryProjects?: boolean;
+  /** Opt-in presentation; other bundled plugins keep their existing editor. */
+  settingsLayout?: "scope-matrix";
   fields: Readonly<Record<string, PluginField>>;
   /** Explicit UI recipes, never applied by a model or merely by selecting a scope. */
   presets?: Readonly<Record<string, { label: string; values: Overrides }>>;

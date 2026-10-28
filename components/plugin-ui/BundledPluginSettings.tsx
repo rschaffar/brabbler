@@ -3,6 +3,9 @@
 import { useSettingsWork } from "../SettingsUi";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigationWork } from "@/lib/navigation-work";
+import { useI18n } from "@/hooks/useI18n";
+import { previewPluginSettings } from "@/lib/plugins/settings-view";
+import { PluginSettingsMatrix, type PluginSettingsSaveResult } from "./PluginSettingsMatrix";
 import type { Overrides, PluginManifest, PluginSettings, SettingValue } from "@/lib/plugins/types";
 import { ConfigSidebarGroupLabel, ConfigSidebarItem, ConfigSidebarText, ConfigStatusDot } from "../SettingsUi";
 interface Entry { manifest: PluginManifest; settings: PluginSettings }
@@ -20,8 +23,13 @@ export function BundledPluginSidebar({ cwd, sessionId, selected, onSelect }: { c
   const [entries, setEntries] = useState<Entry[]>([]);
   const [error, setError] = useState("");
   useEffect(() => {
-    let active = true;
-    const refresh = () => { void observe("plugins.bundledSidebar", load(cwd, sessionId).then((entries) => { if (active) { setEntries(entries); setError(""); } }, (error) => { if (active) setError(String(error)); })); };
+    let active = true, generation = 0;
+    const refresh = () => {
+      const request = ++generation;
+      void observe("plugins.bundledSidebar", load(cwd, sessionId).then((entries) => {
+        if (active && request === generation) { setEntries(entries); setError(""); }
+      }, (error) => { if (active && request === generation) setError(String(error)); }));
+    };
     refresh();
     window.addEventListener("brabbler:bundled-plugin-settings", refresh);
     return () => { active = false; window.removeEventListener("brabbler:bundled-plugin-settings", refresh); };
@@ -41,9 +49,10 @@ interface Props {
 }
 export function BundledPluginSettings(props: Props) {
   // A response or unsaved editor draft for one session must never enter another.
-  return <Settings key={`${props.cwd}:${props.id}:${props.sessionId ?? ""}`} {...props} />;
+  return <Settings key={JSON.stringify([props.cwd, props.id, props.sessionId ?? null])} {...props} />;
 }
 function Settings({ cwd, id, sessionId, initialScope = "global", initialField, onWork }: Props) {
+  const { t } = useI18n();
   const settingsWork = useSettingsWork();
   const navigationWork = useNavigationWork();
   const observers = useRef({ settingsWork, navigationWork, onWork });
@@ -62,6 +71,9 @@ function Settings({ cwd, id, sessionId, initialScope = "global", initialField, o
   const [preset, setPreset] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const live = useRef(false);
+  const saving = useRef(false);
+  useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   useEffect(() => {
     let active = true;
     void observe("plugins.bundledSettings.load", load(cwd, sessionId).then((entries) => {
@@ -73,38 +85,39 @@ function Settings({ cwd, id, sessionId, initialScope = "global", initialField, o
   }, [cwd, id, sessionId, observe]);
   const focusedField = useRef<string | null>(null);
   useEffect(() => {
-    if (!entry || !initialField || focusedField.current === initialField) return;
+    if (!entry || entry.manifest.settingsLayout === "scope-matrix" || !initialField || focusedField.current === initialField) return;
     focusedField.current = initialField;
     const field = document.getElementById(`plugin-${initialField}`);
     field?.focus({ preventScroll: true });
     field?.scrollIntoView({ block: "center" });
   }, [entry, initialField]);
-  const save = (set: Overrides, reset: string[] = [], saveScope = scope) => observe("plugins.bundledSettings.save", (async () => {
-    if (!entry || busy) return;
-    setBusy(true); setError("");
-    const optimistic = structuredClone(entry.settings);
-    const values = saveScope === "global" ? optimistic.global : saveScope === "project" ? optimistic.overrides : optimistic.sessionOverrides ??= {};
-    for (const key of reset) delete values[key];
-    Object.assign(values, set);
-    for (const [key, field] of Object.entries(entry.manifest.fields)) {
-      const source = !field.globalOnly && optimistic.sessionApplicable && Object.hasOwn(optimistic.sessionOverrides ?? {}, key) ? "session"
-        : !field.globalOnly && Object.hasOwn(optimistic.overrides, key) ? "project" : Object.hasOwn(optimistic.global, key) ? "global" : "builtin";
-      optimistic.sources[key] = source;
-      optimistic.effective[key] = source === "session" ? optimistic.sessionOverrides![key] : source === "project" ? optimistic.overrides[key] : source === "global" ? optimistic.global[key] : field.default;
-    }
-    optimistic.enabled = optimistic.effective.enabled === true;
-    setEntry({ ...entry, settings: optimistic });
-    try {
-      const response = await fetch("/api/plugins/bundled", { method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pluginId: id, cwd, sessionId, scope: saveScope, set, reset }) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      setEntry({ ...entry, settings: data.settings });
-      window.dispatchEvent(new Event("brabbler:bundled-plugin-settings"));
-    } catch (error) { setEntry(entry); setError(String(error)); } finally { setBusy(false); }
-  })());
+  const save = (set: Overrides, reset: string[] = [], saveScope = scope): Promise<PluginSettingsSaveResult> => {
+    // React state alone does not fence two events admitted before the next render.
+    if (!entry || saving.current) return Promise.resolve({ ok: false, error: t("pluginMatrix.saveBusy") });
+    saving.current = true;
+    return observe("plugins.bundledSettings.save", (async (): Promise<PluginSettingsSaveResult> => {
+      setBusy(true); setError("");
+      setEntry({ ...entry, settings: previewPluginSettings(entry.manifest, entry.settings, saveScope, set, reset) });
+      try {
+        const response = await fetch("/api/plugins/bundled", { method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pluginId: id, cwd, sessionId, scope: saveScope, set, reset }) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        if (live.current) setEntry({ ...entry, settings: data.settings });
+        // A committed old-context write still deserves a fresh sidebar read;
+        // its response and rollback must never enter a newly mounted context.
+        window.dispatchEvent(new Event("brabbler:bundled-plugin-settings"));
+        return { ok: true };
+      } catch (error) {
+        const message = String(error);
+        if (live.current) { setEntry(entry); setError(message); }
+        return { ok: false, error: message };
+      } finally { saving.current = false; if (live.current) setBusy(false); }
+    })());
+  };
   if (!entry) return <p role={error ? "alert" : "status"}>{error || "Loading bundled plugin settings…"}</p>;
   const { manifest, settings } = entry;
+  if (manifest.settingsLayout === "scope-matrix") return <PluginSettingsMatrix {...{ manifest, settings, busy, error, initialScope, initialField }} onSave={save} />;
   const ownProject = settings.sessionApplicable === true;
   const unavailable = (scope === "session" && !ownProject) || (scope === "project" && !settings.project);
   return <section aria-label={`${manifest.name} settings`} className="min-w-0 space-y-4 p-3 text-sm text-text">
@@ -139,7 +152,7 @@ function Settings({ cwd, id, sessionId, initialScope = "global", initialField, o
         <label className="block font-medium" htmlFor={`plugin-${key}`}>{field.label}</label>
         {field.description && <p className="text-xs text-text-muted">{field.description}</p>}
         {field.kind === "boolean" ? <input id={`plugin-${key}`} type="checkbox" checked={value === true} disabled={disabled} onChange={(event) => saveField(event.target.checked)} />
-          : field.kind === "enum" ? <select id={`plugin-${key}`} value={String(value)} disabled={disabled} onChange={(event) => saveField(event.target.value)} className="rounded border border-border bg-bg p-2">{field.options?.map((option) => <option key={option} value={option}>{option === "ask" && field.group === "Workflow choices" ? "Ask via ask_user" : option}</option>)}</select>
+          : field.kind === "enum" ? <select id={`plugin-${key}`} value={String(value)} disabled={disabled} onChange={(event) => saveField(event.target.value)} className="rounded border border-border bg-bg p-2">{field.options?.map((option) => <option key={option} value={option}>{field.presentation?.optionLabelKeys?.[option] ? t(field.presentation.optionLabelKeys[option]) : option}</option>)}</select>
           : <SettingEditor key={`${id}:${scope}:${key}:${JSON.stringify(value)}`} id={`plugin-${key}`} checks={field.kind === "checks"} value={value} disabled={disabled}
             onSave={saveField} nullable={field.nullable} />}
         <p className="break-all text-xs text-text-muted">Effective: {JSON.stringify(settings.effective[key])} · Source: {settings.sources[key]}{field.globalOnly ? " · Global only" : ""}</p>

@@ -1668,6 +1668,11 @@
       "estimatedMs": 2000
     },
     {
+      "path": "lib/plugins/settings-view.test.mjs",
+      "lane": "F",
+      "reason": "Actual client-safe settings projection, immutable patch preview, presence/equality and draft parsing with the pure Git manifest. Type-only imports are erased; literal in-process snapshots, no filesystem writes, native commands, timers, transport or process-global mutation. Jiti filesystem caching is disabled. Backend settings tests retain private native identity/storage proof; mounted and installed owners retain wiring and layout."
+    },
+    {
       "path": "lib/plugins/settings.test.mjs",
       "lane": "N",
       "reason": "Real settings and fresh Git/worktree identity effects use private repositories and explicit settings paths. Process-local builtin adapters forward actual native queries; query/gate children are independently joined before adapter restoration and root removal, including failure. No source writes or fixed ports.",

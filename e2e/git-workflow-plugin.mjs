@@ -91,26 +91,125 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
   await settings.getByRole("button", { name: "Git Workflow", exact: true }).click();
   const panel = settings.getByRole("region", { name: "Git Workflow settings" });
   await panel.waitFor();
-  await panel.getByLabel("Enable plugin (all projects)").check();
-  await panel.getByText(/Effective: true · Source: global/).waitFor();
-  await panel.getByLabel("Plugin settings scope").selectOption("session");
-  await panel.getByLabel("commit", { exact: true }).selectOption("allow");
-  await panel.getByText(/Effective: "allow" · Source: session/).waitFor();
-  await panel.getByLabel("Workflow preset", { exact: true }).selectOption("always-ask");
-  await panel.getByRole("button", { name: "Apply workflow preset", exact: true }).click();
-  await panel.getByText(/Effective: "ask" · Source: session/).first().waitFor();
-  assert.equal(await panel.getByLabel("Working location").inputValue(), "ask");
-  assert.equal(await panel.getByLabel("Working location").locator("option:checked").textContent(), "Ask via ask_user");
-  await panel.getByLabel("commit", { exact: true }).locator("..").getByRole("button", { name: "Use project default", exact: true }).click();
-  await panel.getByLabel("commit", { exact: true }).locator("..").getByText(/Source: builtin/).waitFor();
-  await settings.getByRole("button", { name: "Close", exact: true }).click();
-  if (width <= 600) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
-  assert.ok((await command({ type: "get_tools" })).some((tool) => tool.name === "git_commit" && tool.active));
-  await page.getByRole("button", { name: "Session plugin settings", exact: true }).click();
-  await panel.waitFor();
-  assert.equal(await panel.getByLabel("Plugin settings scope").inputValue(), "session");
-  assert.equal(await panel.getByLabel("Working location").inputValue(), "ask");
-  await settings.getByRole("button", { name: "Close", exact: true }).click();
+  const writes = [];
+  const recordSettingWrite = (request) => {
+    if (request.method() === "PATCH" && new URL(request.url()).pathname === "/api/plugins/bundled") writes.push(request.postDataJSON());
+  };
+  const body = (scope, set, reset = []) => ({ pluginId: "git-workflow", cwd: repo, sessionId, scope, set, reset });
+  const cell = (key, scope) => panel.locator(`[data-setting-cell="${key}:${scope}"]`);
+  const editor = page.locator("dialog.plugin-matrix-dialog[open]");
+  const uiSave = async (expected, action) => {
+    // Own the actual response body and action failure independently. Native UI
+    // busy/dialog settlement below is separate from transport acknowledgement.
+    const original = page.waitForResponse((response) => response.request().method() === "PATCH"
+      && new URL(response.url()).pathname === "/api/plugins/bundled").then(async (response) => {
+      const data = await response.json();
+      assert.ok(response.ok(), data.error);
+      assert.deepEqual(response.request().postDataJSON(), expected);
+      return data.settings;
+    });
+    const observed = original.then((value) => ({ value }), (error) => ({ error }));
+    let actionError;
+    try { await action(); } catch (error) { actionError = error; }
+    const outcome = await observed;
+    if (actionError || "error" in outcome) throw new AggregateError([actionError, "error" in outcome ? outcome.error : null].filter(Boolean), "Settings action/response failed");
+    await waitForAsyncCondition(page, () => document.querySelector("[data-plugin-settings-matrix]")?.getAttribute("aria-busy") === "false");
+    return outcome.value;
+  };
+  const readSettings = async () => {
+    const response = await page.request.get(`${base}/api/plugins/bundled?${new URLSearchParams({ cwd: repo, sessionId })}`);
+    const data = await response.json();
+    assert.ok(response.ok(), data.error);
+    return data.plugins.find((entry) => entry.manifest.id === "git-workflow").settings;
+  };
+  page.on("request", recordSettingWrite);
+  try {
+    await uiSave(body("global", { enabled: true }), () => panel.getByLabel("Enable plugin (all projects)").check());
+    assert.equal(await panel.locator('[role="table"] #plugin-enabled').count(), 0, "enablement remains outside the scope matrix");
+    assert.equal(await panel.locator("[data-scope-heading]").count(), 3);
+    assert.equal(await panel.getByLabel("Plugin settings scope").count(), 0);
+    assert.equal(await panel.locator('[data-scope-heading="global"] strong').textContent(), "All repositories");
+    assert.equal(await panel.locator('[data-scope-heading="session"] strong').textContent(), "This session");
+    const sessionCell = cell("commit", "session");
+    await sessionCell.scrollIntoViewIfNeeded();
+    for (const scope of ["global", "project", "session"]) {
+      const heading = await panel.locator(`[data-scope-heading="${scope}"]`).boundingBox();
+      const target = await cell("commit", scope).boundingBox();
+      assert.ok(heading && target && Math.abs(heading.x - target.x) <= 1 && Math.abs(heading.width - target.width) <= 1,
+        `${width}: ${scope} header aligns with its full-cell target`);
+      assert.ok(target.width >= 70 && target.height >= 44, `${width}: readable, full-cell target`);
+      assert.equal(await cell("commit", scope).evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true);
+    }
+    await sessionCell.focus();
+    await page.keyboard.press("Enter");
+    await editor.waitFor();
+    assert.equal(await editor.evaluate((node) => node.contains(document.activeElement)), true);
+    const controls = await editor.locator("button, input, select, textarea").evaluateAll((nodes) => nodes.filter((node) => !node.matches(":disabled") && node.getClientRects().length).length);
+    for (let index = 0; index <= controls; index++) {
+      await page.keyboard.press("Tab");
+      const focus = await editor.evaluate((node) => ({ inside: node.contains(document.activeElement), documentFocused: document.hasFocus(),
+        tag: document.activeElement?.tagName, name: document.activeElement?.getAttribute("aria-label"), open: node.open, modal: node.matches(":modal") }));
+      // Native Chromium can traverse browser chrome. That unfocused-document
+      // BODY state is not focus entering inert background application content.
+      assert.equal(focus.open && focus.modal, true);
+      assert.equal(focus.inside || (!focus.documentFocused && focus.tag === "BODY"), true,
+        `native modal excludes background-page Tab focus: ${JSON.stringify(focus)}`);
+    }
+    await editor.getByRole("radio", { name: /Follow parent/ }).click();
+    assert.equal(await editor.getByRole("radio", { name: /Follow parent/ }).evaluate((node) => node === document.activeElement && document.hasFocus()), true,
+      "specific editor control owns focus before the inertness attempt");
+    const inert = await editor.evaluate((node) => {
+      const before = document.activeElement;
+      document.querySelector('[data-plugin-settings-matrix] input[type="search"]').focus();
+      return { retained: document.activeElement === before, inside: node.contains(document.activeElement), focused: document.hasFocus() };
+    });
+    assert.deepEqual(inert, { retained: true, inside: true, focused: true }, "native modality refuses background programmatic focus");
+    await page.keyboard.press("Escape");
+    await editor.waitFor({ state: "hidden" });
+    await settings.waitFor();
+    assert.equal(await sessionCell.evaluate((node) => node === document.activeElement), true, "Escape restores cell focus, not outer Settings close");
+    assert.equal(writes.length, 1, "opening/cancelling the inherited value never pins it");
+    await sessionCell.click({ position: { x: 4, y: 4 } });
+    await editor.getByRole("radio", { name: /Save an explicit value/ }).check();
+    await editor.getByRole("combobox", { name: "Value", exact: true }).selectOption("allow");
+    const allowed = await uiSave(body("session", { commit: "allow" }), () => editor.getByRole("button", { name: "Save changes", exact: true }).click());
+    await editor.waitFor({ state: "hidden" });
+    assert.equal(allowed.sessionOverrides.commit, "allow");
+    assert.equal(allowed.sources.commit, "session");
+    assert.equal(await sessionCell.getAttribute("data-winning"), "true");
+    assert.match(await sessionCell.textContent(), /Without approvalSaved here/);
+    assert.match(await cell("commit", "project").textContent(), /↳ Built-in fallbackRequire approval/);
+    await page.screenshot({ path: join(artifacts, `git-settings-matrix-${width}.png`) });
+    const persisted = await readSettings();
+    assert.equal(persisted.sessionOverrides.commit, "allow");
+    await panel.getByRole("button", { name: "Workflow presets", exact: true }).click();
+    await editor.getByRole("combobox", { name: "Save workflow choices to", exact: true }).selectOption("session");
+    await editor.getByRole("combobox", { name: "Workflow preset", exact: true }).selectOption("always-ask");
+    const askValues = { workspace: "ask", completion: "ask", targetSelection: "ask", methodSelection: "ask", cleanupWorktree: "ask", cleanupBranch: "ask", cleanupArtifacts: "ask" };
+    await uiSave(body("session", askValues), () => editor.getByRole("button", { name: "Apply workflow preset", exact: true }).click());
+    await editor.waitFor({ state: "hidden" });
+    assert.match(await cell("workspace", "session").textContent(), /Ask each timeSaved here/);
+    assert.equal(await sessionCell.getAttribute("data-winning"), "true");
+    await sessionCell.click();
+    await editor.getByRole("radio", { name: /Follow parent/ }).check();
+    await uiSave(body("session", {}, ["commit"]), () => editor.getByRole("button", { name: "Save changes", exact: true }).click());
+    await editor.waitFor({ state: "hidden" });
+    assert.equal(await sessionCell.getAttribute("data-saved"), "false");
+    assert.equal(await cell("commit", "global").getAttribute("data-winning"), "true");
+    const followed = await readSettings();
+    assert.equal(Object.hasOwn(followed.sessionOverrides, "commit"), false);
+    assert.equal(followed.sources.commit, "builtin");
+    assert.deepEqual(writes, [body("global", { enabled: true }), body("session", { commit: "allow" }), body("session", askValues), body("session", {}, ["commit"])]);
+    await settings.getByRole("button", { name: "Close", exact: true }).click();
+    if (width <= 600) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: width - 10, y: 200 } });
+    assert.ok((await command({ type: "get_tools" })).some((tool) => tool.name === "git_commit" && tool.active));
+    await page.getByRole("button", { name: "Session plugin settings", exact: true }).click();
+    await panel.waitFor();
+    assert.equal(await panel.locator("[data-scope-heading]").count(), 3);
+    assert.equal(await sessionCell.getAttribute("data-saved"), "false");
+    assert.match(await cell("workspace", "session").textContent(), /Ask each timeSaved here/);
+    await settings.getByRole("button", { name: "Close", exact: true }).click();
+  } finally { page.off("request", recordSettingWrite); }
 
   const start = async (mode, title = "Git commit") => {
     const input = page.locator("textarea").last(); await input.fill(`/e2e-git-plugin ${mode}-${width}`);

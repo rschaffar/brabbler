@@ -491,7 +491,7 @@ let nativeToolsFixture;
     });
   } else if (group === "git-plugin") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/pagination-owned-v8@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/matrix-settings-v9@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage();

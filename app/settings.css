@@ -1407,3 +1407,111 @@
     }
   }
 }
+
+/* Opt-in bundled-settings matrix: three scopes stay visible even in narrow panes. */
+.plugin-matrix-root { container-type: inline-size; min-width: 0; padding: 1rem; color: var(--text); font-size: .875rem; }
+.plugin-matrix-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.plugin-matrix-heading h2 { margin: 0; font-size: 1.25rem; font-weight: 650; }
+.plugin-matrix-heading p, .plugin-matrix-context, .plugin-matrix-notice, .plugin-matrix-description, .plugin-matrix-legend { color: var(--text-muted); font-size: .8rem; line-height: 1.55; }
+.plugin-matrix-heading p { margin: .4rem 0 0; max-width: 44rem; }
+.plugin-matrix-context { margin: .75rem 0; overflow-wrap: anywhere; }
+.plugin-matrix-globalControl { display: flex; align-items: center; gap: .75rem; border: 1px solid var(--border); border-radius: .75rem; padding: .8rem 1rem; }
+.plugin-matrix-globalControl > div { flex: 1; min-width: 0; }
+.plugin-matrix-globalControl p { margin: .25rem 0 0; color: var(--text-muted); font-size: .75rem; }
+.plugin-matrix-globalLabel { font-weight: 600; }
+.plugin-matrix-globalControl input, .plugin-matrix-savedFilter input, .plugin-matrix-nullChoice input, .plugin-matrix-modes input { accent-color: var(--accent); width: 1rem; height: 1rem; flex: none; }
+.plugin-matrix-notice { margin: .75rem 0; }
+.plugin-matrix-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin: 1rem 0; }
+.plugin-matrix-search { display: grid; gap: .35rem; flex: 1; max-width: 24rem; font-size: .75rem; color: var(--text-muted); }
+.plugin-matrix-search input, .plugin-matrix-valueEditor input:not([type="checkbox"]), .plugin-matrix-valueEditor select, .plugin-matrix-valueEditor textarea, .plugin-matrix-selectLabel select { width: 100%; min-width: 0; padding: .65rem .75rem; border: 1px solid var(--border); border-radius: .5rem; color: var(--text); background: var(--bg); font: inherit; }
+.plugin-matrix-savedFilter, .plugin-matrix-nullChoice { display: flex; gap: .5rem; align-items: center; font-size: .8rem; }
+.plugin-matrix-table { min-width: 0; }
+.plugin-matrix-row { display: grid; grid-template-columns: minmax(9rem, 1fr) repeat(3, minmax(0, 1fr)); gap: .5rem; margin: .5rem 0; align-items: stretch; }
+.plugin-matrix-columnHeadings { position: sticky; top: -.1rem; z-index: 1; margin-top: 0; padding: .6rem 0; background: var(--bg); border-bottom: 1px solid var(--border); }
+.plugin-matrix-fieldHeading { align-self: center; color: var(--text-muted); font-size: .75rem; }
+.plugin-matrix-scopeHeading { display: flex; flex-direction: column; justify-content: center; gap: .3rem; padding: 0 .65rem; min-width: 0; overflow-wrap: anywhere; }
+.plugin-matrix-scopeHeading strong { font-size: .85rem; font-weight: 600; }
+.plugin-matrix-scopeHeading span { font-size: .7rem; line-height: 1.3; color: var(--text-muted); }
+.plugin-matrix-groupHeading { padding: 1.1rem 0 .25rem; }
+.plugin-matrix-groupHeading h3 { margin: 0; color: var(--text-muted); font-size: .72rem; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; }
+.plugin-matrix-fieldName { display: flex; flex-direction: column; justify-content: center; gap: .3rem; padding: .5rem .5rem .5rem 0; font-size: .83rem; font-weight: 550; overflow-wrap: anywhere; }
+.plugin-matrix-fieldName > span { color: var(--text-muted); font-size: .7rem; font-weight: 400; }
+.plugin-matrix-cell { min-width: 0; display: flex; }
+.plugin-matrix-cellButton, .plugin-matrix-unavailable { width: 100%; min-width: 0; min-height: 6rem; border: 1px solid var(--border); border-radius: .65rem; padding: .7rem; text-align: left; background: var(--bg); color: var(--text); overflow-wrap: anywhere; }
+.plugin-matrix-cellButton { cursor: pointer; transition: border-color .12s, background-color .12s; }
+.plugin-matrix-cellButton:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--bg)); }
+.plugin-matrix-cellDetail { display: flex; height: 100%; flex-direction: column; align-items: flex-start; gap: .3rem; }
+.plugin-matrix-cellDetail strong, .plugin-matrix-unavailable strong { font-size: .8rem; font-weight: 550; line-height: 1.4; }
+.plugin-matrix-cellDetail > span { color: var(--text-muted); font-size: .7rem; line-height: 1.4; }
+.plugin-matrix-inherited { border-style: dashed; }
+.plugin-matrix-inherited strong { font-weight: 450; color: var(--text-muted); }
+.plugin-matrix-winning { border: 1.5px solid var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
+.plugin-matrix-cellDetail .plugin-matrix-winner { margin-top: auto; padding-top: .25rem; color: var(--accent); font-weight: 650; }
+.plugin-matrix-cellDetail .plugin-matrix-pin { font-size: .65rem; }
+.plugin-matrix-unavailable { display: flex; flex-direction: column; justify-content: center; gap: .4rem; border-color: transparent; color: var(--text-muted); }
+.plugin-matrix-unavailable > span { font-size: .7rem; line-height: 1.4; }
+.plugin-matrix-legend { margin: 1.25rem 0 .25rem; border-top: 1px solid var(--border); padding-top: .75rem; }
+.plugin-matrix-secondary, .plugin-matrix-primary, .plugin-matrix-textButton { font: inherit; cursor: pointer; }
+.plugin-matrix-secondary, .plugin-matrix-primary { border: 1px solid var(--border); border-radius: .5rem; padding: .55rem .8rem; line-height: 1.4; background: var(--bg); color: var(--text); }
+.plugin-matrix-primary { border-color: var(--accent); background: var(--accent); color: var(--accent-contrast); font-weight: 600; }
+.plugin-matrix-textButton { padding: .15rem 0; text-decoration: underline; text-underline-offset: .2em; color: var(--text-muted); font-size: .75rem; background: none; border: 0; }
+.plugin-matrix-root :is(button, input, select, textarea):focus-visible, .plugin-matrix-dialog :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.plugin-matrix-root :disabled, .plugin-matrix-dialog :disabled { cursor: default; opacity: .6; }
+.plugin-matrix-error { color: var(--error, #df5962); font-size: .8rem; overflow-wrap: anywhere; }
+.plugin-matrix-dialog { width: min(42rem, calc(100vw - 1.5rem)); max-width: none; max-height: calc(100dvh - 1.5rem); margin: auto; padding: 0; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 1rem; box-shadow: 0 1rem 5rem #0005; overflow: hidden; }
+.plugin-matrix-dialog::backdrop { background: #0007; }
+.plugin-matrix-dialogContent { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: calc(100dvh - 1.5rem); min-height: 0; }
+.plugin-matrix-dialogHeader { display: flex; align-items: flex-start; gap: 1rem; justify-content: space-between; padding: 1.1rem 1.25rem; border-bottom: 1px solid var(--border); }
+.plugin-matrix-dialogHeader h2 { margin: 0; font-size: 1.1rem; font-weight: 650; }
+.plugin-matrix-dialogHeader p { margin: .3rem 0 0; font-size: .8rem; color: var(--text-muted); overflow-wrap: anywhere; }
+.plugin-matrix-dialogHeader > button { font-size: 1.4rem; line-height: 1; padding: .15rem .35rem; background: none; border: 0; color: var(--text-muted); cursor: pointer; }
+.plugin-matrix-dialogBody { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 1rem 1.25rem; }
+.plugin-matrix-description { margin: 0 0 1rem; }
+.plugin-matrix-dialogFooter { display: flex; justify-content: flex-end; gap: .65rem; padding: 1rem 1.25rem; border-top: 1px solid var(--border); background: var(--bg); }
+.plugin-matrix-modes, .plugin-matrix-valueEditor { border: 0; padding: 0; margin: 0 0 1rem; min-width: 0; }
+.plugin-matrix-modes legend, .plugin-matrix-valueEditor legend { margin-bottom: .55rem; font-size: .8rem; font-weight: 600; }
+.plugin-matrix-modes > label { display: flex; align-items: flex-start; gap: .65rem; padding: .75rem; border: 1px solid var(--border); border-radius: .6rem; margin-bottom: .5rem; cursor: pointer; }
+.plugin-matrix-modes > label:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--bg)); }
+.plugin-matrix-modes input { margin-top: .2rem; }
+.plugin-matrix-modes label > span { display: flex; flex-direction: column; gap: .3rem; }
+.plugin-matrix-modes strong { font-size: .85rem; font-weight: 550; }
+.plugin-matrix-modes small { color: var(--text-muted); font-size: .75rem; overflow-wrap: anywhere; }
+.plugin-matrix-valueEditor textarea { display: block; font-family: var(--font-mono, monospace); font-size: .8rem; resize: vertical; }
+.plugin-matrix-valueEditor > button { margin-top: .5rem; }
+.plugin-matrix-nullChoice { margin-bottom: .75rem; }
+.plugin-matrix-pinNotice { border-left: 2px solid var(--accent); padding: .5rem .75rem; color: var(--text-muted); font-size: .8rem; line-height: 1.5; }
+.plugin-matrix-preview { border: 1px solid var(--border); border-radius: .65rem; padding: .85rem; margin: 1rem 0 0; }
+.plugin-matrix-preview h3 { margin: 0 0 .75rem; font-size: .8rem; font-weight: 600; }
+.plugin-matrix-previewFacts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: 0; }
+.plugin-matrix-previewFacts dt { font-size: .7rem; color: var(--text-muted); line-height: 1.5; }
+.plugin-matrix-previewFacts dd { margin: .3rem 0 0; font-size: .85rem; overflow-wrap: anywhere; }
+.plugin-matrix-previewFacts small { display: block; margin-top: .25rem; font-size: .7rem; color: var(--text-muted); }
+.plugin-matrix-preview p { font-size: .75rem; color: var(--text-muted); line-height: 1.5; margin: .65rem 0 0; }
+.plugin-matrix-selectLabel { display: grid; gap: .4rem; margin-bottom: 1rem; font-size: .8rem; }
+.plugin-matrix-presetPreview > div { margin-top: 1rem; }
+.plugin-matrix-presetPreview > div > h3 { margin: 0 0 .5rem; font-size: .85rem; font-weight: 600; }
+.plugin-matrix-presetPreview .plugin-matrix-preview { margin-top: 0; }
+.plugin-matrix-presetPreview .plugin-matrix-preview h3 { display: none; }
+@container (max-width: 38rem) {
+  .plugin-matrix-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .35rem; }
+  .plugin-matrix-fieldHeading { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
+  .plugin-matrix-fieldName { grid-column: 1 / -1; padding: .6rem 0 .2rem; flex-direction: row; align-items: center; justify-content: flex-start; gap: .5rem; }
+  .plugin-matrix-scopeHeading { padding: 0 .35rem; }
+  .plugin-matrix-scopeHeading strong { font-size: .75rem; }
+  .plugin-matrix-scopeHeading span { font-size: .65rem; }
+  .plugin-matrix-cellButton, .plugin-matrix-unavailable { min-height: 6rem; padding: .6rem .45rem; border-radius: .5rem; }
+  .plugin-matrix-cellDetail strong, .plugin-matrix-unavailable strong { font-size: .73rem; }
+  .plugin-matrix-cellDetail > span { font-size: .65rem; }
+  .plugin-matrix-toolbar { align-items: stretch; flex-direction: column; gap: .65rem; }
+  .plugin-matrix-search { max-width: none; }
+  .plugin-matrix-globalControl { flex-wrap: wrap; padding: .75rem; }
+  .plugin-matrix-globalControl > .plugin-matrix-textButton { flex-basis: 100%; text-align: left; }
+  .plugin-matrix-heading { flex-wrap: wrap; gap: .75rem; }
+}
+@media (max-width: 420px) {
+  .plugin-matrix-root { padding: .75rem; }
+  .plugin-matrix-dialogHeader, .plugin-matrix-dialogFooter { padding: .85rem; }
+  .plugin-matrix-dialogBody { padding: .85rem; }
+  .plugin-matrix-previewFacts { gap: .65rem; }
+}
+@media (prefers-reduced-motion: reduce) { .plugin-matrix-cellButton { transition: none; } }
