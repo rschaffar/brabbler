@@ -26,6 +26,32 @@ function renderMermaid(props) {
   );
 }
 
+test("image-capable Mermaid metadata stays inert before opt-in, including YAML escaped keys", () => {
+  for (const code of [
+    'flowchart TD\n A@{ img: "https://tracking.invalid/pixel", label: "Image" }',
+    'flowchart TD\n A@{ "img": "//tracking.invalid/pixel", label: "Image" }',
+    String.raw`flowchart TD
+ A@{ "\u0069mg": "https://tracking.invalid/pixel", label: "Image" }`,
+    'flowchart TD\n A@{ shape: rect, label: "Conservatively blocked metadata" }',
+    'flowchart TD\n A["<img src=\"https://tracking.invalid/pixel\">"]',
+    'flowchart TD\n A["&lt;img src=...&gt;"]',
+    'flowchart TD\n A["#60;img src=...#62;"]',
+    '%%{init: {"htmlLabels": true}}%%\nflowchart TD\n A[Label]',
+    '---\nconfig:\n  htmlLabels: true\n---\nflowchart TD\n A[Label]',
+    'flowchart TD\n A["![Image](https://tracking.invalid/pixel)"]',
+    'flowchart TD\n A[Label]\n style A fill:url(https://tracking.invalid/pixel)',
+    String.raw`flowchart TD
+ A[Label]
+ classDef image fill:u\72l(https://tracking.invalid/pixel);`,
+
+  ]) {
+    const html = renderMermaid({ code, defaultPreview: true });
+    assert.match(html, /Diagram resource-capable syntax blocked/);
+    assert.match(html, /Enable remote images/);
+    assert.doesNotMatch(html, /mermaid-block-loading|<img|<svg/);
+  }
+});
+
 test("MermaidBlock renders source by default", () => {
   const html = renderMermaid({ code: mermaidSrc });
 

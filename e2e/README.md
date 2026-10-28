@@ -98,6 +98,8 @@ deadlines. Duplication is judged by the exact obligation/input and sufficient ow
 not merely by membership in different integration chains. Preserve the necessary
 connection or physical step, not all of its functional neighbors.
 
+The Markdown media helper also owns the remote-image default-block → inline global enable → native PNG request/decoding → reload → Settings disable bridge at both desktop/touch inputs. An exact synthetic image route supplies inline bytes locally; no external host is contacted. Existing local-media assertions remain unchanged, under fresh `render-files-native-v5` / `render-touch-wiring-v4` receipts. Mounted Markdown owners cover shared chat/file rendering, raw/linked images, inert guided prose, cross-tab changes and failed-write safety; the installed bridge does not duplicate that matrix.
+
 The Markdown media helper seeds synthetic PCM WAV and a tiny VP8 WebM from reviewed inline bytes (with provenance/hash), not downloaded fixtures or runtime ffmpeg. Desktop/mobile checks observe zero eager media/remote requests, native playback and seeking, session-scoped external-reference range reads/denials, corrupt-file feedback and explicit repair reload, narrow layout, covered-pane/session teardown and no automatic resumption. Direct authorization negatives use Node HTTP, preserving unfiltered browser console/5xx reporting. The existing notebook Markdown chain also retains all read-only assertions before
 its interactive tail. At both original desktop/touch inputs, that tail connects native
 recording/forms/source Selection, cross-chapter frozen preview, existing-composer

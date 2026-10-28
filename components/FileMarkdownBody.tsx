@@ -10,11 +10,14 @@ import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import { ReviewNotebookBlock } from "./ReviewNotebookBlock";
 import { BlockedFileLink } from "./BlockedFileLink";
 import { LocalFileLink } from "./LocalFileLink";
+import { RemoteImageGate } from "./RemoteImageGate";
 
 const ReviewCardsContext = createContext(true);
 const PresenterWorkContext = createContext<((work: Promise<unknown>) => void) | undefined>(undefined);
 const LinkContext = createContext<{ baseDir?: string; relativeRoot?: string; onOpenFile?: OpenFileLink }>({});
+const InsideLinkContext = createContext(false);
 function MarkdownPreviewLink({ href, children, ...props }: ComponentProps<"a"> & ExtraProps) {
+  children = <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>;
   delete props.node;
   const { baseDir, relativeRoot, onOpenFile } = useContext(LinkContext);
   if (href?.startsWith("#")) return <a href={href} {...props} onClick={jumpToMarkdownFragment}>{children}</a>;
@@ -37,6 +40,21 @@ function MarkdownCode({ className, children, ...props }: ComponentProps<"code"> 
     }
     return <code className={className} {...props}>{children}</code>;
 }
+function MarkdownPreviewImage({ src, alt, images, baseDir, relativeRoot, sourceSessionId, ...props }: ComponentProps<"img"> & ExtraProps & {
+  images: boolean; baseDir?: string; relativeRoot?: string; sourceSessionId?: string | null;
+}) {
+  const insideLink = useContext(InsideLinkContext);
+  delete props.node;
+  if (!images) return <span>{alt ?? "Image"} (open as an explicit evidence target)</span>;
+  const imagePath = typeof src === "string" ? resolveLocalFileHref(src, baseDir, relativeRoot) : null;
+  const query = new URLSearchParams({ type: "read", ...(sourceSessionId ? { sessionId: sourceSessionId } : {}) });
+  const imageSrc = imagePath ? `/api/files/${encodeFilePathForApi(imagePath)}?${query}` : src;
+  return <RemoteImageGate src={imageSrc} alt={alt} insideLink={insideLink}>
+    {/* Dynamic local paths are served directly by the file API. */}
+    {/* eslint-disable-next-line @next/next/no-img-element */}
+    <img src={imageSrc} alt={alt ?? ""} loading="lazy" {...props} />
+  </RemoteImageGate>;
+}
 const codeComponents: Components = {
   code: MarkdownCode,
   pre({ children, node }) {
@@ -55,14 +73,8 @@ export function FileMarkdownBody({ markdown, baseDir, relativeRoot = baseDir, so
   return <PresenterWorkContext.Provider value={onWork}><ReviewCardsContext.Provider value={reviewCards}><LinkContext.Provider value={{ baseDir, relativeRoot, onOpenFile }}>
     <ReactMarkdown remarkPlugins={markdownPreviewRemarkPlugins} rehypePlugins={rehypePlugins}
       urlTransform={onOpenFile ? markdownUrlTransform : undefined} components={{ ...codeComponents, a: MarkdownPreviewLink,
-        img({ src, alt, ...props }) {
-          delete props.node;
-          if (!images) return <span>{alt ?? "Image"} (open as an explicit evidence target)</span>;
-          const imagePath = typeof src === "string" ? resolveLocalFileHref(src, baseDir, relativeRoot) : null;
-          const query = new URLSearchParams({ type: "read", ...(sourceSessionId ? { sessionId: sourceSessionId } : {}) });
-          const imageSrc = imagePath ? `/api/files/${encodeFilePathForApi(imagePath)}?${query}` : src;
-          // eslint-disable-next-line @next/next/no-img-element
-          return <img src={imageSrc} alt={alt ?? ""} loading="lazy" {...props} />;
+        img(props) {
+          return <MarkdownPreviewImage {...props} images={images} baseDir={baseDir} relativeRoot={relativeRoot} sourceSessionId={sourceSessionId} />;
         },
       }}>{markdown}</ReactMarkdown>
   </LinkContext.Provider></ReviewCardsContext.Provider></PresenterWorkContext.Provider>;

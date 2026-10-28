@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useTheme } from "@/hooks/useTheme";
+import { useRemoteImages } from "@/hooks/useRemoteImages";
 import { THEME_OPTIONS } from "@/lib/theme";
 import { TITLE_LANGUAGES, type TitleLanguage } from "@/lib/title-language-options";
 import type { TitleModelSelection } from "@/lib/title-language";
@@ -81,6 +82,7 @@ export function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus
   const observe = useSettingsWork();
   const { locale, t } = useI18n();
   const { preference, setThemePreference } = useTheme();
+  const { enabled: remoteImagesEnabled, setEnabled: setRemoteImagesEnabled } = useRemoteImages();
   const { width: chatContentWidth, setWidth: setChatContentWidth, fullWidth, setFullWidth, fontSize, setFontSize } = useChatAppearance();
   const [shellSettings, setShellSettings] = useState<ShellToolSettingsResponse | null>(null);
   const [shellSaving, setShellSaving] = useState(false);
@@ -386,7 +388,12 @@ export function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus
 
       <section className="settings-general-section">
         <h3 className="settings-general-heading">{t("settings.chat")}</h3>
+        <p className="settings-general-description">{t("settings.remoteImagesDescription")}</p>
         <div className="settings-chat-options">
+          <div className="settings-chat-option settings-chat-switch-option">
+            <span>{t("settings.loadRemoteImages")}</span>
+            <ConfigSwitch checked={remoteImagesEnabled} label={t("settings.loadRemoteImages")} onChange={setRemoteImagesEnabled} />
+          </div>
           <div className="settings-chat-option settings-chat-switch-option">
             <span>{t("settings.thinkingExpandedDefault")}</span>
             <ConfigSwitch

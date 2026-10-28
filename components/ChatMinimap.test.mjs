@@ -38,6 +38,17 @@ test("renders math in headings without disabling heading navigation", () => {
   assert.doesNotMatch(html, /disabled=""/);
 });
 
+test("outline headings and paragraph labels never load images or nest interactive controls", () => {
+  for (const markdown of [
+    '# ![Tracker](https://tracking.invalid/pixel)',
+    '![Tracker](//tracking.invalid/pixel)',
+  ]) {
+    const html = renderToStaticMarkup(React.createElement(AssistantOutline, { markdown, onHeadingClick() {} }));
+    assert.match(html, /Tracker/);
+    assert.doesNotMatch(html, /<img|src=|<button[^>]*>[\s\S]*<button/);
+  }
+});
+
 test("counts tool calls per assistant reply, including replies that also answer", () => {
   // A reply can both answer and call tools, so counting text-less messages
   // would undercount this turn.

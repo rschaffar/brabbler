@@ -718,7 +718,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "markdown") {
-      await coverage.run(`markdown/${inputId === "legacy-desktop" ? "render-files-native-v4" : "render-touch-wiring-v3"}@${inputId}`, async () => {
+      await coverage.run(`markdown/${inputId === "legacy-desktop" ? "render-files-native-v5" : "render-touch-wiring-v4"}@${inputId}`, async () => {
       const finishMarkdownStage = stage.start(`markdown/${inputId}/chain`);
       // This added chunk-interception fixture needs no service worker. Existing
       // Markdown scenarios below retain their original, independent context.
