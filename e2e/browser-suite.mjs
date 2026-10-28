@@ -53,6 +53,7 @@ import { checkHighlightFailure } from "./highlight-failure.mjs";
 import { createOwnedRoutes } from "./owned-routes.mjs";
 import { seedToolArguments, checkToolArguments } from "./tool-arguments.mjs";
 import { checkHistoryBranch } from "./history-branch.mjs";
+import { seedReadmeScreenshot, captureReadmeScreenshot } from "./readme-screenshot.mjs";
 
 // Validate one-hot ownership before the harness or any fixture side effects.
 const group = selectGroup(process.env);
@@ -99,6 +100,7 @@ const APPEND = "e2e-external-append-session";
 const ARCHIVE = "e2e-archive-session";
 const BULK = ["e2e-bulk-desktop-a", "e2e-bulk-desktop-b", "e2e-bulk-mobile-a", "e2e-bulk-mobile-b"];
 const OTHER = "e2e-other-project";
+const README_IDS = ["e2e-readme-palette", "e2e-readme-release", "e2e-readme-streaming"];
 const ACTIVITY_SUBAGENTS = group === "activity"
   ? ["e2e-ready-child-a", "e2e-ready-child-b", "e2e-working-child", "e2e-other-child"] : [];
 const GIT = "e2e-git-explorer";
@@ -334,6 +336,7 @@ let nativeToolsFixture;
     if (group === "markdown") reviewNotebookFixture = seedReviewNotebooks({ gitProject, targetWorktree, env: fixtureEnv, writeSession, message });
   }
 
+  if (group === "appearance") seedReadmeScreenshot({ agentDir, writeSession, message, ids: README_IDS });
   finishPreparation();
   const base = process.env.E2E_BASE_URL;
   assert.equal(base, harness.baseURL, "Use only the harness-selected guest service URL");
@@ -370,7 +373,8 @@ let nativeToolsFixture;
         ...(group === "markdown" ? [fileLineFixtures.peerSessionId] : []),
         ...(highlightingFixture ? [highlightingFixture.sessionId, highlightingFixture.fencesId] : []),
         ...(reviewNotebookFixture ? [reviewNotebookFixture.id] : []),
-        ...(group === "trust" ? [TRUST_MAIN, TRUST_LINKED] : [])]);
+        ...(group === "trust" ? [TRUST_MAIN, TRUST_LINKED] : []),
+        ...(group === "appearance" ? README_IDS : [])]);
       for (const id of ACTIVITY_SUBAGENTS) {
         assert.equal(sessions.find((session) => session.id === id)?.relation?.kind, "subagent", `${id} must have real subagent metadata`);
       }
@@ -528,6 +532,8 @@ let nativeToolsFixture;
       assert.deepEqual(errors, [], `Scratchpad browser/server errors: ${inputId}`);
       await harness.closeContext(context); context = undefined; page = undefined;
     });
+    // Separate documentation capture; existing functional inventory remains unchanged.
+    await captureReadmeScreenshot({ base, sessionId: README_IDS[0], newInputContext, harness, artifacts });
   } else if (group === "timestamps") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
     for (const inputId of ["en-desktop", "en-mobile-tall", "legacy-desktop", "legacy-mobile"]) await coverage.run(`timestamps/${inputId === "en-desktop" || inputId === "legacy-desktop" ? "usage-time-geometry-v3" : "process-hit-test-v3"}@${inputId}`, async () => {

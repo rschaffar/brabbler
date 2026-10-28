@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./public/brand/robot.svg" width="112" alt="Brabbler's chatty robot mascot" />
+</p>
+
 # Brabbler
 
 **A personal coding workspace for Pi.**
@@ -10,9 +14,9 @@ This is my personal project, shaped around the way I work. It started from [Pi W
 
 [Getting started](#getting-started) · [Features](#features) · [Development](#development) · [Credits](#credits-and-license)
 
-![The upstream Pi Web interface, showing a conversation, tool calls, and project navigation](./docs/screenshot2.png)
+![Brabbler in dark mode, showing project sessions, a conversation, tool calls, and a file preview](./docs/screenshots/brabbler-workspace.png)
 
-*An inherited Pi Web screenshot of the interface this project builds on.*
+*Brabbler's packaged UI with synthetic example content—not private sessions or live model requests.*
 
 ## Features
 
@@ -88,7 +92,7 @@ Point the `brabbler` flake input at your chosen revision of **this repository**.
 
 ## Configuration and local data
 
-The package, launcher, Nix outputs and Home Manager service are named `brabbler`. Application-owned configuration uses `BRABBLER_*`; application-owned state and metadata use Brabbler namespaces. Pi's `.pi/` directories, native session files, SDK names and `PI_CODING_AGENT_DIR` stay unchanged, as does the π icon.
+The package, launcher, Nix outputs and Home Manager service are named `brabbler`. Application-owned configuration uses `BRABBLER_*`; application-owned state and metadata use Brabbler namespaces. Pi's `.pi/` directories, native session files, SDK names and `PI_CODING_AGENT_DIR` stay unchanged.
 
 **This is a breaking rename, without legacy aliases or automatic migration.** Do not activate it against an existing Pi Web/Pi Desk installation before the separate one-time migration. See [the rename and cutover guide](docs/brabbler-rename.md).
 

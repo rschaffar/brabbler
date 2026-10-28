@@ -174,7 +174,7 @@ test("install precaches offline assets but never the runtime manifest", async ()
   self.skipWaiting = async () => {};
   listeners.get("install")({ waitUntil: (promise) => { pending = promise; } });
   await pending;
-  assert.deepEqual(precached, ["/offline.html", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png"]);
+  assert.deepEqual(precached, ["/offline.html", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png", "/brand/robot.svg"]);
 });
 
 test("manifest bypasses even stale caches with query strings and navigation mode", () => {

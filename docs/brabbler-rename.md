@@ -1,8 +1,9 @@
 # Brabbler: breaking rename and later cutover
 
-Brabbler is still based on Pi. The π icon, Pi SDK/CLI packages, native session
-storage, `.pi/` directories, `PI_CODING_AGENT_DIR`, and Pi's own settings/models/auth
-interfaces have not been renamed.
+Brabbler is still based on Pi. Pi SDK/CLI packages, native session storage,
+`.pi/` directories, `PI_CODING_AGENT_DIR`, and Pi's own settings/models/auth
+interfaces have not been renamed. Brabbler's separate [robot mascot](branding.md)
+replaces the inherited application icon; it does not rename native Pi resources.
 
 The application has a clean new identity, without legacy aliases or fallback
 readers. Do not activate it over existing data until the separate one-time

@@ -20,6 +20,18 @@ Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
 
+## Robot mascot and README capture
+
+The [verified mascot implementation](archived/2026-10-28_robot-branding-plan.md)
+applies the exact approved robot to app/demo branding, PWA icons and favicons,
+with reproducible artwork and the user's approved syntax-highlighted README
+screenshot. Complete acceptance passed **526 files / 4,319 tests**, all **26
+browser/terminal groups / 60 scenarios**, and the genuine Home Manager VM in
+**454.805s**, at resource-admitted 12/4 overlap with warmed prerequisites.
+[Branding](../branding.md) owns regeneration; the archive retains prior failures
+and the explicitly superseded monochrome capture. Local integration and cleanup
+remain separately gated; this record is not a deployment/publication claim.
+
 ## Local CLI web authentication
 
 The [verified CLI-auth implementation](archived/2026-10-27_cli-web-auth-plan.md)
