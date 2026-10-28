@@ -10,7 +10,6 @@ on 2026-10-27.
 
 | Plan | Remaining scope |
 | --- | --- |
-| [Robot branding](2026-10-28_robot-branding-plan.md) | Apply the approved mascot and generate a synthetic-content packaged-UI README screenshot; verification and local integration remain pending. |
 | [Multi-provider accounts](2026-09-25_multi-provider-accounts-plan.md) | Account-scoped real OAuth/device completion, cancellation and provider refresh evidence, plus explicit isolation-review disposition; implementation is integrated. Synthetic browser authorization is not live-provider proof. |
 | [Claude CLI sessions](2026-09-26_claude-cli-sessions-plan.md) | Backend/policy/protocol work is not delivered on main. Retained feature branches are not integration evidence. |
 | [Explorer fullscreen](2026-10-13_git-explorer-fullscreen-plan.md) | Dedicated already-paginated history/graph and unsupported/non-Git fullscreen browser cases, including expand/restore state retention. |
@@ -20,6 +19,18 @@ on 2026-10-27.
 Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
+
+## Robot mascot and README capture
+
+The [verified mascot implementation](archived/2026-10-28_robot-branding-plan.md)
+applies the exact approved robot to app/demo branding, PWA icons and favicons,
+with reproducible artwork and the user's approved syntax-highlighted README
+screenshot. Complete acceptance passed **526 files / 4,319 tests**, all **26
+browser/terminal groups / 60 scenarios**, and the genuine Home Manager VM in
+**454.805s**, at resource-admitted 12/4 overlap with warmed prerequisites.
+[Branding](../branding.md) owns regeneration; the archive retains prior failures
+and the explicitly superseded monochrome capture. Local integration and cleanup
+remain separately gated; this record is not a deployment/publication claim.
 
 ## Local CLI web authentication
 
