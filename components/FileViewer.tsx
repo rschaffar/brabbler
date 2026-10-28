@@ -1822,6 +1822,12 @@ function TextFileViewer({
         </div>
       </div>
 
+      {!editing && isHtml && effectiveDisplayMode === "preview" && (
+        <div role="note" className="file-viewer-html-notice" style={{ flexShrink: 0, padding: "8px 12px", borderBottom: "1px solid var(--border)", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>
+          <strong>{t("files.htmlPreviewNoticeTitle")}</strong>{" "}{t("files.htmlPreviewNotice")}
+        </div>
+      )}
+
       {savingElsewhere && <div role="status" style={{ padding: "6px 12px", fontSize: 12, color: "var(--text-muted)" }}>{t("files.savePending")}</div>}
       {(dirty || externalChange || saveError) && (
         <div role="status" style={{ padding: "6px 12px", fontSize: 12, color: externalChange || saveError ? "#f87171" : "var(--text-muted)" }}>

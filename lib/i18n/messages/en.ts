@@ -567,6 +567,8 @@ export const enLocale: LocalePlugin = {
     "workspace.closeTabs": "Close tabs",
     "files.noneOpen": "No file open",
     "files.edit": "Edit",
+    "files.htmlPreviewNoticeTitle": "Single-file HTML preview.",
+    "files.htmlPreviewNotice": "JavaScript runs in a sandbox. Sibling files are not served, and page/query navigation may fail. Use self-contained HTML or inspect Source. Download includes only this file.",
     "files.lineUnavailable": "Line {line} is beyond the end of this file ({count} lines).",
     "files.loadingLine": "Loading line {line}…",
     "files.savedLineTarget": "Showing the saved file for this link; your unsaved draft is retained.",

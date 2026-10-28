@@ -438,6 +438,34 @@ test('explicit Source/restored mode beats automatic Markdown Preview; unavailabl
   runtime.assertHealthy();
 });
 
+test('HTML Preview explains single-file limits outside the sandbox and retains Source and Download', async t => {
+  const content = '<h1>Self-contained study</h1>';
+  const h = await open(t, { filePath: '/root/study.html' });
+  const { view, runtime, initial: [replay, initial] } = h;
+  await initial.deliver(read(content, denied, 'html')); await replay.deliver(read('obsolete'));
+  const root = reader(view);
+  const notice = root.querySelector('[role="note"]');
+  assert.equal(Boolean(notice), true, 'HTML Preview must explain its single-file limitations');
+  assert.match(notice.textContent, /Single-file HTML preview/);
+  assert.match(notice.textContent, /JavaScript runs in a sandbox/);
+  assert.match(notice.textContent, /Sibling files are not served/);
+  assert.match(notice.textContent, /page\/query navigation may fail/);
+  assert.match(notice.textContent, /self-contained HTML or inspect Source/);
+  assert.match(notice.textContent, /Download includes only this file/);
+  assert.equal(notice.closest('.file-viewer-content') === null, true, 'notice stays outside the scrolling preview');
+  assert.equal(root.querySelector('iframe').getAttribute('sandbox'), 'allow-scripts');
+  assert.equal(root.querySelector('iframe').getAttribute('srcdoc'), content);
+  const download = root.querySelector('a[download="study.html"]');
+  assert.equal(Boolean(download), true);
+  assert.equal(new URL(download.href).searchParams.get('type'), 'download');
+  await click(view, button(root, 'Source'));
+  assert.equal(root.querySelector('[role="note"]') === null, true, 'Source does not show preview-only guidance');
+  assert.equal(root.querySelector('iframe') === null, true);
+  await click(view, button(root, 'Preview'));
+  assert.equal(Boolean(root.querySelector('[role="note"]')), true);
+  runtime.assertHealthy();
+});
+
 for (const [filePath, language, content, selector] of [
   ['/root/large.html', 'html', '<h1>real html</h1>\n'.repeat(1000), 'iframe'],
   ['/root/large.csv', 'text', 'name,value\n' + 'actual,cell\n'.repeat(1000), '[role="table"]'],
@@ -450,7 +478,10 @@ for (const [filePath, language, content, selector] of [
     const preview = reader(view).querySelector(selector); assert.equal(Boolean(preview), true);
     assert.equal(reader(view).querySelector('.is-lightweight') === null, true);
     if (language === 'html') assert.equal(preview.getAttribute('srcdoc'), content);
-    else assert.match(preview.textContent, /actual/);
+    else {
+      assert.match(preview.textContent, /actual/);
+      assert.equal(reader(view).querySelector('[role="note"]') === null, true, 'CSV does not show HTML-only guidance');
+    }
     await click(view, button(reader(view), 'Source'));
     assert.equal(Boolean(reader(view).querySelector('.is-lightweight')), true);
     assert.equal(reader(view).querySelectorAll('.file-source-line').length, content.split('\n').length);
