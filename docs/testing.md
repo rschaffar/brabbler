@@ -3,9 +3,10 @@
 ## Nix-native acceptance
 
 Nix owns the toolchain, immutable dependencies, production package and test
-environments. There is no dependency-preparation step, non-Nix installation path
-or development-server acceptance mode. Execution uses synthetic data and no
-external providers. Normal realization may fetch pinned inputs or substitutes.
+environments. There is no dependency-preparation step or development-server
+acceptance mode for this baseline. A prebuilt release archive has an additional
+ordinary-runtime installation path and smoke check; neither replaces this Nix
+baseline. Execution uses synthetic data and no external providers. Normal realization may fetch pinned inputs or substitutes.
 
 The selected Nix runtime is Node **24.21.0** throughout modules, the application,
 core/fresh runners and VM fixtures. Core's fail-closed runtime-major check requires
@@ -121,6 +122,23 @@ and packaging proofs, not substitutes for complete candidate acceptance.
 **Never run `next build` or `npm run build` in a working checkout.** Production
 builds run only in isolated Nix builders. They neither activate a service nor
 publish an artifact. Manual `nix develop`/`npm run dev` is separate, not acceptance.
+
+## Portable archive evidence
+
+The `brabbler-tarball` output is built once in an isolated Nix builder, then tested
+by `nix/portable-smoke.mjs ARCHIVE SHA256` on ordinary Linux/macOS Node. It extracts
+a fresh owned application and runs root `npm ci --omit=dev`; it does not compile
+Next, inherit operator credentials, or use the working checkout/host service.
+Record the archive checksum, source/script identity, dependency resolution,
+Node/OS/architecture, command wall time and report. Real native PTY/TTY/auth behavior
+must be observed on the named OS; Linux is not macOS evidence.
+
+A local Linux container can supply the ordinary environment without exposing the
+host's Nix store or service. The hosted workflow is manual-only and test-only;
+verify runner availability/architecture/cost and obtain exact remote authorization
+before dispatch. No archive smoke or artifact upload grants publication authority.
+Keep original failure evidence and inspect the exact cause before a justified
+rerun. See [portable installation](portable-installation.md) and [release gates](release.md).
 
 ## Contributor ownership and recipes
 
@@ -530,6 +548,7 @@ execute from the verified snapshot. Keep deliberate contention separate.
 | Application/runtime behavior | Complete core, browser/terminal and deployment checks |
 | Harness/Nix/package/service changes | All three complete checks, relevant failure/settlement contracts and source-input identity review |
 | Focused iteration | Exact affected core files/named groups; not stable-candidate acceptance |
+| Portable archive/installation changes | All three complete checks plus exact-archive ordinary Linux and named macOS smoke, inventory/source/notice review |
 | Documentation only | Commands, links and contracts; execute changed instructions proportionally |
 
 Plugin, session-launch, Activity, trust, bulk and all other previously focused-only

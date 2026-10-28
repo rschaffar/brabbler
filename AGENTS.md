@@ -18,6 +18,9 @@ all other lifecycle safeguards remain in force.
 - **Planning workflow:** [.agents/skills/writing-plans/SKILL.md](.agents/skills/writing-plans/SKILL.md) owns plans under `docs/plans/`; durable decisions belong in `docs/adr/`, and current operational or contributor behavior belongs in the focused guide under `docs/` or `README.md`/`AGENTS.md`.
 - **Intentional deviations or incompatible rules:** The required linked worktree, `main` target, and non-fast-forward merge replace the global lifecycle's optional direct-checkout, alternative/no-target, and fast-forward/squash choices for this repository. Keep its inspection, clean-state, verification, exact-state approval, remote boundary, and separate cleanup safeguards. Preserve the isolated-build boundary above.
 
+[CONTRIBUTING.md](CONTRIBUTING.md) provides the self-contained contributor entry
+point; the global skill still owns detailed agent approval/receipt safeguards.
+
 Do not copy the global lifecycle into this section. If another applicable rule
 conflicts with these project requirements, stop before mutation and ask which
 rule applies to the bounded task. A task-specific answer does not rewrite this

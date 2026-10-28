@@ -9,7 +9,7 @@ verified; no release or platform-support claim follows from this status.
 ## Goal
 
 Prepare an independently versioned **Brabbler 0.1.0**: public source and a production
-npm-installable tarball usable without Nix on Linux and macOS. Keep Nix as the
+prebuilt application archive usable without Nix on Linux and macOS. Keep Nix as the
 isolated production builder and existing acceptance authority. Preserve upstream
 MIT attribution and the approved robot/synthetic screenshot. Make web authentication
 on by default, portable, and explicitly bypassable at startup.
@@ -22,7 +22,10 @@ on by default, portable, and explicitly bypassable at startup.
 - Completed local-only remote change: upstream is `pi-web-origin`; `origin` is
   `https://github.com/rschaffar/brabbler.git`. No Git remote has been contacted.
   New-origin tracking, repository creation/settings and publication are not done.
-- Owner selected source plus tarball, **not npm registry publication**. Retain
+- Owner selected source plus tarball, **not npm registry publication**. After the
+  first consumer-install spike exposed npm's root-only override behavior, the
+  owner selected extraction plus root `npm ci --omit=dev`, not installation as
+  another project's dependency. No consumer-side application build is required. Retain
   `private: true`. Version Brabbler independently; document Pi SDK **1.4.0**
   separately rather than embedding its version into Brabbler's SemVer.
 - Remove automatic demo deployment entirely; retain demo source unless a reviewed
@@ -115,9 +118,25 @@ implementation now enforces mandatory policy after runtime-file processing, with
 an adversarial runtime-file value included for the later genuine VM check.
 
 The owner separately selected exclusion of SDK standalone bundles from Brabbler's
-owned installation, alongside fixed modular Undici resolution. Exact-byte exclusion
-and ownership/compatibility checks remain implementation/verification work; neither
-a clean lock audit nor this selection alone proves the artifact is remediated.
+owned installation, alongside fixed modular Undici resolution. Exact-byte exclusion,
+fixed modular resolution, ownership preflight before either SDK writer, and the
+read-only startup checks are now implemented. Focused Nix/static verification
+passed **39 tests in six files**, including all existing command-environment guard
+owners, new runtime-policy refusals and archive/lifecycle checks, in **82 seconds
+command wall** including realization. Source digest:
+`61d431e64aa582063c3d55001d42638c3c6951e1f1ba147aae6f0c28e177ec73`.
+This is not full composed acceptance. A clean lock audit alone is not artifact
+remediation proof.
+
+**Visible correction:** earlier discussion treated ELK as an unused optional
+layout in Brabbler. Exact Mermaid **12.2.0** source and official v12 documentation
+show `layout: elk` is the default; the wrapper inherits it. The low-impact-removal
+recommendation is retracted. The owner explicitly selected keeping ELK and finishing
+notices/corresponding-source access. No engine removal was implemented. Complete
+source mapping and final packed notice/source checks remain publication gates.
+
+The next source checkpoint must incorporate local main's remote-Markdown-image
+opt-in merge `3b73cbfd871ce42302444450a1ee742e390b109a` before final candidate checks.
 
 ## Architecture
 
@@ -164,14 +183,14 @@ or descriptor-pinned Git cleanup change belongs in this task.
 ### Portable artifact proposal
 
 Expose a clean production `.tgz` from an isolated Nix build, rather than copying a
-Nix wrapper or dependency symlink. Consumers install the built app with Node/npm;
-consumer-side Next builds are not part of installation. Retain the guarded launcher,
+Nix wrapper or dependency symlink. Consumers extract an owned application directory
+and run root `npm ci --omit=dev`; consumer-side Next builds are not part of installation. Retain the guarded launcher,
 SDK postinstall policy, first-party source and required notices. Inspect build-root
 and Nix-store references; distinguish inert metadata from required runtime paths.
 
-An npm install does not inherit the checkout's package-lock. Test actual resolved
-production dependencies and review whether tighter pins or an npm shrinkwrap is
-needed. Native node-pty and other platform assets must resolve for the consumer,
+Generate the archive's npm shrinkwrap from the reviewed lock in the builder, then
+test actual production resolution. npm ignores a dependency package's overrides,
+so do not install this archive as another project's dependency. Native node-pty and other platform assets must resolve for the consumer,
 not come from the builder's platform. Packaging success is not portability proof.
 
 ## Plan
@@ -236,9 +255,18 @@ not come from the builder's platform. Packaging success is not portability proof
 - [ ] Extend `nix/package.nix`/flake outputs with an inspectable `.tgz` output;
   inspect its inventory for built assets, launcher, source and notices, and absence
   of credentials/state, test support, writable dependencies and checkout artifacts.
-- [ ] Install that exact tarball into a clean non-Nix Linux Node 24 environment,
-  with only documented tools. Prove no runtime dependency on the builder's
-  `/nix/store`, checkout, development dependencies or ambient agent data.
+- [x] Prove the coherent extraction/root-install spike in a clean non-Nix Linux
+  x86_64 container with Node 24.21.0: archive checksum
+  `045d2fa92e999cc737a6e9bb12b5a8d3e6d8d383cfceefc3b3cd2cfd5e4ace38`,
+  image digest `sha256:9af606de2e947cfb3f276633b7c5130c4cd22365aa10f5a647b7675d5cfce0c0`.
+  Passed installation, SDK policies, hidden setup/login, HTTP PTY, restart,
+  rotation/revocation, header guard and warned no-auth/SSH/origin boundaries in
+  **14 seconds command wall / 13.545 seconds smoke interval**. The original
+  dependency-install refusal and a fixture cwd-authorization error were retained
+  before fixes; neither was an unchanged retry. This preliminary archive predates
+  final notices/source changes and is not final-candidate acceptance.
+- [ ] Repeat ordinary Linux smoke against the final settled archive/checksum and
+  retain its exact script/source identity and dependency resolution.
 - [ ] Prove production install/postinstall, SDK guard, startup/static assets,
   password setup/login/rotation/restart, no-auth warning and a genuine terminal.
   Use synthetic state/providers, not personal credentials or paid turns.

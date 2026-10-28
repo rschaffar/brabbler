@@ -1,6 +1,6 @@
 # Brabbler demo
 
-A static, backend-free copy of the Brabbler UI for GitHub Pages. It uses the
+A retained local, static, backend-free copy of the Brabbler UI. It uses the
 real Brabbler components, and an in-browser mock answers every `/api/*` request
 the UI makes, so visitors can click through sessions, files, models and
 settings without installing anything.
@@ -65,8 +65,8 @@ against native credential calls.
 There is no UI-regeneration command: checked-in UI copies are maintained manually.
 `prepare-demo-files.mjs` refreshes only ignored file-browser assets, not executable
 UI modules. Application Nix acceptance excludes this separate demo; this SSH
-synchronization is source-reviewed, not a demo browser/build pass. Its independent
-CI remains responsible for demo verification; deployment is separately authorized.
+synchronization is source-reviewed, not a demo browser/build pass. Its local verification is separate from application acceptance. There is no
+automatic demo build or deployment workflow.
 
 ## Isolation from Brabbler
 
@@ -79,8 +79,7 @@ The demo never ends up in the app or its npm package:
 - **Kept out of the app's CSS.** Tailwind scans every file that isn't
   gitignored, so `app/globals.css` has `@source not "../demo";`. The demo's copy
   of `globals.css` keeps the same line, where it points at nothing.
-- **Its own CI.** Only `.github/workflows/demo-pages.yml` installs and builds
-  `demo/`.
+- **No deployment workflow.** Demo hosting is not part of Brabbler releases.
 
 ## Commands
 
@@ -103,12 +102,6 @@ production/static build during normal development. `npm run build` produces
 `out/` only for separately authorized deployment/release work.
 
 `npm run dev` and `npm run build` first run `scripts/prepare-demo-files.mjs`.
-To preview the build under a sub-path the way GitHub Pages serves it, set
-`PAGES_BASE_PATH=/brabbler` before `npm run build`.
-
-## Deployment
-
-`.github/workflows/demo-pages.yml` builds the demo on every push to `main` and
-deploys `out/` to GitHub Pages. Enable Pages once under **Settings → Pages →
-Source: GitHub Actions**; the site is then served at
-`https://<owner>.github.io/<repo>/`.
+The retained `PAGES_BASE_PATH` implementation can prefix static asset URLs;
+its name is not a configured hosting destination. No demo deployment is configured
+or included in the release process.

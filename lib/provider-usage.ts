@@ -5,7 +5,8 @@ import type { ProviderUsageId } from "./provider-usage-ids";
 export { PROVIDER_USAGE_IDS, isProviderUsageId, type ProviderUsageId } from "./provider-usage-ids";
 
 // Query formats follow @narumitw/pi-usage (MIT, Copyright (c) 2026 narumiruna),
-// but this module deliberately has no runtime dependency on that extension.
+// full notice: ./provider-usage.LICENSE. This module deliberately has no runtime
+// dependency on that extension.
 
 export type UsageUnit = "percent" | "currency" | "count";
 

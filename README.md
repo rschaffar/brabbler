@@ -34,9 +34,19 @@ The Activity view tracks runs managed by this app; it is not a monitor for unrel
 
 ## Getting started
 
+### Prebuilt application (without Nix)
+
+The 0.1.0 release is being prepared. Its prebuilt archive is extracted into its own
+application directory, then `npm ci --omit=dev` installs the locked runtime libraries.
+No application build is needed on your machine. See [portable installation](docs/portable-installation.md)
+and [release status](docs/release.md) for instructions and actual platform evidence.
+
 ### From source
 
 Clone this repository and enter its checkout. Builds and supported development targets are Nix-native.
+Use Linux with Nix installed and the `nix-command` and `flakes` features enabled.
+The full service acceptance level additionally needs Linux/KVM; manual development
+and ordinary browser acceptance do not.
 
 **Manual development with Nix on Linux:**
 
@@ -46,7 +56,7 @@ node bin/brabbler.js auth setup
 BRABBLER_SKIP_VERSION_CHECK=1 npm run dev
 ```
 
-Nix realizes the pinned tools and dependencies automatically. The manual development shell materializes a worktree-local dependency copy; automated acceptance does not need one. Do not run `npm ci` over Nix-managed dependencies. There is no non-Nix dependency installation or acceptance fallback.
+Nix realizes the pinned tools and dependencies automatically. The manual development shell materializes a worktree-local dependency copy; automated acceptance does not need one. Do not run `npm ci` over Nix-managed dependencies. There is no non-Nix fallback for this development/acceptance pipeline; the prebuilt archive has its own ordinary-runtime installation checks.
 
 Open **[http://127.0.0.1:30141](http://127.0.0.1:30141)**. If you have not configured a model provider, open **Models** to sign in or add an API key. The development server binds to loopback by default.
 
@@ -189,8 +199,9 @@ A password does not encrypt HTTP traffic. Use HTTPS through a trusted reverse pr
 
 This project follows my personal workflow rather than promising a fixed release schedule or feature roadmap. If you use it, expect it to evolve as that workflow changes. Upstream is not responsible for supporting this fork.
 
-Read [AGENTS.md](./AGENTS.md) for repository workflow rules and
-[Architecture](./docs/architecture.md) for the source map. [Testing](./docs/testing.md)
+Read [Contributing](./CONTRIBUTING.md) for a self-contained contributor workflow,
+[AGENTS.md](./AGENTS.md) for agent rules and [Architecture](./docs/architecture.md)
+for the source map. [Testing](./docs/testing.md)
 owns the verification baseline and change-dependent acceptance matrix.
 
 There are three acceptance levels: sandboxed core/static/plugin checks, the complete browser/terminal inventory in ordinary Nix sandboxes, and a small genuine Home Manager/systemd deployment VM. All use pinned inputs; browser and deployment run the same production package.
@@ -227,6 +238,8 @@ For npm dependency changes, use `nix develop .#update` and `npm install --packag
 
 ### Further reading
 
+- [Documentation index](./docs/README.md)
+- [Private security reporting](./SECURITY.md)
 - [Testing and isolation](./docs/testing.md)
 - [Shared project acceptance queue](./docs/acceptance.md)
 - [Dependency maintenance, compatibility exceptions and advisory dispositions](./docs/dependencies.md)
@@ -265,6 +278,9 @@ Brabbler exists because of the work that came before it:
 - **[Pi](https://github.com/earendil-works/pi)**—the coding-agent runtime and SDK this workspace runs on.
 - **[pi-ask-user](https://github.com/edlsh/pi-ask-user)**—the foundation of the browser-native question adapter ([MIT notice](./lib/ask-user.LICENSE)).
 - **[binaryplease/git-graph](https://github.com/binaryplease/git-graph)**—the adapted active-lane graph-layout algorithm ([MIT notice](./lib/git-graph-layout.LICENSE)).
+- **[pi-usage](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-usage)**—provider query-format reference ([MIT notice](./lib/provider-usage.LICENSE)).
+
+Bundled font and glyph notices are preserved under [public/fonts](./public/fonts/README.md). Other component licenses and covered-source requirements follow the actual distribution inventory; the root MIT license does not relicense dependencies.
 
 This fork is maintained independently. Credit for the original project remains with its authors; the changes maintained here do not imply upstream endorsement or support.
 

@@ -54,6 +54,21 @@ Both flags accept an optional explicit `--sdk-root /absolute/install/root` for
 owned-installation tooling and private tests. Startup does not accept a
 project-supplied target or environment override for SDK resolution.
 
+## Standalone runtime exclusion
+
+Brabbler's [archive decision](adr/0038-prebuilt-application-archive.md) deliberately
+excludes the SDK's standalone `dist/bundle/` and own CLI link from its exclusively
+owned dependency installation. This is separate from the twelve-target modular
+environment patch: neither its target fingerprints nor the upstream manifest are
+weakened. `bin/sdk-runtime-policy.js` applies the exact-inventory exclusion at
+installation; supported launchers check both policies read-only before allocation.
+
+The standalone Pi CLI/bundled RPC entry points (including helpers that launch them)
+are not provided by this Brabbler-owned tree. A separate Pi installation remains
+separate. The archive must be extracted and installed as its own application root,
+so npm honors the fixed modular-Undici override; sharing or hoisting its SDK into
+another application's dependency tree is unsupported and refuses.
+
 ## Covered modular paths
 
 - SDK `spawnProcess` / `spawnProcessSync`: package manager capture/inherit/sync

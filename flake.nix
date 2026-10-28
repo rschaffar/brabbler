@@ -92,6 +92,7 @@
           nodejs = pkgs.nodejs_24;
           modules = modules pkgs;
         };
+        brabbler-tarball = brabbler.tarball;
         default = brabbler;
       });
       apps = forSystems systems (pkgs: {

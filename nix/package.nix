@@ -6,6 +6,7 @@ stdenv.mkDerivation {
   pname = "brabbler";
   version = manifest.version;
   inherit src;
+  outputs = [ "out" "tarball" ];
   nativeBuildInputs = [ nodejs makeWrapper ];
   # The only dependency installation/native rebuild is the manifest-keyed
   # modules derivation. Next's build gets a private physical copy; runtime uses
@@ -29,11 +30,14 @@ stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
     app="$out/lib/node_modules/${manifest.name}"
-    mkdir -p "$app" "$out/bin"
+    mkdir -p "$app" "$out/bin" "$tarball"
+    # Freeze consumer dependency resolution without maintaining a duplicate lock
+    # in the checkout. The install smoke test verifies the resulting nested tree.
+    cp package-lock.json npm-shrinkwrap.json
     # Honor the package's declared runtime/source inventory, without npm
     # install, postinstall, pruning, or a second node-pty build.
-    npm pack --ignore-scripts --offline --pack-destination "$TMPDIR" >/dev/null
-    tar -xzf "$TMPDIR"/*.tgz --strip-components=1 -C "$app"
+    npm pack --ignore-scripts --offline --pack-destination "$tarball" >/dev/null
+    tar -xzf "$tarball"/*.tgz --strip-components=1 -C "$app"
     ln -s ${modules}/node_modules "$app/node_modules"
     makeWrapper ${nodejs}/bin/node "$out/bin/brabbler" \
       --add-flags "$app/bin/brabbler.js" \

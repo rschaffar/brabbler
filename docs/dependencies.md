@@ -7,6 +7,48 @@ Lockfile changes also require updating `nix/npm-deps.nix`. Nix realizes matching
 built dependencies automatically for packages and acceptance. Writable manual-development
 shells still enforce their checkout dependency marker; never bypass it.
 
+## Brabbler 0.1.0 release checkpoint (2026-10-28)
+
+This checkpoint supersedes older present-tense advisory counts below; dated
+maintenance evidence remains historical, not a new candidate run.
+
+The coordinated Pi SDK remains **1.4.0**. A parent/version-scoped npm override
+`@earendil-works/pi-coding-agent@1.4.0 → undici: $undici` resolves its modular
+Undici to the existing direct **8.12.2** pin, instead of the upstream exact 8.10.2.
+This is a reviewed downstream compatibility exception, not upstream's declaration.
+The lock solver removed only the affected nested entry; no unrelated resolution
+changed. The Nix cache hash was regenerated from actual realization.
+
+The affected 8.10.2 range had these eight advisories (8.x fixes from 8.12.2):
+`GHSA-4qv8-2p9j-2685`, `GHSA-f72v-6w45-q472`, `GHSA-xjj6-f33q-929c`,
+`GHSA-4w7w-5xrc-9h26`, `GHSA-2m5v-pch6-74hx`, `GHSA-qrxm-fqhp-jwvm`,
+`GHSA-9fm3-97px-rjf6`, `GHSA-55wc-3pg8-jfw6`. The last five were additional to
+our older three-ID review. An override does **not** rebuild the SDK's affected
+standalone bundles. The owner therefore approved exact-inventory exclusion of
+SDK `dist/bundle/` and its CLI link from Brabbler-owned installations. Installation
+and read-only startup verification live in `bin/sdk-runtime-policy.js`; no shared
+or separately installed upstream Pi CLI is modified. See [release scope](release.md).
+
+The earlier braces `GHSA-vfj7-8cjw-p6xm` and sprintf-js
+`GHSA-hp3w-g68c-fv3c` records were withdrawn on October 23 and October 22,
+respectively. Their absence is **not** an upgrade fix. Existing defensive boundary
+tests remain useful; do not add blanket audit ignores or downgrade the SDK.
+
+Fresh public `npm audit --json --package-lock-only --ignore-scripts`, full and
+`--omit=dev`, completed for root and demo with **zero reported findings**, exit 0,
+on 2026-10-28. Empty user/global configs and isolated environment/cache were used.
+Root lock SHA-256: `9ce2e04f8d75aac6f999b2ea04b9f6da97d1691c14a9d9699b6f773ab05d60cf`;
+demo: `d5cba47655563f060e0caa4fd7dc16e8ee675dac3695cbc6ca48cd21822a2dcd`.
+This is registry advisory matching, not whole-artifact security/license clearance.
+
+Portable distribution uses the prebuilt archive as its **own application root**:
+extract, then `npm ci --omit=dev`. npm ignores a dependency package's overrides,
+so direct installation of Brabbler into another npm project is unsupported and
+was correctly refused by the SDK guard in the first portability spike. The
+archive's generated shrinkwrap preserves the reviewed root lock. A subsequent
+clean non-Nix Linux/Node 24.21.0 spike passed install, SDK checks, auth and HTTP PTY;
+final candidate acceptance and native macOS verification remain separate gates.
+
 ## Renderer and HTTP follow-ups
 
 Source/fence highlighting continues to use locked `react-syntax-highlighter` **16.1.2**, with no new parser/highlighter library, direct transitive dependency, manifest/lock/hash or toolchain change. Lazy loading uses its own `dist/esm/prism` entry; synchronous rendering uses `dist/esm/prism-light` and `dist/esm/create-element`. Same-core registration, aliases, escaped failure behavior and deep-import packaging are regression/production-package acceptance obligations on future dependency upgrades. The shared grammar import is not a source-content cache. No new-library maintenance exception is introduced.
@@ -15,7 +57,7 @@ The root app pins runtime `remark-cjk-friendly` **2.3.2** (parse-only extension)
 
 `instrumentation-node.ts` reads global `httpIdleTimeoutMs` once at startup using SDK-compatible agent-directory resolution and a nonblocking regular-file reader. Missing/invalid settings keep the default; numeric zero or `disabled` disables idle header/body timeouts. Project settings cannot change this process-wide startup setting. Undici 8.12.2 explicitly uses CONNECT for proxied HTTP as well as HTTPS and a **2,000 ms address-family attempt window**, not a total connection deadline. Keep error listeners, fetch-override preservation and once-only configuration. Synthetic tests exercise CONNECT, stalled-body timeout, NO_PROXY and option propagation; native SDK parity tests resolve the agent directory without inspecting operator settings.
 
-A public `npm audit --omit=dev --json` on the follow-up lock reports **3 moderate runtime findings**, all in the already documented Mammoth/argparse/sprintf-js chain below; the CJK parser is not reported affected. This is the selected audit scope, not a security-clean claim or live-provider evidence.
+A historical `npm audit --omit=dev --json` on the follow-up lock reported **3 moderate runtime findings** in the Mammoth/argparse/sprintf-js chain. That dated result is superseded by the release checkpoint above, including advisory withdrawals; it is not the current count or a security-clean claim.
 
 ## Runtime classification and locking
 
