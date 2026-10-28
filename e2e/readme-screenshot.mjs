@@ -35,7 +35,7 @@ export const shortcuts = [
 `;
 
 export function seedReadmeScreenshot({ agentDir, writeSession, message, ids }) {
-  const project = join(agentDir, "workspace", "brabbler");
+  const project = join(agentDir, "examples", "projects", "brabbler");
   mkdirSync(join(project, "src"), { recursive: true });
   const file = join(project, "src", "commands.ts");
   writeFileSync(file, commandSource);
@@ -71,12 +71,11 @@ export function seedReadmeScreenshot({ agentDir, writeSession, message, ids }) {
     result,
     message("readme-answer", "readme-read-result", "assistant",
       "## A keyboard-first command palette\n\n"
-      + "The search stays deliberately small: every word matches, in any order, without a fuzzy-search dependency.\n\n"
+      + "Search matches every word, in any order—without a fuzzy-search dependency. Filtering stays separate from keyboard handling and focus restoration.\n\n"
       + "- **Ctrl K** opens the palette.\n"
-      + "- **↑ / ↓** moves between results; **Enter** runs the selection.\n"
+      + "- **↑ / ↓** chooses a command; **Enter** runs it.\n"
       + "- **Escape** returns focus to the editor.\n\n"
-      + "### Keep the seams clear\n\n"
-      + "`searchCommands` is a pure function. Keyboard handling and focus restoration stay in the palette, so each can be tested independently.\n\n"
+      + "```typescript\nconst visible = searchCommands(commands, query);\nconst selected = visible[activeIndex];\nselected?.run();\n```\n\n"
       + `[Open commands.ts](${file}) · [Project notes](${join(project, "README.md")})\n\n`
       + "Next, I’d add cases for an empty query, mixed case, and multi-word matches."),
   ], project);
@@ -90,9 +89,28 @@ export function seedReadmeScreenshot({ agentDir, writeSession, message, ids }) {
   ], project);
 }
 
+async function waitForStyledToken(page, selector, text) {
+  await page.locator(selector).locator(".token").filter({ hasText: new RegExp(`^${text}$`) }).first().waitFor();
+  // Text and even grammar downloads can precede token publication. Observe the
+  // real rendered token and its computed color; never inject styles or sleep.
+  await page.waitForFunction(({ selector, text }) => {
+    const root = document.querySelector(selector);
+    const token = [...(root?.querySelectorAll(".token") ?? [])].find(node => node.textContent === text);
+    const code = token?.closest("code");
+    return !!token && !!code && getComputedStyle(token).color !== getComputedStyle(code).color;
+  }, { selector, text });
+  return page.locator(selector).evaluate((root, text) => {
+    const tokens = [...root.querySelectorAll(".token")];
+    const token = tokens.find(node => node.textContent === text);
+    return { token: text, color: getComputedStyle(token).color,
+      baseColor: getComputedStyle(token.closest("code")).color,
+      colors: [...new Set(tokens.map(node => getComputedStyle(node).color))] };
+  }, text);
+}
+
 export async function captureReadmeScreenshot({ base, sessionId, newInputContext, harness, artifacts }) {
   const context = await newInputContext("en-desktop", {
-    viewport: { width: 1440, height: 960 },
+    viewport: { width: 1440, height: 900 },
     colorScheme: "dark",
     reducedMotion: "reduce",
   });
@@ -118,7 +136,11 @@ export async function captureReadmeScreenshot({ base, sessionId, newInputContext
       await document.fonts.ready;
       await Promise.all([...document.images].map(image => image.decode()));
     });
-    await page.mouse.move(1430, 950);
+    const fileHighlighting = await waitForStyledToken(page,
+      '#file-panel .file-source-view [data-line-number="1"] .file-source-line-content', "export");
+    const chatHighlighting = await waitForStyledToken(page, "#chat-content .markdown-code-block", "const");
+    writeFileSync(join(artifacts, "readme-highlighting.json"), JSON.stringify({ fileHighlighting, chatHighlighting }, null, 2) + "\n");
+    await page.mouse.move(1430, 890);
     await page.screenshot({ path: join(artifacts, "readme-dark.png"), animations: "disabled" });
     console.log("README illustration captured with synthetic content; not an additional coverage scenario.");
   } catch (error) {

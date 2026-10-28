@@ -55,8 +55,11 @@ nix run .#test -- e2e --group appearance
 ```
 
 The appearance group runs its unchanged functional coverage first, then
-`e2e/readme-screenshot.mjs` captures a separate 1440×960 dark desktop illustration
-as `artifacts/readme-dark.png` in that run's appearance capsule. The fresh driver's
+`e2e/readme-screenshot.mjs` captures a separate 1440×900 dark desktop illustration
+as `artifacts/readme-dark.png` in that run's appearance capsule. It waits for real
+rendered TypeScript tokens with distinct computed syntax colors in both chat and
+file preview, recording `readme-highlighting.json`; text/font readiness alone is
+not sufficient. No styles are injected to manufacture highlighting. The fresh driver's
 printed `run.json` locates the capsule. Inspect the pixels before copying that
 specific artifact to `docs/screenshots/brabbler-workspace.png`; do not use a
 wildcard, an unrelated historical screenshot, or live workspace data.
