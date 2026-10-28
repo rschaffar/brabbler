@@ -34,8 +34,6 @@ The Activity view tracks runs managed by this app; it is not a monitor for unrel
 
 ## Getting started
 
-Run the code from **this repository** to use Brabbler. Installing `@agegr/pi-web` from npm gives you upstream Pi Web instead.
-
 ### From source
 
 Clone this repository and enter its checkout. Builds and supported development targets are Nix-native.
@@ -44,6 +42,7 @@ Clone this repository and enter its checkout. Builds and supported development t
 
 ```bash
 nix develop
+node bin/brabbler.js auth setup
 BRABBLER_SKIP_VERSION_CHECK=1 npm run dev
 ```
 
@@ -59,22 +58,11 @@ Installed packages include the first-party TypeScript/CSS source alongside the b
 
 ### Nix installation
 
-For an installed application rather than a development server, the flake provides a package and launcher for x86_64/aarch64 Linux and aarch64 macOS. From a committed checkout:
+The flake provides package definitions for x86_64/aarch64 Linux and aarch64 macOS.
+Definitions are not verification of every platform. See [release status](docs/release.md)
+for the actual tested candidate/platforms. Production builds use isolated Nix builders.
 
-```bash
-BRABBLER_SKIP_VERSION_CHECK=1 nix run . -- --no-open
-```
-
-To install that checkout into your Nix profile:
-
-```bash
-nix profile install /path/to/checkout#brabbler
-BRABBLER_SKIP_VERSION_CHECK=1 brabbler
-```
-
-Nix builds the production package in an isolated builder; that same package is used by browser and deployment acceptance. Installation/activation is separate from testing. The output is a Nix package, not a separately published Brabbler npm package.
-
-On Linux, the flake also exports a Home Manager module:
+On Linux, configure the application declaratively with the Home Manager module:
 
 ```nix
 { inputs, pkgs, ... }: {
@@ -88,7 +76,7 @@ On Linux, the flake also exports a Home Manager module:
 }
 ```
 
-Point the `brabbler` flake input at your chosen revision of **this repository**. The module runs a loopback-only user service; credentials remain outside the Nix store. For password-protected deployments, enable `services.brabbler.requireAuth = true` and run the local setup below as the service user. No SOPS passphrase or secret Nix value is needed. `services.brabbler.agentDir` and the CLI's `PI_CODING_AGENT_DIR` must select the same directory (expand `%h` to your home path in the shell). An explicit `BRABBLER_PASSWORD` in a runtime `environmentFile` remains an alternative; do not combine it with stored credentials. Configure TLS separately.
+Point the `brabbler` flake input at a chosen revision of `github:rschaffar/brabbler` once published. The module defaults to a loopback user service with required authentication; credentials remain outside the Nix store. Run the local setup below as the service user. Explicit `services.brabbler.requireAuth = false` disables web authentication and warns at startup. No SOPS passphrase or secret Nix value is needed. `services.brabbler.agentDir` and the CLI's `PI_CODING_AGENT_DIR` must select the same directory (expand `%h` to your home path in the shell). An explicit `BRABBLER_PASSWORD` in a runtime `environmentFile` remains an alternative; do not combine it with stored credentials. Configure TLS separately.
 
 ## Configuration and local data
 
@@ -100,7 +88,8 @@ The package, launcher, Nix outputs and Home Manager service are named `brabbler`
 | --- | --- | --- |
 | `BRABBLER_APP_NAME` | Installed PWA name; whitespace is trimmed and blank values use the default | `Brabbler` |
 | `BRABBLER_PASSWORD` | Explicit environment password alternative; conflicts with stored credentials | Unset |
-| `BRABBLER_REQUIRE_AUTH=1` | Fail closed until authentication is configured; Home Manager: `services.brabbler.requireAuth` | Off |
+| `BRABBLER_REQUIRE_AUTH=1` | Prohibit an explicit authentication bypass; Home Manager defaults `services.brabbler.requireAuth` to true | Authentication required |
+| `BRABBLER_NO_AUTH=1` | Explicitly disable web login, like `--no-auth`; conflicts with mandatory-auth mode | Off |
 | `BRABBLER_ALLOWED_HOSTS` | Allow additional exact proxy or custom hostnames | Unset |
 | `BRABBLER_SKIP_VERSION_CHECK=1` | Disable running-version reload prompts | Unset |
 | `BRABBLER_PUSH_SUBJECT` | Operator contact (`mailto:` or `https:` URL) required for Web Push delivery | Unset |
@@ -108,7 +97,7 @@ The package, launcher, Nix outputs and Home Manager service are named `brabbler`
 | `BRABBLER_SSE_BACKLOG_LIMIT_BYTES` | Agent SSE disconnect threshold in queued bytes (not a maximum frame size); see [session contracts](docs/session-internals.md#sse-reconnect-on-page-refresh-mid-stream) | `16777216` (16 MiB) |
 | `PI_CODING_AGENT_DIR` | Override Pi's agent-data directory | `~/.pi/agent` |
 
-The installed `brabbler` launcher supports `--port`, `--hostname`, and `--no-open`; use `brabbler --help` for details. `PORT`, `BRABBLER_HOSTNAME`, and `BRABBLER_NO_OPEN` are its corresponding environment options. The `npm run dev` script has its own fixed loopback address and port.
+The installed `brabbler` launcher supports `--port`, `--hostname`, `--no-open`, and `--no-auth`; use `brabbler --help` for details. `PORT`, `BRABBLER_HOSTNAME`, and `BRABBLER_NO_OPEN` are its corresponding environment options. The `npm run dev` script has its own fixed loopback address and port.
 
 Set `BRABBLER_APP_NAME` before starting the server, for example `BRABBLER_APP_NAME='Brabbler' brabbler`. Restart after changing it; no rebuild is required. The browser manages when an already installed PWA adopts the new name. This setting changes neither page titles nor icons.
 
@@ -164,13 +153,29 @@ brabbler auth setup --replace
 
 The CLI reads a **hidden, confirmed** passphrase from the controlling TTY, never from arguments, stdin pipes or an environment variable. Use at least 12 characters (up to 1024 UTF-8 bytes). First setup refuses existing credentials; `--replace` rotates the salt and independent session-signing key and immediately revokes existing web sessions. Setup is local only: there is no first-visitor browser enrollment.
 
-Private Linux state lives in `$PI_CODING_AGENT_DIR/brabbler/auth/credentials.json` (default `~/.pi/agent/brabbler/auth/credentials.json`): a versioned salted scrypt verifier and a separate random cookie key, **not the plaintext passphrase**. Back it up privately. Credential files must be owned physical single-link regular files, mode `0600`; `brabbler/` and `auth/` must be owned physical directories, mode `0700`. Symlinks, malformed records and unsafe permissions lock the server even when required mode is off. Setup/read use Linux descriptor-relative filesystem access; unsupported platforms fail closed for local credentials.
+Private local state lives in `$PI_CODING_AGENT_DIR/brabbler/auth/credentials.json` (default `~/.pi/agent/brabbler/auth/credentials.json`): a versioned salted scrypt verifier and a separate random cookie key, **not the plaintext passphrase**. Back it up privately. Credential files must be owned physical single-link regular files, mode `0600`; `brabbler/` and `auth/` must be owned physical directories, mode `0700`. In protected mode, symlinks, malformed records and unsafe permissions lock the server. The store uses portable Node filesystem operations on Linux/macOS, not Linux-only directory pinning. It is not a sandbox against a compromised same-user process. See [the authentication decision](docs/adr/0037-portable-default-on-web-authentication.md).
 
-`BRABBLER_REQUIRE_AUTH=1` (or Home Manager `services.brabbler.requireAuth = true`) returns setup-needed HTTP 503 until configured, including API/Basic/SSH requests. Invalid flag values also lock. Without the flag and without credentials, existing unauthenticated local mode remains available. A nonempty `BRABBLER_PASSWORD` explicitly enables the environment mode only when no stored credentials exist; coexistence locks, and setup refuses while it is set. There are no legacy `PI_WEB_*` fallbacks. Environment-mode cookies revoke on server restart; stored-mode cookies survive restart but revoke on replacement.
+Authentication is required by default, including on loopback. Until configured, page/API/Basic/SSH requests return setup-needed HTTP 503. Invalid flags also lock; `BRABBLER_REQUIRE_AUTH=0` alone does not disable the protected default. A nonempty `BRABBLER_PASSWORD` explicitly enables the environment mode only when no stored credentials exist; coexistence locks, and setup refuses while it is set. There are no legacy `PI_WEB_*` fallbacks. Environment-mode cookies revoke on server restart; stored-mode cookies survive restart but revoke on replacement.
 
 If state is corrupt/insecure, repair it deliberately as the local owner; setup never silently overwrites it. After a crashed setup, inspect and remove only its private `setup.lock` when no setup process remains. For lost/corrupt credentials that cannot be repaired, stop the service, retain a private backup, remove the broken credential file locally, and run setup again **with required mode kept enabled**. No automatic recovery unlocks the server.
 
-For an installed launcher on a trusted network, configure authentication first and require it before binding beyond loopback:
+### Explicitly running without web authentication
+
+```bash
+brabbler --no-auth --no-open
+# For the development server:
+npm run dev -- --no-auth
+```
+
+This deliberately skips password checks without reading, deleting or changing saved
+credentials. It prints a prominent warning on **every** bind, and may also be used
+with an explicitly selected non-loopback address. Anyone who can reach that listener
+can access this coding workspace. Host/Origin and file-access checks remain active;
+this is not a safe public service. Browser SSH key management still requires a real
+signed login and is unavailable in no-auth mode. Mandatory-auth mode rejects the
+bypass. Remove the flag to restore normal credential checks.
+
+For authenticated remote access, configure authentication before binding beyond loopback:
 
 ```bash
 brabbler auth setup
@@ -231,7 +236,7 @@ For npm dependency changes, use `nix develop .#update` and `npm install --packag
 - [Workspace terminal](./docs/terminal.md)
 - [Browser-backed FIDO SSH agent](./docs/browser-ssh-agent.md)
 - [English interface messages](./docs/i18n.md)
-- [Release status](./docs/release.md)—no publication target is configured
+- [Release status and portable artifact verification](./docs/release.md)
 - [Breaking rename and later cutover](./docs/brabbler-rename.md)
 
 Historical decision and acceptance records retain the names and artifact paths that were true when they were written.

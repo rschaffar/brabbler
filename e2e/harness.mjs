@@ -30,7 +30,7 @@ export function fixtureEnvironment(root, source = process.env) {
     XDG_STATE_HOME: join(home, "state"), XDG_CACHE_HOME: join(home, "cache"),
     XDG_RUNTIME_DIR: join(root, "runtime"), XDG_CONFIG_DIRS: join(home, "config"), XDG_DATA_DIRS: join(home, "data"),
     TMPDIR: temp, TMP: temp, TEMP: temp, PI_CODING_AGENT_DIR: root,
-    PI_OFFLINE: "1", BRABBLER_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1", JITI_FS_CACHE: "0",
+    PI_OFFLINE: "1", BRABBLER_PASSWORD: "", BRABBLER_NO_AUTH: "1", NEXT_TELEMETRY_DISABLED: "1", JITI_FS_CACHE: "0",
     GIT_CONFIG_GLOBAL: join(home, ".gitconfig"), GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0",
     HISTFILE: process.platform === "win32" ? "NUL" : "/dev/null", BASH_SILENCE_DEPRECATION_WARNING: "1",
   });

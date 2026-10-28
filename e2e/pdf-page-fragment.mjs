@@ -152,7 +152,7 @@ try {
     [join(root, "node_modules/next/dist/bin/next"), mode, "-H", "127.0.0.1", "-p", String(port)],
     {
       cwd: root,
-      env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, BRABBLER_PASSWORD: "", NEXT_TELEMETRY_DISABLED: "1" },
+      env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, BRABBLER_PASSWORD: "", BRABBLER_NO_AUTH: "1", NEXT_TELEMETRY_DISABLED: "1" },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );

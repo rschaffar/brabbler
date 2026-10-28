@@ -23,6 +23,17 @@ conflicts with these project requirements, stop before mutation and ask which
 rule applies to the bounded task. A task-specific answer does not rewrite this
 profile.
 
+## Public-safe repository content
+
+Treat every tracked file and commit message as potentially public. Plans, ADRs,
+examples and evidence summaries must not include credentials, private transcripts,
+internal hosts, customer/employer project details or personal filesystem paths.
+Use synthetic data and neutral placeholders. Keep sensitive investigation details
+in a private, persistent location outside the repository; review/redact before
+staging, including images and metadata. Public attribution and deliberately public
+maintainer contact details are not secrets. The planning skill owns plan-specific
+handling; publication approval never retroactively authorizes a disclosure.
+
 ## Prepare and verify
 
 From the selected Linux worktree:

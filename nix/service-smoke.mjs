@@ -264,7 +264,8 @@ export default pi => {
   });
 };\n`, { flag: 'wx', mode: 0o600 });
   fs.mkdirSync(path.dirname(plan.session.file), { recursive: true, mode: 0o700 });
-  writePrivateEnvironment(service.envFile, 'BRABBLER_SERVICE_FILE="runtime file $literal"\nBRABBLER_SERVICE_OVERRIDE=runtime-file-wins\n');
+  // The required-auth ExecStart policy must win over runtime-file overrides.
+  writePrivateEnvironment(service.envFile, 'BRABBLER_SERVICE_FILE="runtime file $literal"\nBRABBLER_SERVICE_OVERRIDE=runtime-file-wins\nBRABBLER_REQUIRE_AUTH=0\n');
   const timestamp = '2026-10-15T00:00:00.000Z';
   const entries = [
     { type: 'session', version: 3, id: plan.session.id, timestamp, cwd: service.home },

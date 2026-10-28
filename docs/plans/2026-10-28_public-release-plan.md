@@ -1,9 +1,10 @@
 # Brabbler 0.1.0 — public release preparation
 
-**Status: proposed; awaiting owner review before implementation.** Investigation,
-local remote configuration and this plan are authorized. This document does not
-approve implementation, history filtering, Git remote operations, publication or
-activation.
+**Status: implementation authorized; in progress.** The owner approved local
+implementation on this release worktree and requested durable public-safe planning
+rules. Exact history filters, Git remote operations, publication, activation and
+resource cleanup retain their separate approval gates. Implementation is not yet
+verified; no release or platform-support claim follows from this status.
 
 ## Goal
 
@@ -98,6 +99,26 @@ release does not reopen their backlogs or certify live-provider behavior.
   No fresh full acceptance, portable installation or native macOS test was run
   for this plan. Installed checkout dependencies were not used as lock evidence.
 
+## Current implementation checkpoint
+
+Portable/default-on authentication, explicit warned bypass, its fixtures and
+public-safe content instructions are implemented. Focused Nix core/static checks
+passed **71 tests across eight files**, 29 exporter contracts, genuine typegen/tsc
+and lint (seven existing warnings), with four requested core workers. Command wall
+was **43 seconds**, including realization; preparation/test-only intervals are not
+separately recorded here. Immutable source digest:
+`9c8c96c549ee5771bf42fefa185287ac671259957e00572499059704d0d62ac4`.
+The receiving session retains the exact command/log and run identity privately.
+This is selected-file evidence, not full application, deployment or macOS proof.
+Independent source review found a Home Manager environment-precedence issue; the
+implementation now enforces mandatory policy after runtime-file processing, with
+an adversarial runtime-file value included for the later genuine VM check.
+
+The owner separately selected exclusion of SDK standalone bundles from Brabbler's
+owned installation, alongside fixed modular Undici resolution. Exact-byte exclusion
+and ownership/compatibility checks remain implementation/verification work; neither
+a clean lock audit nor this selection alone proves the artifact is remediated.
+
 ## Architecture
 
 ### Authentication proposal
@@ -159,8 +180,10 @@ not come from the builder's platform. Packaging success is not portability proof
 
 - [x] Record owner choices, local remote configuration, investigation identities,
   findings and non-goals in this draft; verify remote URLs locally, no network.
-- [ ] Obtain owner approval for this plan's implementation scope, authentication
-  proposal and warning/precedence behavior. Resolve any requested changes first.
+- [x] Owner approved local implementation, portable default-on authentication and
+  the warned any-bind bypass. Record public-safe content rules in `AGENTS.md` and
+  the planning skill; verify their wording/diff before committing. Exact privacy
+  filters and release-risk decisions are not implicitly approved.
 - [ ] Present the exact private publication-omission/replacement inventory, including
   former paths for omitted documents and any commit-message substitutions. Obtain
   specific approval; no blanket history rewriting or deletion of original evidence.
@@ -172,8 +195,9 @@ not come from the builder's platform. Packaging success is not portability proof
 
 ### P1 — portable, default-on authentication
 
-- [ ] Record the revised threat/default/bypass contract in `docs/adr/` and update
-  maintained authentication owners; confirm the scope excludes generic path security.
+- [x] Record the revised threat/default/bypass contract in ADR 0037 and update
+  maintained authentication owners; focused checks and source review confirm no
+  generic path-security change.
 - [ ] Implement portable credential storage in `bin/web-auth-store.js`, preserving
   existing credential format, private modes, bounded errors, exclusive setup,
   rotation and failure semantics. Exercise real writes, concurrency/publication

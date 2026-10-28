@@ -50,7 +50,9 @@ if (launchOptions.help) {
   process.exit(0);
 }
 
-const { port, hostname, openBrowser } = launchOptions;
+const { port, hostname, openBrowser, noAuth } = launchOptions;
+const environment = { ...process.env };
+if (noAuth) environment.BRABBLER_NO_AUTH = "1";
 
 const pkgDir = path.join(__dirname, "..");
 const nextDir = path.join(pkgDir, ".next");
@@ -73,15 +75,20 @@ try {
 const loopbackHostnames = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { readCredentials } = require("./web-auth-store");
-const required = process.env.BRABBLER_REQUIRE_AUTH;
-let authLocked = required !== undefined && !["", "0", "1"].includes(required);
-let passwordEnabled = Boolean(process.env.BRABBLER_PASSWORD);
-try {
-  const credentials = readCredentials();
-  if (credentials && passwordEnabled) authLocked = true;
-  passwordEnabled ||= Boolean(credentials);
-} catch { authLocked = true; }
-authLocked ||= required === "1" && !passwordEnabled;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { getWebAuthPolicy } = require("./web-auth-policy");
+const policy = getWebAuthPolicy(environment);
+let authLocked = policy === "invalid";
+let passwordEnabled = false;
+if (policy === "required") {
+  passwordEnabled = Boolean(environment.BRABBLER_PASSWORD);
+  try {
+    const credentials = readCredentials(environment);
+    if (credentials && passwordEnabled) authLocked = true;
+    passwordEnabled ||= Boolean(credentials);
+  } catch { authLocked = true; }
+  authLocked ||= !passwordEnabled;
+}
 
 if (!fs.existsSync(nextDir)) {
   console.error("Build artifacts not found. Please report this issue.");
@@ -97,19 +104,16 @@ if (!loopbackHostnames.has(hostname)) {
     console.warn(
       `Warning: brabbler is listening on ${hostname} with password authentication over HTTP. Use HTTPS or a trusted VPN to protect the password in transit.`,
     );
-  } else {
-    console.warn(
-      `Warning: brabbler is listening on ${hostname} without authentication. Only use this on a trusted network.`,
-    );
   }
 }
+// The shared supervisor warns for explicit no-auth on every bind, including loopback.
 
 const nextArgs = ["start", "-p", port];
 nextArgs.push("-H", hostname);
 
 // Always run next's JS entry with node directly — avoids .bin symlink issues
 // and path-with-spaces problems on Windows when shell: true is used.
-launchManagedNext({ nextBin, args: nextArgs, cwd: pkgDir, hostname, port,
+launchManagedNext({ nextBin, args: nextArgs, cwd: pkgDir, hostname, port, environment,
   stdio: ["inherit", "pipe", "inherit"],
 }).then((child) => {
 let browserOpened = false;

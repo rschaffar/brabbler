@@ -11,7 +11,10 @@ process.execArgv.push("--require", requestGuardPath);
 // Keep ownership outside Next's replaceable workers, as in the installed launcher.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { launchManagedNext } = require("./ssh-agent-launch");
-const args = process.argv.slice(2);
+const inputArgs = process.argv.slice(2);
+const environment = { ...process.env };
+if (inputArgs.includes("--no-auth")) environment.BRABBLER_NO_AUTH = "1";
+const args = inputArgs.filter(arg => arg !== "--no-auth");
 function option(short, long, fallback) {
   let value = fallback;
   for (let i = 0; i < args.length; i++) {
@@ -20,7 +23,7 @@ function option(short, long, fallback) {
   }
   return value;
 }
-launchManagedNext({ nextBin: require.resolve("next/dist/bin/next"), args, cwd: process.cwd(),
+launchManagedNext({ nextBin: require.resolve("next/dist/bin/next"), args, cwd: process.cwd(), environment,
   hostname: option("-H", "--hostname", "0.0.0.0"), port: option("-p", "--port", process.env.PORT || "3000"),
 }).catch(error => {
   console.error(`[brabbler] startup failed: ${error.message}`);

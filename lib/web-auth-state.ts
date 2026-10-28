@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { readCredentials, verifyPassword } from "../bin/web-auth-store.js";
 import { isValidWebPassword } from "./web-auth";
+import { getWebAuthPolicy } from "../bin/web-auth-policy.js";
 
 type Credentials = NonNullable<ReturnType<typeof readCredentials>>;
 export type WebAuthState =
@@ -12,9 +13,11 @@ const globals = globalThis as typeof globalThis & { [envKeySymbol]?: { digest: s
 
 /** Read fresh on each admission, so deletion, corruption and rotation revoke immediately. */
 export function getWebAuthState(): WebAuthState {
-  const required = process.env.BRABBLER_REQUIRE_AUTH;
-  // Unknown/non-canonical flag values lock instead of silently turning protection off.
-  if (required !== undefined && !["", "0", "1"].includes(required)) return { mode: "locked" };
+  const policy = getWebAuthPolicy();
+  if (policy === "invalid") return { mode: "locked" };
+  // A deliberate startup bypass neither reads nor changes saved credentials.
+  // It provides no signing key and therefore cannot authorize browser SSH.
+  if (policy === "disabled") return { mode: "disabled" };
   try {
     const credentials = readCredentials();
     const password = process.env.BRABBLER_PASSWORD;
@@ -25,7 +28,7 @@ export function getWebAuthState(): WebAuthState {
       if (globals[envKeySymbol]?.digest !== digest) globals[envKeySymbol] = { digest, key: randomBytes(32).toString("hex") };
       return { mode: "environment", password, signingKey: globals[envKeySymbol]!.key };
     }
-    return { mode: required === "1" ? "locked" : "disabled" };
+    return { mode: "locked" };
   } catch { return { mode: "locked" }; }
 }
 export function signingKey(state = getWebAuthState()): string | undefined {

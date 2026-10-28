@@ -24,10 +24,22 @@ function checkOwned(stat, directory = false) {
     || (stat.mode & 0o7777) !== (directory ? 0o700 : 0o600)
     || (directory ? !stat.isDirectory() : !stat.isFile() || stat.nlink !== 1)) throw unsafe();
 }
-// Walk each physical component: mkdir(recursive) and realpath alone would accept aliases.
-// Only app-owned directories require private permissions; HOME/agent ancestors may be shared.
+// Resolve aliases above the configured agent directory (not the agent directory
+// itself): macOS commonly reaches home/temp paths through /var or /tmp aliases.
+// Private app directories and credential leaves must still be physical/owned.
+// This is not protection against hostile same-UID ancestor replacement.
 function openDirectory(env, create) {
-  const dir = authDirectory(env);
+  const agent = path.dirname(path.dirname(authDirectory(env)));
+  let parent = path.dirname(agent);
+  const missing = [];
+  for (;;) {
+    try { parent = fs.realpathSync(parent); break; }
+    catch (error) {
+      if (error.code !== "ENOENT" || parent === path.dirname(parent)) throw unsafe();
+      missing.unshift(path.basename(parent)); parent = path.dirname(parent);
+    }
+  }
+  const dir = path.join(parent, ...missing, path.basename(agent), "brabbler", "auth");
   const parts = dir.split(path.sep).filter(Boolean);
   const privateStats = [];
   let current = path.parse(dir).root;
@@ -58,11 +70,8 @@ function openDirectory(env, create) {
   const fd = fs.openSync(dir, C.O_RDONLY | C.O_DIRECTORY | C.O_NOFOLLOW);
   try {
     checkOwned(fs.fstatSync(fd), true);
-    // Descriptor-relative access pins the private directory even if a parent moves.
-    // Refuse platforms without this facility rather than weakening no-follow semantics.
-    const pinned = `/proc/self/fd/${fd}`;
-    if (fs.realpathSync(pinned) !== dir || fs.realpathSync(dir) !== dir) throw unsafe();
-    return { fd, path: pinned };
+    if (fs.realpathSync(dir) !== dir) throw unsafe();
+    return { fd, path: dir };
   } catch (error) { fs.closeSync(fd); throw error; }
 }
 function validateRecord(record) {

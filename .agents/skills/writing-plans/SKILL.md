@@ -37,6 +37,23 @@ Save the plan to `docs/plans/YYYY-MM-DD_<topic>-plan.md` with a lowercase
 kebab-case topic unless the user asks for chat-only output. Create `docs/plans/`
 when saving the repository's first plan.
 
+## Keep Plans Public-Safe
+
+Assume plans, their history, commit messages and linked assets will be public.
+Record technical contracts and outcomes without private operational identifiers,
+customer/employer context, real transcripts, internal URLs, credentials or personal
+checkout/cache paths. Use synthetic examples and portable placeholders instead.
+Keep exact sensitive findings and raw reports in an owned private persistent
+location outside the repository, never in a tracked appendix or linked screenshot.
+A plan can state the scope and result without reproducing the private value.
+
+Public upstream attribution, commit IDs and intentionally public maintainer
+contact details may be retained. Do not confuse an author's own public identity
+with secret data. If a required detail cannot be safely generalized, ask before
+recording it. Inspect the diff and asset metadata before staging; deleting it later
+does not remove it from history. Report lost/unavailable private evidence honestly
+rather than recreating a raw-evidence claim from a summary.
+
 ## Structure the Plan
 
 Always include `Goal`, `Plan`, and `Completion Checklist`.
