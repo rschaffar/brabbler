@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
 import { createJiti } from 'jiti';
 import { guidedRuntime } from './guided-reader.fixture.mjs';
+import { pointerCaptureDouble } from '../lib/testing/react.fixture.mjs';
 const jiti = createJiti(import.meta.url, { jsx: { runtime: 'automatic' }, tsconfigPaths: true, fsCache: false });
 const fence = (language, value) => '```' + language + '\n' + JSON.stringify(value) + '\n```\n';
 const index = { version: 1, id: 'guide', title: 'Guided request review', chapters: [{ id: 'one', title: 'First chapter', path: 'first.md' }, { id: 'two', title: 'Second chapter', path: 'last.md' }] };
@@ -203,4 +204,102 @@ test('comparison capture/patch identities and obsolete success/error cannot repl
   assert.match(view.container.querySelector('[role="alert"]').textContent, /Current repository identity changed/);
   assert.equal(view.container.querySelector('select[aria-label="Evidence target"]').value, 'range');
   runtime.healthy();
+});
+
+test('layout controls retain loaded pane nodes and snapshots without reads, survive steps and reset only presentation', async t => {
+  const runtime = guidedRuntime(t), { GuidedReviewEntry, I18nProvider } = await production();
+  const props = { filePath: folder.index, cwd: '/guide', markdown: fence('brabbler-notebook', index), onWork: runtime.onWork };
+  const view = await runtime.mount(createElement(I18nProvider, null, createElement(GuidedReviewEntry, props, 'Document')));
+  const replay = runtime.expect('/api/review-notebook', folder), current = runtime.expect('/api/review-notebook', folder);
+  await click(view, 'Start guided reading');
+  const oldAsset = runtime.expect('/api/review-notebook', { ...folder, asset: file.path }), asset = runtime.expect('/api/review-notebook', { ...folder, asset: file.path });
+  await current.deliver({ ...notebook, chapters: [{ ...notebook.chapters[0], steps: [{ ...notebook.chapters[0].steps[0], targets: [file, web] }] }, notebook.chapters[1]] });
+  await replay.deliver(notebook); await oldAsset.deliver({ content: 'obsolete' }); await asset.deliver({ content: 'Loaded snapshot' });
+  await choose(view, 'Second evidence target', 'web');
+  const outline = view.container.querySelector('.guided-outline'), prose = view.container.querySelector('.guided-prose'), evidence = view.container.querySelector('.guided-evidence-area');
+  const sourceNode = view.container.querySelector('.guided-file-evidence'), count = runtime.requests.length;
+  const divider = view.container.querySelector('[role="separator"]');
+  const key = (key, shiftKey = false) => view.dispatch(divider, new view.window.KeyboardEvent('keydown', { bubbles: true, key, shiftKey }));
+  await key('ArrowRight', true); assert.equal(divider.getAttribute('aria-valuenow'), '43');
+  for (const name of ['Outline', 'Explanation', 'Evidence']) {
+    await click(view, name);
+    const toggle = button(view, name), controlled = view.window.document.getElementById(toggle.getAttribute('aria-controls'));
+    assert.equal(toggle.getAttribute('aria-pressed'), 'false'); assert.equal(controlled.hidden, true);
+  }
+  assert.match(view.container.querySelector('.guided-step [role="status"]').textContent, /hidden/);
+  assert.equal(divider.hidden, true);
+  assert.equal(view.container.querySelector('.guided-outline') === outline, true);
+  assert.equal(view.container.querySelector('.guided-prose') === prose, true);
+  assert.equal(view.container.querySelector('.guided-evidence-area') === evidence, true);
+  assert.equal(view.container.querySelector('.guided-file-evidence') === sourceNode, true);
+  await click(view, 'Reset layout');
+  assert.equal(outline.hidden || prose.hidden || evidence.hidden, false);
+  assert.equal(divider.getAttribute('aria-valuenow'), '33');
+  assert.equal(view.container.querySelector('select[aria-label="Second evidence target"]').value, 'web');
+  assert.equal(view.container.querySelector('.guided-file-evidence') === sourceNode, true);
+  assert.equal(runtime.requests.length, count, 'visibility and sizing cannot reread any material');
+  await key('End'); await click(view, 'Explanation'); await click(view, 'Next');
+  assert.equal(button(view, 'Explanation').getAttribute('aria-pressed'), 'false');
+  assert.equal(view.window.document.activeElement === view.container.querySelector('.guided-step'), true, 'navigation focuses a visible root instead of a hidden heading');
+  assert.equal(view.container.querySelector('[role="separator"]').getAttribute('aria-valuenow'), '80');
+  await click(view, 'Return to document');
+  const reopenedReplay = runtime.expect('/api/review-notebook', folder), reopened = runtime.expect('/api/review-notebook', folder);
+  await click(view, 'Start guided reading'); await reopened.deliver({ ...notebook, chapters: [notebook.chapters[1]] }); await reopenedReplay.deliver(notebook);
+  assert.equal(button(view, 'Explanation').getAttribute('aria-pressed'), 'true');
+  assert.equal(view.container.querySelector('[role="separator"]').getAttribute('aria-valuenow'), '33');
+  runtime.healthy();
+});
+
+test('real divider events clamp, capture one pointer, cancel and reset without global side effects', async t => {
+  let resizeCallback;
+  const runtime = guidedRuntime(t, { setupPresenters(_window, replace) {
+    replace(globalThis, 'ResizeObserver', class {
+      constructor(callback) { resizeCallback = callback; }
+      observe() {} disconnect() {}
+    });
+  } }), { GuidedReviewReader, I18nProvider } = await production();
+  const replay = runtime.expect('/api/review-notebook', folder), current = runtime.expect('/api/review-notebook', folder);
+  const view = await runtime.mount(createElement(I18nProvider, null, createElement(GuidedReviewReader, { indexPath: folder.index, onClose() {}, onWork: runtime.onWork })));
+  await current.deliver({ ...notebook, chapters: [notebook.chapters[1]] }); await replay.deliver(notebook);
+  const divider = view.container.querySelector('[role="separator"]'), capture = pointerCaptureDouble(divider);
+  const storageBefore = Object.entries(view.window.localStorage);
+  // External geometry/capture doubles: this proves event wiring, not native layout.
+  divider.parentElement.getBoundingClientRect = () => ({ width: 1012 });
+  divider.getBoundingClientRect = () => ({ width: 12 });
+  const pointer = (type, extra = {}) => view.dispatch(divider, new view.window.PointerEvent(type, { bubbles: true, cancelable: true, isPrimary: true, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1, clientX: 100, ...extra }));
+  const value = () => Number(divider.getAttribute('aria-valuenow'));
+  const key = (key, shiftKey = false) => view.dispatch(divider, new view.window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, key, shiftKey }));
+  await pointer('pointerdown', { button: 2 }); assert.equal(capture.size, 0);
+  await pointer('pointerdown'); assert.equal(capture.has(1), true);
+  await pointer('pointermove', { pointerId: 2, clientX: 900 }); assert.equal(value(), 33);
+  await pointer('pointermove', { clientX: 300 }); assert.equal(value(), 53);
+  await pointer('pointerup', { pointerId: 2 }); assert.equal(capture.has(1), true);
+  await key('Escape'); assert.equal(value(), 33); assert.equal(capture.size, 0);
+  await pointer('pointerdown'); await pointer('pointermove', { clientX: 10000 }); assert.equal(value(), 80);
+  await pointer('pointercancel'); assert.equal(value(), 33); assert.equal(capture.size, 0);
+  await pointer('pointerdown'); await pointer('pointermove', { clientX: 300 });
+  await view.dispatch(divider, new view.window.FocusEvent('focusout', { bubbles: true }));
+  assert.equal(value(), 33); assert.equal(capture.size, 0, 'focus departure cancels capture');
+  await pointer('pointerdown'); await pointer('pointermove', { clientX: 300 });
+  await act(async () => resizeCallback([{ contentRect: { width: 0 } }]));
+  assert.equal(value(), 33); assert.equal(capture.size, 0, 'narrow layout cancels capture');
+  await pointer('pointerdown'); await pointer('pointermove', { clientX: 300 });
+  await click(view, 'Explanation');
+  assert.equal(value(), 33); assert.equal(capture.size, 0, 'hidden divider cancels capture');
+  await click(view, 'Explanation');
+  await pointer('pointerdown'); await pointer('pointermove', { clientX: -10000 }); await pointer('pointerup'); assert.equal(value(), 20);
+  await key('Home'); assert.equal(value(), 20);
+  await key('ArrowLeft'); assert.equal(value(), 20);
+  await key('ArrowRight'); assert.equal(value(), 22);
+  await key('ArrowRight', true); assert.equal(value(), 32);
+  await key('End'); assert.equal(value(), 80);
+  await key('Enter'); assert.equal(value(), 33);
+  await click(view, 'More explanation'); assert.equal(value(), 43);
+  await click(view, 'More evidence'); assert.equal(value(), 33);
+  await key('End'); await view.dispatch(divider, new view.window.MouseEvent('dblclick', { bubbles: true })); assert.equal(value(), 33);
+  assert.deepEqual(Object.entries(view.window.localStorage), storageBefore, 'temporary layout never adds or changes stored data');
+  assert.equal(view.window.document.body.style.cursor, ''); assert.equal(view.window.document.body.style.userSelect, '');
+  assert.equal(runtime.requests.length, 2);
+  await pointer('pointerdown'); assert.equal(capture.size, 1);
+  await view.unmount(); assert.equal(capture.size, 0, 'unmount releases capture'); runtime.healthy();
 });

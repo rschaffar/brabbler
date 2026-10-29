@@ -221,6 +221,23 @@ different target. Both remain visible, stacked on small screens. Each immutable
 source retains its existing Source/File diff controls; feature ranges use the
 same diff toolbar, Before/After, context and reading model as Explorer.
 
+**Outline**, **Explanation** and **Evidence** toggle each pane independently. Hidden
+panes stay mounted: selected targets, loaded snapshots and reading state survive,
+and already admitted reads may finish. Hiding is not cancellation or reloading.
+The controls remain available even with all panes hidden. **Reset layout** shows
+all panes and restores the default one-third explanation/two-thirds evidence split;
+it does not reset evidence selections or reviewer drafts.
+
+When the step has at least 720px available, drag the divider to resize explanation
+and evidence (20–80% explanation), or click **More explanation / More evidence**.
+Focus the divider and use Left/Right (Shift for larger steps), Home/End for limits,
+Enter or double-click to reset, and Escape to cancel a drag. Narrow steps stack at
+full width instead, based on the actual Files pane rather than viewport width.
+Hiding either pane gives the other the full width. Layout choices survive step
+navigation within this activation, including folder Retry, but are not saved and
+reset on Return to document or a changed originating cwd/index. Following a local
+prose link reveals evidence if hidden.
+
 Local supported prose links inside a step can be explored in the evidence area;
 **Return to current step** restores its selected targets and heading focus. Other
 file links use ordinary Files navigation. **Return to document** unmounts evidence
