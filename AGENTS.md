@@ -37,6 +37,8 @@ staging, including images and metadata. Public attribution and deliberately publ
 maintainer contact details are not secrets. The planning skill owns plan-specific
 handling; publication approval never retroactively authorizes a disclosure.
 
+For public work, also preserve the [public-history boundary](docs/release.md#local-public-history-boundary): start from cleaned `main`, never merge or blindly rebase private backup/old-worktree ancestry into it.
+
 ## Prepare and verify
 
 From the selected Linux worktree:

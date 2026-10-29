@@ -5,7 +5,8 @@ implementation on this release worktree and requested durable public-safe planni
 rules. Exact history filters, Git remote operations, publication, activation and
 resource cleanup retain their separate approval gates. Selected implementation
 checks and complete Linux Nix acceptance have passed for the candidate recorded
-below. Native macOS verification and the privacy/publication handoff remain pending.
+below. Approved history cleanup and the local main cutover are complete. Native
+macOS verification and remote publication/settings remain pending.
 No release or untested-platform claim follows from this status.
 
 ## Goal
@@ -19,12 +20,15 @@ on by default, portable, and explicitly bypassable at startup.
 ## Context and decisions
 
 - Initial investigation: local main `0c239e29d96753e81a82ba9ad0f87ea8fa14a042`.
-  Receiving branch `plan/public-release`, linked worktree `public-release`, is now
-  rebased onto local main `3b73cbfd871ce42302444450a1ee742e390b109a`, including
-  the remote-Markdown-image opt-in merge. Recheck the target before integration.
+  Initial implementation used `plan/public-release` and incorporated the
+  remote-Markdown-image opt-in merge `3b73cbfd871ce42302444450a1ee742e390b109a`.
+  That old branch/worktree now has private ancestry. All further public work must
+  start from the cleaned current `main`, not rebase or merge the old branch.
 - Completed local-only remote change: upstream is `pi-web-origin`; `origin` is
-  `https://github.com/rschaffar/brabbler.git`. No Git remote has been contacted.
-  New-origin tracking, repository creation/settings and publication are not done.
+  `https://github.com/rschaffar/brabbler.git`. Approved read-only GitHub preflight
+  authenticated as the selected owner but the repository returned not found.
+  Main's old upstream was cleared; new tracking, repository creation/settings,
+  uploads and publication are not done.
 - Owner selected source plus tarball, **not npm registry publication**. After the
   first consumer-install spike exposed npm's root-only override behavior, the
   owner selected extraction plus root `npm ci --omit=dev`, not installation as
@@ -37,11 +41,18 @@ on by default, portable, and explicitly bypassable at startup.
   new capture is required. Nix installation examples remain declarative.
 - Keep the owner's long-term email and normal Git attribution. An email address
   is not a credential. Do not change authorship merely to anonymize provenance.
-- Prepare a **separate sanitized publication-history copy**, preserving the
-  original local history, worktrees and diagnostic evidence privately. Show exact
-  omissions/replacements to the owner before filtering. Omission of the archived
-  rename plan and its former paths is proposed; the current guide also needs a
-  neutral deployment example. Do not reproduce private identifiers in this plan.
+- **Owner-approved cleanup is complete:** omit only the October 21 review-notebook
+  plan under its original and archived filenames, and replace the internal hostname
+  in the three exact rename-guide/plan paths. Keep the rename plan, all other plans,
+  ordinary personal/evidence paths, messages, attribution and approved assets.
+  Earlier broader path redactions and rename-plan omission were rejected; do not
+  revive them. Exact private values and the rewrite map stay outside Git.
+- The isolated `brabbler-public` repository was staging only. The owner subsequently
+  approved a one-time cutover in the existing checkout: old main preserved as
+  `backup/private-main-before-public-release`, cleaned history installed as main
+  `277686984dbefe951aad54961b448e5a7d0c9dcb`, old upstream cleared. All other
+  refs/worktrees remained unchanged. The backup and old branches remain private;
+  normal future worktree/non-fast-forward rules are unchanged.
 - Authentication defaults on. An explicit **`--no-auth`** flag may allow any bind
   address and must print a prominent warning. Default bind remains loopback.
 - Stored-password setup must work on Linux and macOS. The owner does not require
@@ -205,12 +216,26 @@ Only the same two previously classified documentation-prose false positives were
 reported; scanner exit 1 is retained as findings, not relabeled exit 0. The exact
 seven-commit main/feature delta scanned all seven, **697.71 KB**, exit 0, no findings.
 No confirmed credential was identified. Binary/unmerged/tag-only clearance is not
-claimed. Final sanitized-history residual checks remain required.
+claimed. The sanitized main was subsequently rescanned with only the same two
+mapped documentation false positives and no additional findings.
 
-This status-only follow-up records those earlier tested inputs; it is not a new-tip
-application-suite run. Native macOS, approved privacy filters/cutover, real published
-source-asset availability, exact local integration, remote operations and cleanup
-retain their separate gates. Original private history has not been sanitized.
+Verification covered all **1,489 commits / 265 merges**: every tree matches only
+approved changes, every message/author/date and mapped parent list is preserved,
+all omitted-plan blob versions are absent, and the hostname has no residuals in
+stored blobs. All commits, including the newly empty one, remain. Original signed
+history is retained privately; its signatures cannot carry over to changed objects.
+Independent review found no blockers within this scope.
+
+At the sanitized tip, **12 focused tests** plus exporter/static checks passed in
+**8 seconds**. The application, tarball and source-output identities match the
+previously accepted Nix outputs exactly. The existing checkout's main cutover also
+preserved that application identity. This reuses input-bound full Linux evidence;
+it is not a claim that a new full suite ran on each new commit ID. Historical sample
+IDs remain unchanged, even where unavailable from a public-only clone.
+
+Native macOS execution, actual published source-asset availability, each remote
+operation and resource cleanup retain separate gates. No upload or service/session
+move followed from history cleanup or the local cutover.
 
 ## Architecture
 
@@ -372,9 +397,10 @@ not come from the builder's platform. Packaging success is not portability proof
   prerequisites/platform support, a user/contributor/history docs index, accurate
   terminal repair/install guidance and concise authentication instructions. Keep
   Nix examples declarative and preserve the owner's specific onboarding exclusions.
-- [ ] Apply the approved current-tree privacy cleanup, including the proposed
-  archived-plan omission and updated index/link references. Do not relabel old
-  acceptance or create replacement evidence for omitted records.
+- [x] Apply the approved cleanup throughout the selected history: omit the two
+  October 21 notebook-plan paths and replace the hostname only. Current links
+  refer to the retained October 23 record; no link repair was needed. Do not
+  relabel old acceptance or invent evidence for omitted records.
 - [x] Add `SECURITY.md` describing private GitHub reporting; explain that public
   issues are not the place for credentials or exploit details. Keep enablement as
   a separately authorized repository-settings gate until verified.
@@ -390,26 +416,26 @@ not come from the builder's platform. Packaging success is not portability proof
 - [x] Record command/preparation/test intervals separately, requested/effective
   widths, source identity and retained artifacts. Reuse unchanged input-bound
   evidence honestly; do not claim an old run tested a new input.
-- [ ] Refresh the secret/privacy review and advisories for the final candidate
+- [x] Refresh the secret/privacy review and advisories for the final candidate
   and artifact. Include new commits/merge resolutions and changed images/notices.
-- [ ] Obtain exact-state approval for unsigned **non-fast-forward** integration
+- [x] Obtain exact-state approval for unsigned **non-fast-forward** integration
   into local main; verify resulting parents/tree. Cleanup remains separately gated.
 
 ### P6 — separately approved sanitized publication candidate
 
-- [ ] From the accepted source candidate, propose an exact standalone publication
-  repository, starting ref, omission/replacement filters and metadata treatment.
-  Preserve the private original and use no destructive operation on its refs.
-- [ ] After specific approval, sanitize only that isolated public-history copy;
+- [x] Propose and obtain exact approval for an isolated publication copy, selected
+  lineage and narrowly scoped filters. A later separately approved one-time main
+  cutover preserved the exact old tip under the named private backup branch.
+- [x] After specific approval, sanitize only that isolated public-history copy;
   retain the commit mapping privately. Do not publish archive tags, backups,
   unmerged branches, diagnostic refs or private audit reports.
-- [ ] Verify both current files and reachable public history against the approved
+- [x] Verify both current files and reachable public history against the approved
   inventory, scan merge-inclusive history, inspect retained images/metadata and
   confirm notices/credit. A cleanup commit alone is insufficient.
-- [ ] Verify the public candidate's application inputs against the accepted build.
+- [x] Verify the public candidate's application inputs against the accepted build.
   If filters change application inputs, reassess/rerun the affected acceptance.
   Bind release evidence to the sanitized source/artifact, not only private IDs.
-- [ ] Agree future canonical-development/cutover handling before publication: never
+- [x] Agree future canonical-development/cutover handling before publication: never
   merge unsanitized private ancestry back into public main. Do not silently start
   a permanent publication-mirror maintenance scheme.
 - [ ] Present exact repository settings/actions, public commit, tag **v0.1.0**,
@@ -419,18 +445,20 @@ not come from the builder's platform. Packaging success is not portability proof
 
 ## Unknowns and stop conditions
 
-- The owner has reviewed categories, but the exact privacy-filter inventory is
-  not approved. Omission alone must not leave historical copies or broken links.
-- The proposed hosted macOS runner/architecture is not yet verified; the owner
-  has no Mac. File-based Node code is not evidence for native PTY/TTY/filesystem
-  behavior. Keep the hosted check small and do not claim untested architectures.
-- Final no-auth transport/conflicts and declarative service opt-out require review;
-  bypassing web login must not grant browser-SSH authentication authority.
-- Fixed modular Undici does not prove SDK bundle remediation. Escalate unresolved
-  release risk instead of hiding warnings or broadening overrides.
-- Actual artifact licensing and dependency resolution remain unverified. Stop for
-  an incompatible license/source obligation or a failed portability spike.
-- The public repository and its private-reporting setting are not remotely verified.
+- Newly discovered private material needs owner review, not an expanded automatic
+  filter. The accepted ordinary personal paths are not cleanup failures.
+- Official runner documentation identifies `macos-15` as Apple Silicon; Intel has
+  a separate label. Standard public-runner compute is free; artifact storage has
+  separate allowances. No native macOS job has run, so PTY/TTY/filesystem behavior
+  and any additional architecture remain unverified.
+- Preserve the verified no-auth/SSH boundary and exact SDK ownership/bundle guards;
+  dependency changes require reassessment, not hidden warnings or broad overrides.
+- Packed notices/source checks and Linux installation passed within their stated
+  scope; stop for any concrete new license/source or portability problem, without
+  inventing a legal-certification requirement.
+- GitHub returned not found through the selected account. Repository permissions,
+  private-reporting settings, CI availability and published source URLs remain
+  unverified; creation and every remote mutation still require approval.
 
 ## Non-Goals
 
@@ -445,8 +473,10 @@ Keep the existing credential format and private backups; never delete credential
 as an auth opt-out or recovery mechanism. Switching back from no-auth re-enables
 normal credential checks. A default-policy change needs explicit operator guidance;
 no deployment/restart is implicit. Retain failed artifacts/logs under existing
-bounded cleanup policy. Sanitization runs only in a separate approved copy; abandon
-that candidate rather than rewrite or reset the original to recover. Remote
+bounded cleanup policy. Sanitization was performed in an isolated copy before the
+separately approved main cutover. The exact old main remains under the private
+backup branch; recovery requires explicit operator direction, never a forced reset
+or merging its private ancestry into public main. Remote
 publication, once approved, may be difficult to retract; never treat later deletion
 as proof that disclosed history or downloaded artifacts have disappeared.
 
@@ -454,13 +484,13 @@ as proof that disclosed history or downloaded artifacts have disappeared.
 
 - [ ] Owner approves the plan and exact privacy omissions/replacements; outstanding
   platform, threat/default and advisory decisions have explicit dispositions.
-- [ ] Portable default-on authentication and intentional any-bind bypass are
+- [x] Portable default-on authentication and intentional any-bind bypass are
   implemented and verified without weakening unrelated authorization boundaries.
-- [ ] 0.1.0 identity/docs/notices are coherent; automatic demo deployment is absent;
+- [x] 0.1.0 identity/docs/notices are coherent; automatic demo deployment is absent;
   approved branding remains; Nix guidance is declarative.
 - [ ] Exact tarball passes non-Nix Linux and real-macOS smoke checks; actual platform
   scope, dependency inventory, notices and checksum are recorded.
-- [ ] Full settled-candidate Nix acceptance passes; exact-state local integration
+- [x] Full settled-candidate Nix acceptance passes; exact-state local integration
   has its own approval/receipt. No old evidence is represented as a new run.
 - [ ] Sanitized public history/artifact pass review, and future-development handling
   is agreed. Repository/private-reporting enablement and each remote release action

@@ -19,6 +19,25 @@ this is not an upstream release.
   See [portable installation](portable-installation.md). It is not installed as
   a dependency of another npm project.
 
+## Local public-history boundary
+
+The existing checkout's `main` is the cleaned public lineage. The isolated
+`brabbler-public` copy was staging, not a permanent publication mirror. The old
+main is retained locally as `backup/private-main-before-public-release`; it and
+older worktree branches remain private.
+
+Start public features from the current cleaned `main`. Do not merge or blindly
+rebase old private branches into it; replay only the reviewed feature changes.
+Publish only the exact approved main/tag refs, never all branches, all tags or a
+mirror. Do not publish the backup, old worktrees or private rewrite/evidence maps.
+The one-time owner-approved history cutover does not change the normal feature
+worktree/non-fast-forward integration policy.
+
+Historical documents/examples can retain original commit IDs and local file
+references that a public-only clone cannot resolve. They are historical records,
+not new proof or authority. Never substitute current files for an unavailable
+immutable snapshot; review any repair under the [notebook guide](review-notebooks.md).
+
 ## Build and verify
 
 Production application builds run only inside isolated Nix builders. From the
@@ -104,11 +123,13 @@ Before publication:
    advisory evidence; a clean npm lock audit is not a bundled-code clearance.
    Verify both application/source checksums, included notice bodies and the real
    published source URL. A proposed locator is not proof of remote availability.
-3. Approve exact privacy filters and prepare/verify a separate sanitized public
-   history copy. Preserve private originals; never push all branches, tags or a
-   mirror. Current-tree cleanup alone does not remove historical disclosures.
-4. Agree the future canonical development/cutover path so unsanitized ancestry
-   cannot be merged back into public history.
+3. Preserve the approved history cleanup: the early October 21 notebook plan is
+   omitted at both historical filenames, and the internal hostname is replaced.
+   Names, personal paths, other plans, messages and attribution were deliberately
+   retained. The verified isolated candidate was installed as local `main` only
+   after backing up the original; current-tree deletion alone would not suffice.
+4. Preserve the local public-history boundary above. Any newly discovered private
+   material needs its own review, not a broader automatic filter.
 5. Separately approve repository creation/settings (including GitHub private
    vulnerability reporting), CI dispatch and each exact push/tag/release upload.
    [SECURITY.md](../SECURITY.md) describes reporting, not verified remote settings.
