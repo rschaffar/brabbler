@@ -24,7 +24,7 @@ export const scenarios = {
   "state": ["state/api-append-accounts@service", "state/agents-reload@default", "state/durable-account@default"],
   "history": ["history/reading-branch-native-v8@legacy-desktop", "history/reading-version-lower-v7@legacy-mobile"],
   "extension-dialogs": ["extension-dialogs/wrap-native-publication-v2@legacy-desktop", "extension-dialogs/compact-wrap-native-v2@legacy-mobile"],
-  "mobile-sidebar": ["mobile-sidebar/compact-search-native-rename-restore-move-v3@legacy-mobile"],
+  "mobile-sidebar": ["mobile-sidebar/compact-search-native-rename-restore-move-v4@legacy-mobile"],
   "worktrees": ["worktrees/native-loss-bound-review-v3@en-desktop", "worktrees/modal-review-layout-v2@en-mobile-tall"],
   "session-launch": ["session-launch/feedback-and-independent-native-v2@en-desktop", "session-launch/independent-native-compact-v2@en-mobile-tall"],
   "running-forks": ["running-forks/canonical-quote-stop-v2@en-desktop", "running-forks/first-user-quote-stop-v2@en-mobile-tall"],

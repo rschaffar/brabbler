@@ -64,7 +64,7 @@ source-derived inventory and fresh receipts; the historical baseline stays intac
 | `state` | Installed-launcher rejection of reserved revalidation headers, API pagination/errors, externally appended JSONL, account validation/redaction/defaults/concurrent writes, live AGENTS reload and dependent durable account selection/deletion |
 | `history` | Version reload, session/mobile identity, observer pagination/node identity, recovery acknowledgement, rendering/thinking/compaction, flat/nested/write/edit argument views, full/raw clipboard access, escaped strings, keyboard/mobile geometry and synthetic partial-input completion/handoff, minimap and reading/branch cancellation chain; short/overflow bottom-on-send without artificial padding, committed streaming follow and scroll-up/down/button detach/reattach; immediate empty New with restrictive saved presets, literal unsent-text/session reload and navigation, provisional-draft recovery after reload before acknowledgement without creation replay, explicit desktop New/modal focus and mobile model filtering through simulated keyboard shrink/pan/late IME settling |
 | `extension-dialogs` | Complete inline extension select/input/editor dialogs, keyboard/focus/expiry and retained receipts |
-| `mobile-sidebar` | Compact action geometry/keyboard, archive/search scopes, reconciled inline restore and subsequent project move |
+| `mobile-sidebar` | Compact action geometry/keyboard, archive/search scopes, reconciled inline restore, live RPC readiness and acknowledged subsequent project move |
 | `worktrees` | Management inventory, paging, trust boundaries, stale/lost preparation recovery and bounded cleanup receipts |
 | `session-launch` | Real SDK tool, exact approvals/settings, independent faux-provider sessions and receipt navigation |
 | `running-forks` | Newly submitted live-prompt forks without reload using a faux-provider turn, plus historical/root/quoted forks while the original SDK extension waits for input; real Ask-here caret/typing with retained draft suffixes, streaming action-row geometry and visible Stop with a simulated mobile keyboard |
@@ -89,6 +89,16 @@ source-derived inventory and fresh receipts; the historical baseline stays intac
 | `terminal` | Real shell/PTY, retained Nerd/System families with shared mono base/bold weights, live palette/font-size changes without PTY/SSE replacement, coarse-touch portrait modifier/arrow input, reconnect/restart/exit, creation cancellation and workspace/Explorer coexistence |
 
 Keyboard simulations verify Chromium layout/focus and preserve the same filter node/value; they do not certify native iOS/Android keyboards, Safari or installed-PWA behavior. Physical keyboard/IME/device verification remains separately reported.
+
+The mobile sidebar's `compact-search-native-rename-restore-move-v4` chain retains
+all prior assertions, but waits for the restored session's live idle RPC state
+through the existing read-only agent endpoint before dispatching Move. An archive
+marker, context response or empty running list does not prove startup completion.
+The exact native move response/body is joined and checked before waiting for the
+dialog to close. Controlled helper tests hold readiness and acknowledgement
+independently and preserve combined click/body failures; the installed chain still
+proves the real relocation and sidebar refresh. No startup guard is bypassed, no
+move is retried, and the existing 30-second waiter deadline is unchanged.
 
 Preserve distinct viewport heights/locales/preferences, not just desktop/mobile
 widths. History desktop acknowledges recovery before fresh mobile checks it;

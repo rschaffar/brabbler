@@ -2,6 +2,37 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { waitForAsyncCondition } from "./async-condition.mjs";
+import { sessionLaunchIdle } from "./session-launch.mjs";
+
+/** Join live RPC readiness, one native move and its full acknowledgement. */
+export async function moveSessionWhenReady(page, dialog, { sessionId, cwd }, { waitUntil = waitForAsyncCondition } = {}) {
+  // Header/context restoration does not mean its replacement RPC owner is ready.
+  // This existing probe only reads state; it never lazily starts an agent.
+  await waitUntil(page, sessionLaunchIdle, sessionId);
+  const responseRead = page.waitForResponse(response => {
+    const request = response.request();
+    if (request.method() !== "POST" || new URL(response.url()).pathname !== `/api/sessions/${encodeURIComponent(sessionId)}/move`) return false;
+    const body = request.postDataJSON();
+    return body?.cwd === cwd && Object.keys(body).length === 1;
+  }).then(async response => ({ status: response.status(), body: await response.json() }));
+  // Observe rejection immediately, and join the admitted body even if click fails.
+  const responseOutcome = responseRead.then(value => ({ ok: true, value }), error => ({ ok: false, error }));
+  let action = { ok: true };
+  try { await dialog.getByRole("button", { name: "Move", exact: true }).click(); }
+  catch (error) { action = { ok: false, error }; }
+  const received = await responseOutcome;
+  const failures = [];
+  if (!action.ok) failures.push(action.error);
+  if (!received.ok) failures.push(received.error);
+  if (failures.length === 1) throw failures[0];
+  if (failures.length) throw new AggregateError(failures, "Move action and acknowledgement failed");
+  const { status, body } = received.value;
+  assert.equal(status, 200, `Move acknowledgement failed: ${JSON.stringify(body).slice(0, 512)}`);
+  assert.equal(body.ok, true, "Move acknowledgement must confirm success");
+  assert.ok(Array.isArray(body.movedIds) && body.movedIds.includes(sessionId), "Move acknowledgement must include the selected session");
+  await dialog.waitFor({ state: "detached" });
+}
 
 export async function waitForMoveControl(page, selector) {
   // A newly opening picker can be absent on the first poll. Absence is not ready.

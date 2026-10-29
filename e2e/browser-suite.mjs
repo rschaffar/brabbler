@@ -39,7 +39,7 @@ import { checkRunningSessionForks } from "./running-session-forks.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { contextContents, changedContextContents } from "./git-diff-context.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
-import { checkSessionMovePicker } from "./session-move.mjs";
+import { checkSessionMovePicker, moveSessionWhenReady } from "./session-move.mjs";
 import { checkGitWorkflowPluginNativeBridge, gitPluginFixtureSource } from "./git-workflow-plugin.mjs";
 import { checkSessionLaunch, sessionLaunchFixtureSource } from "./session-launch.mjs";
 import { checkWorktreeManager } from "./worktree-manager.mjs";
@@ -1499,7 +1499,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "mobile-sidebar") {
-      await coverage.run(`mobile-sidebar/compact-search-native-rename-restore-move-v3@${inputId}`, async () => {
+      await coverage.run(`mobile-sidebar/compact-search-native-rename-restore-move-v4@${inputId}`, async () => {
       await page.goto(`${base}/?session=${ARCHIVE}`, { waitUntil: "domcontentloaded" });
       await page.getByText("E2E archive fixture", { exact: true }).first().waitFor();
       await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
@@ -1598,8 +1598,7 @@ let nativeToolsFixture;
       const moveDialog = page.getByRole("dialog", { name: "Move to project…" });
       await moveDialog.getByLabel("Destination project").click();
       await moveDialog.locator(`button[role="option"][data-value="${otherProject}"]`).click();
-      await moveDialog.getByRole("button", { name: "Move", exact: true }).click();
-      await moveDialog.waitFor({ state: "detached" });
+      await moveSessionWhenReady(page, moveDialog, { sessionId: ARCHIVE, cwd: otherProject });
       // Moving the open chat now retargets its replacement working context to
       // the confirmed destination (also safe when the source has vanished).
       // Verify the refreshed destination list, not disappearance from a source
