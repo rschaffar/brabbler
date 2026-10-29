@@ -205,7 +205,9 @@ let
     '';
   coreProgram = program "core";
   coreCheckProgram = program "check";
-  mkCore = { args ? [ ], runId ? "" }: pkgs.runCommand "brabbler-core-checks" { inherit runId; } ''
+  mkCore = { args ? [ ], runId ? "" }:
+    assert import ./metadata-checks.nix { inherit pkgs; };
+    pkgs.runCommand "brabbler-core-checks" { inherit runId; } ''
     set -euo pipefail
     umask 077
     # Keep failures in the ACTUAL build tree for --keep-failed, not /tmp.

@@ -11,9 +11,12 @@
       linuxSystems = [ "x86_64-linux" "aarch64-linux" ];
       forSystems = selected: f: nixpkgs.lib.genAttrs selected
         (system: f (import nixpkgs { inherit system; }));
+      # Evaluation-only checks must not read metadata from a filtered store copy:
+      # --no-build may calculate its path without materialising that copy.
+      manifest = builtins.fromJSON (builtins.readFile ./package.json);
       sources = pkgs: import ./nix/sources.nix { inherit (pkgs) lib; root = ./.; };
       modules = pkgs: import ./nix/modules.nix {
-        inherit pkgs;
+        inherit pkgs manifest;
         nodejs = pkgs.nodejs_24;
         src = (sources pkgs).manifests;
       };
@@ -88,13 +91,14 @@
     in {
       packages = forSystems systems (pkgs: rec {
         brabbler = pkgs.callPackage ./nix/package.nix {
+          inherit manifest;
           src = (sources pkgs).application;
           nodejs = pkgs.nodejs_24;
           modules = modules pkgs;
           thirdPartySources = brabbler-sources;
         };
         brabbler-sources = pkgs.callPackage ./nix/third-party-sources.nix {
-          version = (builtins.fromJSON (builtins.readFile ./package.json)).version;
+          version = manifest.version;
         };
         brabbler-tarball = brabbler.tarball;
         default = brabbler;
