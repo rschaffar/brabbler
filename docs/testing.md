@@ -78,6 +78,15 @@ The deployment suite does not repeat the browser inventory. See
 [browser and deployment acceptance](../e2e/README.md) and
 [ADR 0025](adr/0025-browser-and-deployment-acceptance.md).
 
+GitHub CI runs core/static/plugin and browser/terminal acceptance on independent
+hosted runners. It does not build or run the deployment VM: that image's UID
+namespace requirements are not supported by the current hosted-runner setup.
+Keep the Home Manager module and genuine deployment check available locally with
+`nix run .#test -- service`. Complete local acceptance (`all` or `nix flake check`)
+still includes all three levels; a green GitHub CI run alone is not complete
+Home Manager deployment evidence. Do not relax sandboxing or substitute the host
+service to make hosted CI pass.
+
 Package and tests share a manifest/toolchain/platform-keyed dependency output,
 including native `node-pty`. Application, test and manifest filesets are separate:
 documentation/test-only edits do not rebuild the application; ordinary application-
@@ -554,8 +563,9 @@ Do not append Node concurrency flags to `npm test`; aliases delegate to Nix.
 core only when aggregate CPU/memory headroom includes internal realization peaks.
 Otherwise levels serialize without reducing coverage or inflating deadlines.
 `selection.json` records this estimate. A peer failure aborts/awaits the owned peer;
-service cannot start after a browser failure. CI runs the three checks on independent
-machines. Budgets are estimates, not reservations or hard partitions. One owner
+service cannot start after a browser failure. GitHub CI runs only core and browser
+checks on independent machines; deployment remains a local check. Budgets are
+estimates, not reservations or hard partitions. One owner
 coordinates source export and concurrent runs; pause writers during export, then
 execute from the verified snapshot. Keep deliberate contention separate.
 
