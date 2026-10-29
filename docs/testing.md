@@ -86,6 +86,15 @@ only edits do not reinstall dependencies. The manifest set also includes both
 must invalidate the patched dependency output. Production builds receive a private
 physical dependency copy inside the builder; runtime/core use the immutable output.
 
+Evaluation-only CI preflight (`nix flake check --no-build --no-write-lock-file`)
+must also work before filtered source copies exist in the store. The flake reads
+package metadata from its original pinned input and passes it to the application
+and runtime-module recipes; filtered filesets remain their build inputs.
+`nix/metadata-checks.nix` exercises both actual recipes with an explicitly forbidden
+source thunk, so a warm store cannot mask metadata reads through that source. Its
+pure assertions guard both cacheable and fresh core definitions. This does not
+clear caches, rebuild unchanged prerequisites or alter fresh test execution.
+
 `nix/static-checks.nix` binds reusable **Next typegen + tsc** and **lint** evidence
 separately to their declared inputs, dependencies, toolchain and check recipe.
 `nix/sources.nix` retains the application tree/assets/configuration for typegen

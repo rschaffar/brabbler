@@ -1,10 +1,10 @@
-{ pkgs, nodejs, src }:
+{ pkgs, nodejs, src, manifest }:
 let
   npmHooks = pkgs.npmHooks.override { inherit nodejs; };
 in
 pkgs.stdenv.mkDerivation {
   pname = "brabbler-node-modules";
-  version = (builtins.fromJSON (builtins.readFile (src + "/package.json"))).version;
+  version = manifest.version;
   inherit src nodejs;
   npmDeps = import ./npm-deps.nix { inherit (pkgs) fetchNpmDeps; inherit src; };
   npmRebuildFlags = [ "node-pty" ];

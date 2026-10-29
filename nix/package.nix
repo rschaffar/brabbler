@@ -1,7 +1,4 @@
-{ lib, stdenv, makeWrapper, nodejs, git, util-linux, noto-fonts, src, modules, thirdPartySources }:
-let
-  manifest = builtins.fromJSON (builtins.readFile (src + "/package.json"));
-in
+{ lib, stdenv, makeWrapper, nodejs, git, util-linux, noto-fonts, src, manifest, modules, thirdPartySources }:
 stdenv.mkDerivation {
   pname = "brabbler";
   version = manifest.version;
