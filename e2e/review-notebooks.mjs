@@ -4,6 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createOwnedRoutes } from "./owned-routes.mjs";
 import { checkGuidedReviewWorkflow } from "./guided-review-workflow.mjs";
+import { checkNotebookPaneLayout } from "./notebook-pane-layout.mjs";
 
 const fence = value => "```brabbler-review\n" + JSON.stringify(value, null, 2) + "\n```";
 export function seedReviewNotebooks({ gitProject, targetWorktree, env, writeSession, message }) {
@@ -235,6 +236,13 @@ export async function checkReviewNotebooks(page, { base, fixture: f }) {
       await range.getByRole("group", { name: "File version", exact: true }).getByRole("button", { name: mode, exact: true }).click();
       await range.getByRole("region", { name: `${mode} file`, exact: true }).waitFor();
     }
+    const configuredDiff = await range.getByRole("region", { name: "After file", exact: true }).elementHandle();
+    const beforeHide = requests.length;
+    const evidenceToggle = guided.getByRole("group", { name: "Notebook layout", exact: true }).getByRole("button", { name: "Evidence", exact: true });
+    await evidenceToggle.click(); await evidenceToggle.click();
+    assert.equal(await configuredDiff.evaluate(node => node === document.querySelector('.guided-evidence-area [aria-label="After file"]')), true, "configured diff renderer survives hide/show");
+    await range.getByRole("button", { name: "Diff context", exact: true }).waitFor();
+    assert.equal(requests.length, beforeHide, "hide/show retains loaded diff context without reads");
     await range.getByRole("group", { name: "File version", exact: true }).getByRole("button", { name: "Changes", exact: true }).click();
     await range.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
     assert.ok(requests.some(url => url.searchParams.get("op") === "compare-context" && url.searchParams.get("base") === f.prior && url.searchParams.get("candidate") === f.oid && url.searchParams.get("path") === "z-context.txt"));
@@ -247,6 +255,9 @@ export async function checkReviewNotebooks(page, { base, fixture: f }) {
     const imageBounds = await image.boundingBox();
     assert.ok(imageBounds && imageBounds.x >= 0 && imageBounds.x + imageBounds.width <= page.viewportSize().width + 1, "selected image stays inside Files");
     assert.equal(assetRequests.filter(url => url.searchParams.get("index") === f.guidedIndex && url.searchParams.get("asset") === "assets/pixel.png").length, 1);
+    const layoutReads = [requests.length, assetRequests.length];
+    await checkNotebookPaneLayout(page, guided);
+    assert.deepEqual([requests.length, assetRequests.length], layoutReads, "presentation changes do not reload evidence");
     await activate(guided.getByRole("button", { name: "Next", exact: true }));
     await guided.getByRole("heading", { name: "Check the failure boundary", exact: true }).waitFor();
     assert.equal(await guided.locator('[aria-current="step"]').textContent(), "Check the failure boundary");

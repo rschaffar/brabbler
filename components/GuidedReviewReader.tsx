@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { parseNotebookIndex, stepProse, type Evidence, type GuidedNotebook, type GuidedStep } from "@/lib/guided-review";
 import { getFileDirectory } from "@/lib/file-paths";
 import type { OpenFileLink } from "@/lib/file-links";
@@ -16,6 +16,8 @@ import { FileMarkdownBody } from "./FileMarkdownBody";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import { DelimitedTable } from "./DelimitedTable";
 import { NotebookReviewPanel } from "./NotebookReviewPanel";
+import { NotebookPaneDivider, NOTEBOOK_DEFAULT_SHARE } from "./NotebookPaneDivider";
+import { useI18n } from "@/hooks/useI18n";
 import type { EvidenceSelection, ReviewBatchDraft, ReviewChatDestination } from "@/lib/review-handoff";
 export interface NotebookChatProps { reviewDraftOwner?: string; reviewDestination?: ReviewChatDestination; onReviewBatchDraft?: ReviewBatchDraft }
 
@@ -60,6 +62,10 @@ export function GuidedReviewReader(props: ReaderProps) {
 function ActiveGuidedReviewReader({ indexPath, cwd, onClose, onOpenFile, onWork, reviewDestination, onReviewBatchDraft, reviewDraftOwner }: ReaderProps) {
   const [notebook, setNotebook] = useState<GuidedNotebook | null>(null), [error, setError] = useState<string | null>(null);
   const [position, setPosition] = useState(0), [retry, setRetry] = useState(0);
+  const { t } = useI18n(), layoutId = useId();
+  const [panes, setPanes] = useState({ outline: true, explanation: true, evidence: true });
+  const [share, setShare] = useState(NOTEBOOK_DEFAULT_SHARE);
+  const revealEvidence = () => setPanes(p => p.evidence ? p : { ...p, evidence: true });
   const [readingState, setReadingState] = useState(() => new GuidedReaderState());
   const workObserver = useRef(onWork); workObserver.current = onWork;
   useEffect(() => {
@@ -92,30 +98,43 @@ function ActiveGuidedReviewReader({ indexPath, cwd, onClose, onOpenFile, onWork,
       <span>{current ? `${position + 1} / ${steps.length}` : ""}</span>
       <button type="button" className="git-diff-control" disabled={!current || position === steps.length - 1} onClick={() => setPosition(p => p + 1)}>Next</button>
     </div>
-    {error ? <p role="alert">{error} <button type="button" onClick={() => { setReadingState(new GuidedReaderState()); setRetry(p => p + 1); }}>Retry</button></p> : !notebook ? <p role="status">Loading declared chapters…</p> : <div className="guided-reader-layout">
-      <nav aria-label="Chapters and steps" className="guided-outline">{notebook.chapters.map(chapter => <div key={chapter.id}>
+    {notebook && <div className="guided-layout-controls" role="group" aria-label={t("notebook.layout")}>
+      {(["outline", "explanation", "evidence"] as const).map(pane => <button key={pane} type="button" className="git-diff-control"
+        aria-pressed={panes[pane]} aria-controls={`${layoutId}-${pane}`} onClick={() => setPanes(p => ({ ...p, [pane]: !p[pane] }))}>{t(`notebook.${pane}`)}</button>)}
+      <button type="button" className="git-diff-control" onClick={() => { setPanes({ outline: true, explanation: true, evidence: true }); setShare(NOTEBOOK_DEFAULT_SHARE); }}>{t("notebook.resetLayout")}</button>
+    </div>}
+    {error ? <p role="alert">{error} <button type="button" onClick={() => { setReadingState(new GuidedReaderState()); setRetry(p => p + 1); }}>Retry</button></p> : !notebook ? <p role="status">Loading declared chapters…</p> : <div className={`guided-reader-layout${panes.outline ? "" : " is-outline-hidden"}`}>
+      <nav id={`${layoutId}-outline`} hidden={!panes.outline} aria-label="Chapters and steps" className="guided-outline">{notebook.chapters.map(chapter => <div key={chapter.id}>
         <strong>{chapter.title}</strong><ol>{chapter.steps.map(step => <li key={step.id}><button type="button"
           aria-current={step.id === current?.step.id ? "step" : undefined} onClick={() => setPosition(steps.findIndex(item => item.step.id === step.id))}>{step.title}</button></li>)}</ol>
       </div>)}</nav>
       {current && <StepReader key={`${indexPath}:${current.step.id}`} indexPath={indexPath} chapterPath={current.chapter.path} step={current.step}
-        cwd={cwd} onOpenFile={onOpenFile} onWork={onWork} readingState={readingState} onSelection={onSelection} onDisplayed={onDisplayed} />}
+        cwd={cwd} onOpenFile={onOpenFile} onWork={onWork} readingState={readingState} onSelection={onSelection} onDisplayed={onDisplayed}
+        layout={{ id: layoutId, ...panes, share, setShare, revealEvidence }} />}
     </div>}
     {current && <NotebookReviewPanel draftOwner={reviewDraftOwner} displayedAssets={displayed?.stepId === current.step.id ? displayed.assets : current.step.targets.filter(t => t.kind === "file").map(target => ({ target, contentDigest: null }))} onStepAnchor={() => onSelection(current.step.id)} indexPath={indexPath} step={current.step} selection={selection?.stepId === current.step.id ? selection : null} destination={reviewDestination} onDraftBatch={onReviewBatchDraft} onWork={onWork} knownSteps={steps.map(s => ({ id: s.step.id, targets: s.step.targets.map(t => t.id) }))}
       onResume={stepId => { const p = steps.findIndex(s => s.step.id === stepId); if (p >= 0) setPosition(p); }} />}
   </section>;
 }
-function StepReader({ indexPath, chapterPath, step, cwd, onOpenFile, onWork, readingState, onSelection, onDisplayed }: {
+type NotebookLayout = { id: string; explanation: boolean; evidence: boolean; share: number; setShare: (value: number) => void; revealEvidence: () => void };
+function StepReader({ indexPath, chapterPath, step, cwd, onOpenFile, onWork, readingState, onSelection, onDisplayed, layout }: {
   indexPath: string; chapterPath: string; step: GuidedStep; cwd?: string; onOpenFile?: OpenFileLink; onWork?: WorkObserver; readingState: GuidedReaderState; onSelection: (stepId: string, target?: Evidence, selection?: EvidenceSelection) => void;
   onDisplayed: (stepId: string, assets: { target: Evidence; contentDigest: string | null }[]) => void;
+  layout: NotebookLayout;
 }) {
+  const { t } = useI18n();
   const savedStep = readingState.step(step.id, step.targets[0]?.id ?? "");
   const [primary, setPrimary] = useState(savedStep.primary), [secondary, setSecondary] = useState(savedStep.secondary);
   const [snapshots, setSnapshots] = useState<{ key: string; contentDigest: string | null }[]>([]), [evidenceRevision, setEvidenceRevision] = useState(0);
   const [exploration, setExploration] = useState<Evidence | null>(null), heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => { heading.current?.focus(); }, []);
+  const stepRoot = useRef<HTMLDivElement>(null), initialExplanation = useRef(layout.explanation);
+  useEffect(() => { (initialExplanation.current ? heading.current : stepRoot.current)?.focus(); }, []);
   const folder = getFileDirectory(indexPath), chapterDirectory = getFileDirectory(`${folder}/${chapterPath}`);
   const explore: OpenFileLink = (path, ...args) => {
-    if (path.startsWith(`${folder}/`) && isNotebookAssetPath(path)) setExploration({ version: 1, kind: "file", id: "exploration", title: "Exploring working file", path: path.slice(folder.length + 1) });
+    if (path.startsWith(`${folder}/`) && isNotebookAssetPath(path)) {
+      layout.revealEvidence();
+      setExploration({ version: 1, kind: "file", id: "exploration", title: "Exploring working file", path: path.slice(folder.length + 1) });
+    }
     else onOpenFile?.(path, ...args);
   };
   const target = (id: string) => step.targets.find(target => target.id === id);
@@ -130,14 +149,23 @@ function StepReader({ indexPath, chapterPath, step, cwd, onOpenFile, onWork, rea
   const assets = visibleEvidence.filter(t => t.kind === "file").map(t => ({ generation: evidenceRevision, target: t, contentDigest: snapshots.find(s => s.key === `${evidenceRevision}:${JSON.stringify(t)}`)?.contentDigest ?? null }));
   const assetsKey = JSON.stringify(assets);
   useEffect(() => { onDisplayed(step.id, JSON.parse(assetsKey)); }, [step.id, assetsKey, onDisplayed]);
-  return <div className="guided-step">
-    <article className="guided-prose markdown-body" onMouseUp={event => captureText(event.currentTarget)} onKeyUp={event => captureText(event.currentTarget)}>
+  return <div className="guided-step-container">
+    <div className="guided-split-controls" hidden={!layout.explanation || !layout.evidence} role="group" aria-label={t("notebook.resize")}>
+      <button type="button" className="git-diff-control" disabled={layout.share <= 20} onClick={() => layout.setShare(Math.max(20, layout.share - 10))}>{t("notebook.moreEvidence")}</button>
+      <button type="button" className="git-diff-control" disabled={layout.share >= 80} onClick={() => layout.setShare(Math.min(80, layout.share + 10))}>{t("notebook.moreExplanation")}</button>
+    </div>
+    <div ref={stepRoot} tabIndex={-1} aria-label={step.title} className="guided-step" data-split={layout.explanation && layout.evidence}
+      style={{ "--guided-prose-share": `${layout.share}fr`, "--guided-evidence-share": `${100 - layout.share}fr` } as CSSProperties}>
+    {!layout.explanation && !layout.evidence && <p role="status">{t("notebook.hiddenPanes")}</p>}
+    <article id={`${layout.id}-explanation`} hidden={!layout.explanation} className="guided-prose markdown-body" onMouseUp={event => captureText(event.currentTarget)} onKeyUp={event => captureText(event.currentTarget)}>
       <h2 ref={heading} tabIndex={-1}>{step.title}</h2>
       <FileMarkdownBody markdown={stepProse(step.markdown)} baseDir={chapterDirectory} relativeRoot={cwd ?? folder} onOpenFile={explore} images={false} reviewCards={false} onWork={onWork} />
       <button type="button" onMouseDown={event => event.preventDefault()} onClick={event => captureText(event.currentTarget.parentElement!)}>Anchor selected prose text</button>
       <button type="button" className="git-diff-control" onClick={() => { setExploration(null); heading.current?.focus(); }}>Return to current step</button>
     </article>
-    <div className="guided-evidence-area">
+    <NotebookPaneDivider value={layout.share} onChange={layout.setShare} hidden={!layout.explanation || !layout.evidence}
+      controls={`${layout.id}-explanation ${layout.id}-evidence`} />
+    <div id={`${layout.id}-evidence`} hidden={!layout.evidence} className="guided-evidence-area">
       <div className="guided-target-controls">
         <label>Evidence <select aria-label="Evidence target" value={primary} onChange={event => { const next = event.target.value; setPrimary(next); savedStep.primary = next; if (secondary === next) { setSecondary(""); savedStep.secondary = ""; } setExploration(null); }}>
           {!step.targets.length && <option value="">No evidence targets</option>}{step.targets.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
@@ -155,6 +183,7 @@ function StepReader({ indexPath, chapterPath, step, cwd, onOpenFile, onWork, rea
           </div>
         </section>)}
       </div>
+    </div>
     </div>
   </div>;
 }
