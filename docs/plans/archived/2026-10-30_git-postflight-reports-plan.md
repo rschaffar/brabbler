@@ -6,9 +6,9 @@ Reduce unnecessary agent verification round-trips by returning fresh, scoped Git
 observations in the tool result and existing durable outcome receipt. Preserve
 all approval, revalidation, conflict, cleanup and remote-operation boundaries.
 
-Status: implemented and focused-verified. Independent safety and contract/test
-reviews have approved the corrected candidate with no material blockers. Complete
-acceptance and exact integration handoff remain pending.
+Status: implementation, independent reviews and complete acceptance passed.
+The verified candidate is ready for the required exact-state local integration
+and separately gated cleanup; their execution receipts own actual outcomes.
 
 ## Context
 
@@ -109,16 +109,16 @@ hide critical outcome information. No new report is execution authority.
 - [x] Obtain independent implementation safety and test/contract reviews. Resolve
   material findings and re-review changed boundaries until no blocking findings
   remain. Reviewers are read-only; one writer owns the receiving candidate.
-- [ ] Run focused Nix checks while editing, then complete fresh acceptance using
+- [x] Run focused Nix checks while editing, then complete fresh acceptance using
   `nix run .#test -- all --workers 4 --jobs 12` when resource admission supports
   overlap; use the documented four/four fallback with a concrete headroom reason.
   All core/static/plugin, browser/terminal and genuine deployment levels must pass.
   Record source/candidate identity, exact selection, result, artifact paths,
   preparation/execution intervals and complete command wall time.
-- [ ] Reassess any rebase on current local `main`, commit reviewable history and
+- [x] Reassess any rebase on current local `main`, commit reviewable history and
   hand exact-state ordinary unsigned non-FF integration and separate cleanup to
   the applicable Git lifecycle/approval gates. No publication or host deployment.
-- [ ] Move current behavior into the owning guide, finish the completion checklist
+- [x] Move current behavior into the owning guide, finish the completion checklist
   and archive the plan only when its implementation/review/acceptance obligations
   are satisfied; actual Git execution receipts own later integration/cleanup.
 
@@ -142,6 +142,36 @@ physical identity/registration changes, bounded escaped metadata, negative
 no-follow presence, dirty cleanup invocation, index reconciliation and cleanup
 finalizer failure, partial removal and terminal persistence. Both independent
 reviewers approved the corrected source; neither approval is execution authority.
+
+## Complete acceptance and handoff
+
+Candidate `7504b6a19681f8a7b29c4292be80b136c7c7a014`, already up to date with local
+`main`, passed fresh `nix run .#test -- all --workers 4 --jobs 12` on x86_64 Linux:
+**530 core files / 4,419 tests / 14 suites**, all **26 browser/terminal groups**,
+and the genuine Home Manager deployment VM. No skipped/cancelled core tests or
+uncertain owned settlement. Export content/mode digest:
+`68a7e1b2f609a7b27950a277129af004e7648ea932ffa572c6286eefb958359e`.
+
+Command wall time was **658.44s**, including in-run realization. Core invocation
+was 237.859s; browser invocation 336.686s included 84.808s support realization,
+4.458s definition publication and a 247.415s group-client window. Deployment
+invocation was 75.090s including realization; its guest script took 20.11s.
+No separate prewarming or matched speed comparison is claimed.
+
+Actual requested/effective core width was **12/12**, browser width **4**. At
+admission, 32 CPUs and about 41.8 GiB were available, below the roughly 43 GiB
+overlap estimate, so the runner conservatively serialized levels. The invoking
+shell's intended four-core fallback did not survive its pipeline subshell; this
+records the actual twelve/four serial selection, not a four/four or overlapped
+run. It remains complete correctness evidence; no admission guard was bypassed.
+Private source, selection, core/browser/VM reports and failed focused controls
+remain outside the repository.
+
+Owning behavior is documented in `docs/git-workflow-plugin.md`; generic core and
+receipt schemas remain unchanged. The final archive/status delta changes no
+application, test or toolchain inputs. Exact-tip proportional documentation/input
+checks and the Git operation gates own subsequent handoff; neither this archive
+nor reviewer approval claims that a merge, cleanup, publication or deployment ran.
 
 ## Independent review disposition
 
@@ -188,8 +218,8 @@ successful. A missing final receipt remains an uncertain saved outcome.
 - [x] Independent plan and implementation reviews have no unresolved material issue.
 - [x] Merge, commit, rebase and cleanup have truthful, scoped model-visible reports
   shared with durable outcome summaries; success/unknown/partial are distinct.
-- [ ] Relevant native/pure/wiring tests and complete required acceptance pass at
+- [x] Relevant native/pure/wiring tests and complete required acceptance pass at
   identified inputs; failures and proof limits are accurately recorded.
 - [x] Owning documentation and tool guidance agree without weakening safeguards.
-- [ ] Public-safe reviewable feature history and exact integration handoff are ready;
+- [x] Public-safe reviewable feature history and exact integration handoff are ready;
   publication, deployment and cleanup remain separately gated.
