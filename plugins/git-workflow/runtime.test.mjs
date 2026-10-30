@@ -95,11 +95,25 @@ test("real model-issued Git tools select repositories independently of Git and n
     assert.ok(session.getAllTools().filter((tool) => toolNames.includes(tool.name)).every((tool) => tool.exposure === "model-only"));
     const invoke = async (name, args) => {
       expectedCheckout = args.checkout; const id = `${kind}-${++calls}`;
-      let tools;
+      let tools, providerReport;
       faux.setResponses([(context) => {
         tools = getCurrentTools(context.messages);
         return fauxAssistantMessage([fauxToolCall(name, args, { id })], { stopReason: "toolUse" });
-      }, fauxAssistantMessage("Done.")]);
+      }, (context) => {
+        if (["git_commit", "git_rebase", "git_merge"].includes(name)) {
+          const result = context.messages.find(message => message.role === "toolResult" && message.toolCallId === id);
+          assert.ok(result, "next provider request contains the corresponding tool result");
+          const text = result.content.filter(block => block.type === "text").map(block => block.text).join("\n");
+          const line = text.split("\n").find(line => line.startsWith("Postflight report: "));
+          assert.ok(line, "model-visible content, not details/custom receipts, carries the report");
+          providerReport = JSON.parse(line.slice("Postflight report: ".length));
+          assert.equal(providerReport.verification, "verified");
+          assert.match(providerReport.scope, /Selected local refs/);
+          assert.equal(providerReport.checkouts.some(checkout => checkout.path === args.checkout), true);
+          assert.equal(providerReport.commit.oid, git(args.checkout, "rev-parse", "HEAD"));
+        }
+        return fauxAssistantMessage("Done.");
+      }]);
       await session.prompt(`Execute the explicitly selected ${name} operation.`);
       assert.ok(toolNames.every((toolName) => tools.some((tool) => tool.name === toolName)));
       const rebase = tools.find((tool) => tool.name === "git_rebase");
@@ -111,6 +125,11 @@ test("real model-issued Git tools select repositories independently of Git and n
       assert.match(merge.description, /or switch the feature worktree to the target/);
       const result = session.messages.find((message) => message.role === "toolResult" && message.toolCallId === id);
       assert.ok(result, `Missing ${name} result`); assert.equal(result.isError, false, JSON.stringify(result));
+      if (providerReport) {
+        assert.deepEqual(result.details.postflight, providerReport);
+        const receipt = sessionManager.getEntries().findLast(entry => entry.customType === "brabbler:operation-receipt" && entry.data.toolCallId === id);
+        assert.ok(receipt.data.summary.includes(JSON.stringify(providerReport)), "durable summary uses the same report");
+      }
       assert.equal(faux.state.callCount, calls * 2); assert.equal(sessionManager.getCwd(), callerCwd);
     };
     writeFileSync(join(selected, "a"), "selected a\n"); git(selected, "add", "a");

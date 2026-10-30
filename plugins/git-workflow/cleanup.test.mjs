@@ -53,6 +53,76 @@ function nestedFixture(t) {
   return f;
 }
 
+test("postflight distinguishes verified cleanup absence, artifact-only retention and pre-effect refusal", async (t) => {
+  for (const kind of ["complete", "artifacts-only", "refused", "terminal-failure"]) await t.test(kind, async st => {
+    const f = fixture(st); f.artifact("node_modules");
+    if (kind === "refused") { rmSync(join(f.path, "node_modules"), { recursive: true }); symlinkSync(f.repo, join(f.path, "node_modules"), "dir"); }
+    const result = await f.call(kind === "artifacts-only" ? { removeWorktree: false, deleteBranch: false, artifactRoots: ["node_modules"] } : kind === "refused" ? { artifactRoots: ["node_modules"] } : {},
+      kind === "terminal-failure" ? { operationReceipt(_id, receipt) { if (receipt.phase === "succeeded") throw new Error("terminal receipt unavailable"); } } : {});
+    const report = result.details.postflight;
+    if (kind === "refused") {
+      failed(result, /symlink/); assert.equal(report.nativeOutcome, "not-started"); assert.equal(report.verification, "not-run");
+      assert.equal(git(f.repo, "rev-parse", "feature"), f.op.featureTip);
+    } else {
+      if (kind === "terminal-failure") { failed(result, /Terminal receipt could not be persisted/); assert.equal(result.details.receiptPersisted, false); }
+      else passed(result);
+      assert.equal(report.verification, "verified"); assert.equal(report.resources.artifacts.absent, 1);
+      assert.equal(report.resources.worktree.presence, kind === "artifacts-only" ? "present" : "absent");
+      assert.equal(report.resources.branch.presence, kind === "artifacts-only" ? "present" : "absent");
+      assert.equal(report.relationships.integrationReachable, true);
+    }
+  });
+});
+
+test("cleanup postflight preserves dirty invocation files and completed effects across finalizer failure", async (t) => {
+  for (const kind of ["dirty-invocation", "finalizer-failure", "dangling-replacement"]) await t.test(kind, async st => {
+    const f = fixture(st);
+    if (kind === "dirty-invocation") writeFileSync(join(f.repo, "personal-note"), "retain exactly\n");
+    let replaced = false;
+    const result = await f.call({}, kind === "finalizer-failure" ? { reserveDirectory: () => () => { throw new Error("reservation release failed"); } }
+      : kind === "dangling-replacement" ? { operationReceipt(id, receipt) {
+        f.ui.operationReceipt(id, receipt);
+        if (!replaced && receipt.phase === "executing" && receipt.completedEffects.some(effect => effect.startsWith("Deleted local branch:"))) {
+          replaced = true; git(f.repo, "symbolic-ref", "refs/heads/feature", "refs/heads/missing");
+        }
+      } } : {});
+    const report = result.details.postflight;
+    assert.equal(result.details.completed, true); assert.equal(report.nativeOutcome, "completed");
+    assert.equal(report.resources.worktree.presence, "absent");
+    if (kind === "dirty-invocation") {
+      passed(result); assert.equal(report.verification, "verified");
+      assert.equal(report.checkouts[0].status.untracked, 1); assert.equal(readFileSync(join(f.repo, "personal-note"), "utf8"), "retain exactly\n");
+    } else if (kind === "finalizer-failure") {
+      failed(result, /Do not repeat/); assert.equal(report.finalization, "failed");
+      assert.equal(report.resources.branch.presence, "absent");
+    } else {
+      failed(result, /symbolic/); assert.equal(replaced, true); assert.equal(report.verification, "failed");
+      assert.equal(report.resources.branch.presence, "present");
+      assert.equal(git(f.repo, "symbolic-ref", "refs/heads/feature"), "refs/heads/missing");
+    }
+  });
+});
+
+test("partial cleanup reports completed steps separately from present or recreated resources", async (t) => {
+  for (const kind of ["partial-artifacts", "recreated-worktree"]) await t.test(kind, async st => {
+    const f = fixture(st);
+    if (kind === "partial-artifacts") { f.artifact("node_modules"); f.artifact(".next"); }
+    let injected = false;
+    const result = await f.call({}, { operationReceipt(id, receipt) {
+      f.ui.operationReceipt(id, receipt);
+      if (receipt.phase !== "executing" || injected) return;
+      if (kind === "partial-artifacts" && receipt.completedEffects.length === 1) { injected = true; throw new Error("stop after first completed deletion"); }
+      if (kind === "recreated-worktree" && receipt.completedEffects.some(effect => effect.startsWith("Removed worktree:"))) { injected = true; mkdirSync(f.path); }
+    } });
+    assert.equal(injected, true); failed(result, kind === "partial-artifacts" ? /stop after first/ : /did not settle/);
+    const report = result.details.postflight;
+    assert.equal(report.nativeOutcome, "started"); assert.notEqual(report.verification, "verified");
+    assert.equal(report.effects.completed, 1); assert.equal(report.resources.branch.presence, "present");
+    if (kind === "partial-artifacts") { assert.equal(report.resources.artifacts.absent, 1); assert.equal(report.resources.artifacts.present, 1); }
+    else { assert.equal(report.resources.worktree.presence, "present"); assert.equal(report.resources.worktree.registered, false); }
+  });
+});
+
 nestedTest("nested ignored files/directories reach one approval beside tracked source, without settings writes", async (t) => {
   // Native ownership: both shapes and both discovery paths. Permission cross-product lives in resource-rules.test.mjs.
   for (const selection of ["discovered", "explicit"]) for (const kind of ["file", "directory"]) await t.test(`${selection}: ${kind}`, async (st) => {

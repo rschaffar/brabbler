@@ -355,6 +355,63 @@ Native writes have no Stop/disable signal or output-buffer kill. Once started,
 they settle honestly; failures report whether checks/native effects started and
 observed HEAD/status/worktrees, with no rollback, hidden retry or cleanup.
 
+### Post-operation reports
+
+`git_commit`, `git_rebase`, `git_merge` and `git_cleanup` return a versioned,
+plugin-owned `postflight` report in **model-visible tool content** and structured
+details. The same observations populate the existing durable outcome summary;
+the browser card alone is outside model context. Old receipts still render without
+a report. Very large summaries use an explicitly compact rendering with full IDs,
+outcome and counts. Full selected resources remain in the saved exact review;
+full checkout observations remain in the tool result.
+
+Reports separate `nativeOutcome` (completed / started / not-started), finalization,
+`verification` (verified / failed / unavailable / not-run), and terminal receipt
+persistence (`details.receiptPersisted`). A native-success/reporting-failure result
+can be an error with `completed: true`: **do not repeat the mutation**. Already
+collected facts survive a failed final receipt write; saved history can still have
+an uncertain outcome. Partial cleanup distinguishes dispatched/completed steps
+from freshly observed absence, presence or unknown—not proof of intact retention.
+
+Fresh observations are scoped to selected local refs, physical checkouts and
+registrations. They bracket status/object reads with identity, direct-ref and
+registration checks; they do not exclude external writers or promise an atomic
+snapshot. Fresh filter, graft, sparse and hidden-index restrictions remain in force;
+conflict markers are reported rather than treated as eligibility to mutate again.
+Clean status counts staged, unstaged, untracked and conflicted entries but excludes
+ignored artifacts. Metadata comes from captured full object IDs without invoking
+signature verification; `signed` means a signature header exists, not a valid
+signature. Oversized metadata is explicitly marked truncated.
+
+- **Merge:** captured/observed feature and target tips, selected checkout paths and
+  cleanliness, actual no-op/FF/non-FF disposition, parents/tree/author and graph
+  predicates. No-op retains the captured target containing the feature; FF reaches
+  the captured feature from the captured target; a new non-FF result has exactly
+  the ordered captured target/feature parents. Feature-tree equality is informational,
+  not required for a genuinely divergent merge. Only verified merges supply exact
+  `cleanupReady` arguments; they are not cleanup permission.
+- **Commit:** actual commit/tree/parents/author, expected parent/candidate-tree match
+  and residual status counts. A valid partial-file or staged commit can leave
+  unrelated changes without failing verification.
+- **Rebase:** old/new feature tips, captured/observed target, target stability and
+  ancestry, selected checkouts and operation markers. IDs/trees do not establish
+  semantic equivalence or reusable application-test evidence.
+- **Cleanup:** frozen selection counts, completed/attempted steps and lightweight
+  selected-resource presence/ref/registration observations, without another content
+  inventory. Invocation-checkout status is informational; source cleanliness stays
+  scoped to the selected feature worktree. Both positive and negative nested
+  presence observations validate held no-follow ancestors; unsafe or
+  unsupported observations are unknown. Target advancement remains allowed while
+  pinned integration is reachable. No additional deletion or fallback is attempted.
+
+Current verified report facts satisfy routine result verification. Re-read facts
+that are missing, have become stale through intervening work, are task-specific
+(such as saved user data or an unrelated protected ref), or are required separately
+by stronger instructions. Registered target paths can inform the next operation,
+but its own fresh preflight, state revalidation, required checks and permission gate
+remain mandatory. Required-check summaries name their pre-effect execution location;
+they never certify a predicted merged result. No report grants new authority.
+
 ## Browser surfaces and toggle lifecycle
 
 `lib/plugins/registry.ts` is the static server composition root; dependencies point

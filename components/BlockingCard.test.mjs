@@ -252,6 +252,24 @@ test('actual operation expansion separates policy authorization from unknown exe
   assert.equal(h.requests.length, 0, 'an execution receipt never replays an operation');
 });
 
+test('serialized legacy and postflight outcome summaries stay readable and inert', async t => {
+  const h = await packet(t), { OperationReceiptCard } = await h.load('./OperationReceiptCard.tsx');
+  const summaries = [undefined,
+    'merge native outcome: completed; postflight: verified. Selected target and feature observed clean.',
+    'merge native outcome: completed; postflight: unavailable. Do not repeat the operation.',
+    'cleanupFeature native outcome: started; postflight: not-run. Completed one step; remaining resource present.'];
+  for (const [index, summary] of summaries.entries()) {
+    const receipt = JSON.parse(JSON.stringify({ ...operation(), phase: index === 3 ? 'failed' : 'succeeded', ...(summary ? { summary } : {}) }));
+    await h.render(createElement(OperationReceiptCard, { receipt }));
+    const collapsed = h.view.container.querySelector('.blocking-card-collapsed');
+    if (collapsed) await click(h.view, collapsed);
+    if (summary) assert.equal(h.view.container.textContent.includes(summary), true);
+    else assert.doesNotMatch(h.view.container.textContent, /postflight/);
+    assertInert(h.view.container);
+  }
+  assert.equal(h.requests.length, 0, 'historical summaries cannot execute or replay');
+});
+
 test('actual expanded question history preserves context, described choices and normalized read-only answer', async t => {
   const h = await packet(t), { InteractionReceiptCard } = await h.load('./InteractionReceiptCard.tsx');
   const receipt = { version: 1, outcome: 'answered', response: { answer: { kind: 'selection', selections: ['Second'], comment: 'Explanation' } },

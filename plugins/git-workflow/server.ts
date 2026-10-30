@@ -1,4 +1,6 @@
 import { idle } from "./operation-idle";
+import { refuseFilters } from "./checkout-safety";
+import { capturePostflight, collectPostflight, postflightText, postflightReceiptSummary, unobservedPostflight, type ReportAction, type PostflightBaseline, type PostflightReport } from "./postflight";
 import { gitText as git, gitOutput, gitEnvironment, records, outputDigest, run, withPreparationSignal } from "./process";
 import { spawn } from "node:child_process";
 import { buildGitReview, compactGitCard, type GitCardPresentation } from "./review";
@@ -28,7 +30,7 @@ export type GitOperation =
 /** Internal exact-review union; browser discard is deliberately absent from GitOperation. */
 export type ReviewedGitOperation = GitOperation | BrowserDiscardOperation;
 interface GitExecutionOptions { readonly browserConfirmation?: true; readonly presentation?: GitCardPresentation }
-interface Snapshot { fingerprint: string; card: PluginCard; checks: RequiredCheck[]; args: string[]; cwd: string; comparison?: { before: string; after: string }; cleanup?: CleanupSnapshot }
+interface Snapshot { fingerprint: string; card: PluginCard; checks: RequiredCheck[]; args: string[]; cwd: string; comparison?: { before: string; after: string }; cleanup?: CleanupSnapshot; postflight?: PostflightBaseline }
 async function branchTip(cwd: string, branch: string): Promise<string> {
   if (!branch || branch.startsWith("-") || branch === "HEAD") throw new Error("Select an explicit local branch");
   await git(cwd, ["check-ref-format", `refs/heads/${branch}`]);
@@ -93,12 +95,6 @@ async function fileSelection(cwd: string, files: string[] | undefined): Promise<
   await refuseFilters(cwd, `${files.join("\0")}\0`);
   return files;
 }
-async function refuseFilters(cwd: string, paths: string | AsyncIterable<Uint8Array>, index?: string) {
-  let i = 0;
-  for await (const attribute of records(gitOutput(cwd, ["check-attr", "-z", "--stdin", "filter"], { input: paths, index }))) {
-    if (i++ % 3 === 2 && attribute !== "unspecified" && attribute !== "unset") throw new Error("Git plugin preflight refuses clean/process filter attributes; use ordinary Git tools for this repository");
-  }
-}
 function cleanupAccess(ui: Partial<PluginUiContext>, rejectUnignoredUntracked = false): CleanupAccess {
   return { rejectUnignoredUntracked, git, records: (cwd, args) => records(gitOutput(cwd, args)), checkout, branchTip, worktrees, project: pluginProjectIdentityAsync,
     inUse: (path) => { if (!ui.isDirectoryInUse) throw new Error("Cleanup requires live directory-use inspection"); return ui.isDirectoryInUse(path); } };
@@ -112,7 +108,11 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
   if (op.action === "cleanupFeature") {
     if (!op.removeWorktree && !op.deleteBranch && !op.artifactRoots.length) throw new Error("Choose at least one cleanup resource");
     const cleanup = await captureCleanup(callerCwd, op, policy, cleanupAccess(ui, rejectUnignoredUntracked), budget);
-    return { fingerprint: digest([cleanup.fingerprint, relevantPolicy(policy, op.action)]), cleanup,
+    const postflight = await capturePostflight({ action: "cleanupFeature", cwd: cleanup.cwd, paths: [cleanup.cwd, ...(cleanup.path ? [cleanup.path] : [])],
+      refs: { feature: { branch: op.featureBranch, before: op.featureTip }, target: { branch: cleanup.target, before: await branchTip(cleanup.cwd, cleanup.target) } },
+      cleanup: { featureTip: op.featureTip, integrationCommit: op.integrationCommit, path: cleanup.path, removeWorktree: op.removeWorktree,
+        deleteBranch: op.deleteBranch, artifacts: cleanup.artifacts.map(item => item.path), ancestorIdentities: cleanup.artifactParentIdentities } });
+    return { fingerprint: digest([cleanup.fingerprint, relevantPolicy(policy, op.action)]), cleanup, postflight,
       cwd: cleanup.cwd, args: [], checks: [], card: cleanupCard(op, cleanup) };
   }
   const cwd = await checkout(op.checkout);
@@ -124,6 +124,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
   const notices = ["Native Git operation is unsigned and hook-free. Stronger user/repository instructions still apply."];
   let args: string[] = [];
   let comparison: Snapshot["comparison"];
+  let postflight: PostflightBaseline | undefined;
   let checks: RequiredCheck[] = [];
   const registrations = await worktrees(cwd);
   // Merge approval binds only its two branch registrations. Other sessions may
@@ -161,6 +162,9 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
       rows.push(`Candidate tree: ${tree}`, `Exact message:\n${op.message}`);
     } finally { rmSync(scratch, { recursive: true, force: true }); }
     args = ["commit", "--no-gpg-sign", "--cleanup=verbatim", ...(files ? ["--only"] : [])];
+    postflight = await capturePostflight({ action: "commit", cwd, paths: [cwd], candidateTree: comparison!.after,
+      refs: { subject: { branch: current.branch, before: current.tip } } });
+    state.push(postflight);
   } else if (op.action === "rebase" || op.action === "merge") {
     if (!policy.targetBranch) throw new Error("Configure a target local branch first");
     if (op.featureBranch === policy.targetBranch) throw new Error("Feature and target must differ");
@@ -187,13 +191,20 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
       "Patch shows feature changes since the merge base, not a predicted rebase/merge result.");
     const base = (await git(cwd, ["merge-base", target, feature])).trim();
     comparison = { before: base, after: feature };
-    if (op.action === "rebase") args = ["rebase", "--no-autostash", "--no-update-refs", "--no-rebase-merges", "--no-gpg-sign", target];
-    else {
+    if (op.action === "rebase") {
+      args = ["rebase", "--no-autostash", "--no-update-refs", "--no-rebase-merges", "--no-gpg-sign", target];
+      postflight = await capturePostflight({ action: "rebase", cwd, paths: [cwd, ...(sourceCheckout ? [sourceCheckout.path] : [])],
+        refs: { feature: { branch: op.featureBranch, before: feature }, target: { branch: policy.targetBranch, before: target } } });
+      state.push(postflight);
+    } else {
       checks = policy.mergeChecks;
       fields.push({ label: "Merge method", value: policy.mergeMethod === "ff-only" ? "Fast-forward only" : "Non-fast-forward merge" });
       rows.push(`Merge method: ${policy.mergeMethod}`, "Checks run in the selected feature checkout before merging; no automatic rebase.");
       if (checks.length && !sourceCheckout) throw new Error("Required merge checks need the feature's registered clean checkout");
       args = ["-c", `branch.${policy.targetBranch}.mergeOptions=`, "merge", policy.mergeMethod === "ff-only" ? "--ff-only" : "--no-ff", "--commit", "--no-edit", "--no-gpg-sign", feature];
+      postflight = await capturePostflight({ action: "merge", cwd, paths: [cwd, ...(sourceCheckout ? [sourceCheckout.path] : [])],
+        refs: { feature: { branch: op.featureBranch, before: feature }, target: { branch: policy.targetBranch, before: target } }, mergeMethod: policy.mergeMethod });
+      state.push(postflight);
     }
   } else if (op.action === "createWorktree" || op.action === "attachWorktree") {
     if (await status(cwd)) throw new Error("Source checkout must be clean");
@@ -246,7 +257,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
   sections.push({ title: "Technical details", text: rows.join("\n\n"), code: true, collapsible: true });
   // Bind only applicable settings, not unrelated action permissions.
   state.push(relevantPolicy(policy, op.action));
-  return { fingerprint: digest(state), cwd, args, checks, comparison,
+  return { fingerprint: digest(state), cwd, args, checks, comparison, postflight,
     card: { title: { commit: "Git commit", rebase: "Git rebase", merge: "Git merge", createWorktree: "Create Git worktree", attachWorktree: "Attach Git worktree", removeWorktree: "Remove Git worktree" }[op.action],
       subtitle: "Approval required", fields, sections,
       scope: `Approves the entire ${op.action === "commit" ? "commit candidate" : "selected operation"}${checks.length ? " and the listed checks" : ""}${comparison ? ", not just an expanded file or displayed page" : ""}.`,
@@ -311,6 +322,10 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
   let started = false;
   let checksStarted = false;
   let completed = false;
+  let finalized = false;
+  let baseline: PostflightBaseline | undefined;
+  let postflight: PostflightReport | undefined;
+  let checkCwd: string | undefined;
   let receipt: PluginOperationReceipt | undefined;
   const effects: string[] = [];
   let lastInventoryPolicyCheck = 0;
@@ -323,9 +338,16 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
     }
   });
   let attemptedEffect: string | undefined;
+  const annotatePostflight = () => {
+    if (!postflight) return;
+    postflight.finalization = completed ? finalized ? "completed" : "failed" : "not-run";
+    postflight.effects = { completed: effects.length, samples: effects.slice(0, 12).map(effect => effect.slice(0, 240)), omitted: Math.max(0, effects.length - 12),
+      ...(attemptedEffect ? { attempted: attemptedEffect.slice(0, 1000) } : {}) };
+    if (postflight.finalization === "failed") delete postflight.cleanupReady;
+  };
   const record = (phase: PluginOperationReceipt["phase"], summary?: string) => {
     if (!receipt || !ui.operationReceipt) throw new Error("Git operations require durable Brabbler operation receipts");
-    receipt = { ...receipt, phase, effectStarted: started, completedEffects: [...effects], attemptedEffect, ...(summary ? { summary: summary.slice(0, 16000) } : {}) };
+    receipt = { ...receipt, phase, effectStarted: started, completedEffects: [...effects], attemptedEffect, ...(summary ? { summary: postflight ? postflightReceiptSummary(summary, postflight) : summary.slice(0, 16000) } : {}) };
     ui.operationReceipt(gitWorkflowManifest.id, structuredClone(receipt));
   };
   try {
@@ -335,6 +357,7 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
     if (policy[op.action] === "deny") throw new Error(`${op.action} is denied by current settings`);
     onProgress?.("Capturing exact Git state; large repositories are processed incrementally. Stop cancels preparation.");
     const snapshot = await withPreparationSignal(signal, () => preview(callerCwd, op, policy, ui, cleanupBudget, options?.browserConfirmation));
+    baseline = snapshot.postflight;
     const origin = readPluginSettings(gitWorkflowManifest, op.checkout, undefined, session);
     if (origin.effective[op.action] !== policy[op.action]) throw new Error("Policy changed during preparation");
     const operationId = randomUUID();
@@ -379,7 +402,7 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
     // Cleanup owns a single full revalidation per effect, under its directory
     // reservation. Do not rescan dependency trees at every generic checkpoint.
     if (!resourceOperation) await revalidate();
-    const checkCwd = op.action === "merge" ? (await worktrees(snapshot.cwd)).find((entry) => entry.branch === op.featureBranch)?.path : snapshot.cwd;
+    checkCwd = op.action === "merge" ? (await worktrees(snapshot.cwd)).find((entry) => entry.branch === op.featureBranch)?.path : snapshot.cwd;
     for (const [index, check] of snapshot.checks.entries()) {
       await revalidate();
       receipt.checks[index].status = "running";
@@ -434,6 +457,7 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
         output = await withPreparationSignal(signal, () => resourceOp.action === "cleanupFeature"
           ? performCleanup(callerCwd, resourceOp, ...effectArguments)
           : performBrowserDiscard(callerCwd, resourceOp, ...effectArguments));
+        if (op.action === "cleanupFeature") completed = true;
       } else if (op.action === "commit" && op.mode === "files") {
         // Own Git's native index.lock only during effects. The private index keeps
         // unrelated staged entries; commit --only reconciles selected entries.
@@ -449,7 +473,7 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
           else await git(snapshot.cwd, ["read-tree", "HEAD"], privateIndex);
           await run("git", ["-c", "core.fsmonitor=false", "-C", snapshot.cwd, "add", "-A", `--pathspec-from-file=${join(scratch, "paths")}`, "--pathspec-file-nul"], snapshot.cwd, false, privateIndex);
           const before = (await head(snapshot.cwd)).tip;
-          try { output = await run("git", commandArgs, snapshot.cwd, false, privateIndex); }
+          try { output = await run("git", commandArgs, snapshot.cwd, false, privateIndex); completed = true; }
           finally {
             // Even an output/exit failure can follow a completed commit. Preserve
             // its reconciled index when HEAD actually advanced; never reset HEAD.
@@ -466,34 +490,55 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
             if (currentLock.ino === ownedLock.ino && currentLock.dev === ownedLock.dev) rmSync(lockPath);
           }
         }
-      } else output = await run("git", commandArgs, snapshot.cwd);
-    } finally { releaseReservation?.(); rmSync(scratch, { recursive: true, force: true }); }
+      } else { output = await run("git", commandArgs, snapshot.cwd); if (baseline) completed = true; }
+    } finally {
+      const failures: unknown[] = [];
+      try { releaseReservation?.(); } catch (error) { failures.push(error); }
+      try { rmSync(scratch, { recursive: true, force: true }); } catch (error) { failures.push(error); }
+      if (failures.length) throw new AggregateError(failures, `Git post-effect finalization failed: ${failures.map(error => error instanceof Error ? error.message : String(error)).join("; ").slice(0, 1000)}`);
+    }
     completed = true;
-    if (op.action === "merge" || op.action === "rebase") await idle(snapshot.cwd);
+    finalized = true;
+    if (!baseline && (op.action === "merge" || op.action === "rebase")) await idle(snapshot.cwd);
     if (op.action === "createWorktree" || op.action === "attachWorktree") allowFileRoot(op.path);
-    const result = `${op.action} completed.\n${output.slice(0, 12000)}\nObserved HEAD: ${JSON.stringify(await observedHead(snapshot.cwd))}`;
+    if (baseline) postflight = await collectPostflight(baseline, "completed", receipt.checks.map(check => ({ ...check, cwd: checkCwd ?? snapshot.cwd })));
+    annotatePostflight();
+    const result = postflight ? postflightText(postflight, output) : `${op.action} completed.\n${output.slice(0, 12000)}\nObserved HEAD: ${JSON.stringify(await observedHead(snapshot.cwd))}`;
     record("succeeded", result);
-    return { content: [{ type: "text" as const, text: result }], details: { action: op.action, completed: true, operationId, effects } };
+    return { ...(postflight && postflight.verification !== "verified" ? { isError: true } : {}), content: [{ type: "text" as const, text: result }],
+      details: { action: op.action, completed: true, operationId, effects, ...(postflight ? { postflight, receiptPersisted: true } : {}) } };
   } catch (error) {
     let observed = "";
-    if (started) {
+    if (baseline && started) postflight ??= await collectPostflight(baseline, completed ? "completed" : "started", receipt?.checks.map(check => ({ ...check, cwd: checkCwd ?? baseline!.cwd })));
+    if (!postflight && ["commit", "merge", "rebase", "cleanupFeature"].includes(op.action)) {
+      postflight = unobservedPostflight(op.action as ReportAction, error instanceof Error ? error.message : String(error));
+      postflight.checks = (receipt?.checks ?? []).slice(0, 24).map(check => ({ ...check, cwd: checkCwd ?? baseline?.cwd ?? op.checkout }));
+      if ((receipt?.checks.length ?? 0) > 24) postflight.checksOmitted = receipt!.checks.length - 24;
+    }
+    annotatePostflight();
+    if (started && !postflight) {
       try { observed = `\nObserved HEAD: ${JSON.stringify(await observedHead(op.checkout))}\nStatus digest (empty means clean): ${await status(op.checkout)}\nWorktrees: ${JSON.stringify(await worktrees(op.checkout))}`; }
       catch { observed = "\nObserved state could not be read; inspect repository manually."; }
     }
     let text = `${error instanceof Error ? error.message : String(error)}${completed ? "\nNative effect completed, but post-effect reporting failed. Do not repeat the operation." : started ? "\nNative effect started; partial changes or conflict state may remain. No rollback or retry was performed." : checksStarted ? "\nRequired checks started and may have side effects; Git effect did not start." : "\nGit effect did not start."}${attemptedEffect ? `\nLast dispatched cleanup step: ${attemptedEffect}` : ""}${effects.length ? `\nCompleted cleanup steps:\n${effects.join("\n")}` : ""}${observed}`.slice(0, 15000);
+    if (postflight) text = postflightText(postflight, error instanceof Error ? error.message : String(error), completed
+      ? "Post-effect finalization or receipt reporting failed; inspect the reported facts before further mutations."
+      : started ? "Native effect started; partial changes or conflict state may remain. No rollback or retry was performed."
+      : checksStarted ? "Required checks started and may have side effects; Git effect did not start." : "Git effect did not start.");
+    let receiptPersisted = false;
     if (receipt) {
       const terminalPhase = completed ? "succeeded" : receipt.authorization.decision === "not-approved" || signal?.aborted && !started ? "cancelled" : "failed";
-      try { record(terminalPhase, text); }
+      try { record(terminalPhase, text); receiptPersisted = true; }
       catch {
         // A presentation bug must not be retried verbatim as the failure card.
         // This minimal record reports outcome only; it never grants authority.
         receipt.card = { title: "Git operation outcome", operationId: receipt.operationId, review: receipt.card.review,
           text: "The full operation card could not be persisted. See the tool result for the observed outcome.", actions: [] };
-        try { record(terminalPhase, text); }
+        try { record(terminalPhase, text); receiptPersisted = true; }
         catch { text += "\nTerminal receipt could not be persisted; saved outcome remains unknown. Inspect the repository before any retry."; }
       }
     }
     return { isError: true, content: [{ type: "text" as const, text }],
-      details: { action: op.action, completed, effectStarted: started, checksStarted, operationId: receipt?.operationId, effects } };
+      details: { action: op.action, completed, effectStarted: started, checksStarted, operationId: receipt?.operationId, effects, ...(postflight ? { postflight, receiptPersisted } : {}) } };
   }
 }
