@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { finished } from "node:stream/promises";
-import { lstatSync } from "node:fs";
+import fs, { lstatSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +17,7 @@ after(() => { if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_
 const jiti = createJiti(import.meta.url);
 const { executeGitOperation: executeWithReceipts } = await jiti.import("./server.ts");
 const { OPERATION_MARKERS } = await jiti.import("./operation-paths.ts");
+const { capturePostflight, collectPostflight, summarizeStatus, postflightText, postflightReceiptSummary, nativePostflightAccess } = await jiti.import("./postflight.ts");
 const { preparePluginReview, reviewEntry, reviewPreview, reviewManifest, reviewStream } = await jiti.import("../../lib/plugins/review-store.ts");
 const { snapshotOperationReceipt } = await jiti.import("../../lib/operation-receipts.ts");
 const { validatePluginCard } = await jiti.import("../../lib/plugins/ui.ts");
@@ -140,11 +142,17 @@ test("selected whole files preserve unrelated staging; staged mode preserves uns
   const repo = fixture();
   writeFileSync(join(repo, "a"), "partially staged a\n"); git(repo, "add", "a"); change(repo);
   writeFileSync(join(repo, "b"), "staged b\n"); git(repo, "add", "b"); writeFileSync(join(repo, "b"), "unstaged b\n");
-  success(await call(repo, commit(repo)));
+  const whole = await call(repo, commit(repo)); success(whole);
+  assert.equal(whole.details.postflight.verification, "verified");
+  assert.equal(whole.details.postflight.relationships.candidateTreeMatches, true);
+  assert.equal(whole.details.postflight.commit.author.email, "test@example.invalid");
+  assert.deepEqual({ ...whole.details.postflight.checkouts[0].status, digest: "digest" }, { clean: false, staged: 1, unstaged: 1, untracked: 0, conflicted: 0, digest: "digest" });
   assert.equal(git(repo, "show", "HEAD:a"), "changed a"); assert.equal(git(repo, "show", "HEAD:b"), "base b");
   assert.equal(git(repo, "show", ":b"), "staged b"); assert.equal(readFileSync(join(repo, "b"), "utf8"), "unstaged b\n");
   assert.equal(git(repo, "diff", "--cached", "--name-only"), "b");
-  success(await call(repo, commit(repo, { mode: "staged", files: undefined, message: "Staged exact" })));
+  const staged = await call(repo, commit(repo, { mode: "staged", files: undefined, message: "Staged exact" })); success(staged);
+  assert.equal(staged.details.postflight.verification, "verified");
+  assert.equal(staged.details.postflight.checkouts[0].status.unstaged, 1);
   assert.equal(git(repo, "show", "HEAD:b"), "staged b"); assert.equal(readFileSync(join(repo, "b"), "utf8"), "unstaged b\n");
 });
 test("literal files and deletions work; resource/path errors do not mutate", async () => {
@@ -281,7 +289,15 @@ test("rebase onto configured local target and merge non-FF; no cleanup", async (
   assert.equal(git(path, "show", "HEAD:b"), "target b");
   set(repo, { mergeChecks: [{ name: "Feature check", command: "test -f a" }] });
   const target = git(repo, "rev-parse", "HEAD"); const featureTip = git(path, "rev-parse", "HEAD");
-  success(await call(repo, { action: "merge", checkout: repo, featureBranch: "feature" }));
+  const result = await call(repo, { action: "merge", checkout: repo, featureBranch: "feature" });
+  success(result);
+  const report = result.details.postflight;
+  assert.equal(report?.verification, "verified", "merge result must supply fresh postflight verification");
+  assert.deepEqual(report.refs.target, { branch: "main", before: target, after: git(repo, "rev-parse", "HEAD") });
+  assert.equal(report.relationships.featureIntegrated, true);
+  assert.equal(report.checkouts.length, 2);
+  assert.equal(report.checkouts.every(checkout => checkout.status.clean), true);
+  assert.ok(result.content[0].text.includes(JSON.stringify(report)));
   assert.equal(git(repo, "show", "-s", "--format=%P", "HEAD"), `${target} ${featureTip}`);
   assert.equal(existsSync(path), true);
 });
@@ -310,6 +326,196 @@ for (const action of ["rebase", "merge"]) for (const dirty of [false, true]) tes
   assert.equal(git(repo, "branch", "--show-current"), "main"); assert.equal(git(path, "branch", "--show-current"), "feature");
   assert.equal(git(selected, "status", "--porcelain"), selectedStatus);
   assert.equal(git(selected, "write-tree"), selectedIndex); assert.equal(git(required, "status", "--porcelain"), "");
+});
+
+test("postflight status counts NUL-framed rename, conflict and newline names without exposing filenames", async () => {
+  const text = "R  new\nname\0old name\0 M unstaged\0?? untracked\0UU conflict\0";
+  const source = async function* () { for (const byte of Buffer.from(text)) yield Buffer.from([byte]); };
+  const status = await summarizeStatus(source());
+  assert.deepEqual({ ...status, digest: "digest" }, { clean: false, staged: 2, unstaged: 2, untracked: 1, conflicted: 1, digest: "digest" });
+  assert.equal(status.digest, createHash("sha256").update(text).digest("hex"));
+  await assert.rejects(summarizeStatus((async function* () { yield Buffer.from("R  new\0"); })()), /Incomplete/);
+});
+
+test("merge reports FF, divergent non-FF and already-contained outcomes including no feature checkout", async () => {
+  for (const kind of ["ff-only", "divergent", "contained", "no-checkout"]) {
+    const repo = fixture(); const path = feature(repo); change(path); git(path, "add", "a"); git(path, "commit", "-m", "Feature");
+    const featureTip = git(path, "rev-parse", "HEAD");
+    if (kind === "divergent") { writeFileSync(join(repo, "b"), "target-only\n"); git(repo, "add", "b"); git(repo, "commit", "-m", "Target only"); }
+    if (kind === "contained") git(repo, "merge", "--ff-only", "feature");
+    if (kind === "no-checkout") git(repo, "worktree", "remove", path);
+    set(repo, { mergeMethod: kind === "ff-only" ? "ff-only" : "non-ff" });
+    const before = git(repo, "rev-parse", "HEAD"), receipts = [];
+    const result = await call(repo, { action: "merge", checkout: repo, featureBranch: "feature" }, {
+      ...approved, operationReceipt(_id, receipt) { receipts.push(structuredClone(receipt)); },
+    });
+    success(result);
+    const report = result.details.postflight;
+    assert.equal(report.verification, "verified");
+    assert.equal(report.relationships.expectedIntegrationShape, true);
+    assert.equal(report.disposition, kind === "ff-only" ? "fast-forward" : kind === "contained" ? "no-op" : "non-fast-forward");
+    assert.equal(report.relationships.featureTreeMatchesResult, kind !== "divergent");
+    assert.equal(report.cleanupReady.featureTip, featureTip);
+    assert.equal(report.cleanupReady.integrationCommit, git(repo, "rev-parse", "HEAD"));
+    assert.equal(report.checkouts.length, kind === "no-checkout" ? 1 : 2);
+    assert.equal(report.commit.author.email, "test@example.invalid");
+    assert.equal(report.commit.signed, false);
+    if (kind === "contained") assert.equal(report.commit.oid, before);
+    assert.ok(receipts.at(-1).summary.includes(JSON.stringify(report)));
+  }
+});
+
+async function mergedBaseline({ withoutFeatureCheckout = false } = {}) {
+  const repo = fixture(); const path = feature(repo); change(path); git(path, "add", "a"); git(path, "commit", "-m", "Feature");
+  if (withoutFeatureCheckout) git(repo, "worktree", "remove", path);
+  const baseline = await capturePostflight({ action: "merge", cwd: repo, paths: [repo, ...(withoutFeatureCheckout ? [] : [path])], mergeMethod: "non-ff",
+    refs: { feature: { branch: "feature", before: git(repo, "rev-parse", "feature") }, target: { branch: "main", before: git(repo, "rev-parse", "main") } } });
+  git(repo, "merge", "--no-ff", "--no-gpg-sign", "-m", "Merge", "feature");
+  return { repo, path, baseline };
+}
+
+test("postflight does not certify dirty, symbolic-ref or replaced-checkout observations", async () => {
+  for (const kind of ["dirty", "symbolic", "replacement", "filter"]) {
+    const { repo, path, baseline } = await mergedBaseline();
+    const filterMarker = join(root, `unexpected-filter-${n}`);
+    if (kind === "dirty") writeFileSync(join(path, "a"), "later edit\n");
+    if (kind === "symbolic") { git(repo, "branch", "alias", "feature"); git(repo, "symbolic-ref", "refs/heads/feature", "refs/heads/alias"); }
+    if (kind === "replacement") { renameSync(path, `${path}-retained`); mkdirSync(path); }
+    if (kind === "filter") { writeFileSync(join(path, ".gitattributes"), "a filter=unexpected\n"); git(path, "config", "filter.unexpected.clean", `touch '${filterMarker}'`); }
+    const report = await collectPostflight(baseline, "completed");
+    assert.notEqual(report.verification, "verified", kind);
+    assert.equal(report.cleanupReady, undefined);
+    assert.equal(existsSync(filterMarker), false);
+    const text = postflightText(report, "x".repeat(64000));
+    assert.match(text.slice(0, 350), /Do not repeat/);
+    assert.ok(text.indexOf("Postflight report:") < text.indexOf("Native output"));
+    assert.ok(text.length < 10000);
+  }
+});
+
+test("postflight closes final ref and physical-identity windows and detects changed registrations", async () => {
+  for (const kind of ["late-ref", "late-identity", "lock", "new-registration", "grafts", "sparse"]) {
+    const { repo, path, baseline } = await mergedBaseline({ withoutFeatureCheckout: ["late-ref", "new-registration"].includes(kind) }); let reads = 0;
+    if (kind === "lock") git(repo, "worktree", "lock", path);
+    if (kind === "new-registration") git(repo, "worktree", "add", path, "feature");
+    if (kind === "grafts") { mkdirSync(join(repo, ".git/info"), { recursive: true }); writeFileSync(join(repo, ".git/info/grafts"), ""); }
+    if (kind === "sparse") git(repo, "config", "core.sparseCheckout", "true");
+    const access = { ...nativePostflightAccess, async observeCheckout(...args) {
+      const value = await nativePostflightAccess.observeCheckout(...args);
+      if (++reads === baseline.checkouts.length * 2) {
+        if (kind === "late-ref") git(repo, "update-ref", "refs/heads/feature", baseline.refs.target.before);
+        if (kind === "late-identity") { renameSync(path, `${path}-retained`); mkdirSync(path); }
+      }
+      return value;
+    } };
+    const report = await collectPostflight(baseline, "completed", [], access);
+    assert.notEqual(report.verification, "verified", kind);
+    assert.equal(report.cleanupReady, undefined);
+  }
+});
+
+test("raw commit reporting bounds oversized headers/messages and never invokes a signature verifier", async () => {
+  const { repo, baseline } = await mergedBaseline();
+  const marker = join(root, `signature-verifier-${n}`), verifier = join(root, `verifier-${n}.sh`);
+  writeFileSync(verifier, `#!/bin/sh\ntouch '${marker}'\nexit 1\n`, { mode: 0o700 });
+  git(repo, "config", "log.showSignature", "true"); git(repo, "config", "gpg.program", verifier);
+  const tree = git(repo, "rev-parse", "HEAD^{tree}");
+  const raw = `tree ${tree}\nparent ${baseline.refs.target.before}\nparent ${baseline.refs.feature.before}\nauthor ${"a".repeat(80000)} <test@example.invalid> 1 +0000\ncommitter Test <test@example.invalid> 1 +0000\ngpgsig -----BEGIN PGP SIGNATURE-----\n fake\n -----END PGP SIGNATURE-----\n\n${"m".repeat(1024 * 1024)}\n`;
+  const oid = execFileSync("git", ["-C", repo, "hash-object", "-t", "commit", "-w", "--stdin"], { input: raw, encoding: "utf8" }).trim();
+  git(repo, "update-ref", "refs/heads/main", oid);
+  const report = await collectPostflight(baseline, "completed");
+  assert.equal(report.verification, "failed", "a signed new merge is not the promised unsigned native result");
+  assert.equal(report.relationships.newCommitUnsigned, false);
+  assert.equal(report.commit.signed, true); assert.equal(report.commit.metadataTruncated, true);
+  assert.equal(report.commit.author.name.length, 240); assert.equal(existsSync(marker), false);
+  assert.ok(postflightText(report, "").length < 10000);
+  const longReport = { ...report, checks: Array.from({ length: 24 }, () => ({ name: "c".repeat(240), cwd: "/" + "p".repeat(3000), status: "passed" })) };
+  const summary = postflightReceiptSummary(postflightText(longReport, ""), longReport);
+  assert.ok(summary.length < 15000); assert.ok(summary.includes(oid)); assert.ok(summary.includes('"displayCompacted":true'));
+  const escaped = { ...longReport, issues: Array(12).fill("\u0001".repeat(240)), checks: Array(24).fill({ name: "\u0001".repeat(240), cwd: "\u0001".repeat(4096), status: "passed" }) };
+  const bounded = postflightReceiptSummary(postflightText(escaped, ""), escaped);
+  assert.ok(bounded.length < 15000); assert.equal(JSON.parse(bounded.split("\n").at(-1)).commit.oid, oid);
+  snapshotOperationReceipt("git-workflow", { version: 1, operationId: "a046677d-8293-4445-9a2b-558317345abc",
+    card: { title: "Git outcome", actions: [] }, phase: "succeeded", authorization: { mode: "allow", source: "test", revision: "test", decision: "policy-authorized" },
+    checks: [], effectStarted: true, summary: bounded }, 1);
+});
+
+test("negative shallow presence validates held ancestors and never adopts replacements", { skip: process.platform !== "linux" }, async () => {
+  const parent = join(root, `presence-${++n}`); mkdirSync(parent);
+  const stat = lstatSync(parent, { bigint: true }), expected = { path: parent, identity: `${stat.dev}:${stat.ino}:${stat.mode}` };
+  const original = fs.lstatSync; let replaced = false, observed;
+  fs.lstatSync = (path, ...args) => {
+    if (!replaced && String(path).startsWith("/proc/self/fd/") && String(path).endsWith("/missing")) {
+      replaced = true; renameSync(parent, `${parent}-retained`); mkdirSync(parent); mkdirSync(join(parent, "missing"));
+    }
+    return original(path, ...args);
+  };
+  syncBuiltinESMExports();
+  try {
+    const isolated = createJiti(import.meta.url, { fsCache: false, moduleCache: false });
+    const { nativePostflightAccess } = await isolated.import("./postflight.ts");
+    observed = nativePostflightAccess.presence(expected, "missing");
+  } finally { fs.lstatSync = original; syncBuiltinESMExports(); }
+  assert.equal(replaced, true); assert.equal(observed, "unknown");
+  assert.equal(nativePostflightAccess.presence(expected, "missing"), "unknown", "a failed root acquisition is not absence");
+});
+
+test("successful native commit remains completed when index reconciliation fails", async () => {
+  const repo = fixture(); change(repo); const before = git(repo, "rev-parse", "HEAD");
+  const index = git(repo, "rev-parse", "--path-format=absolute", "--git-path", "index"), original = fs.renameSync;
+  let failedRename = false, result;
+  fs.renameSync = (source, target, ...args) => {
+    if (source === `${index}.lock` && target === index) { failedRename = true; throw new Error("injected index reconciliation failure"); }
+    return original(source, target, ...args);
+  };
+  syncBuiltinESMExports();
+  try {
+    // A fresh production graph captures the injected external fs capability;
+    // the file's pre-existing Jiti graph has already bound the original export.
+    const isolated = createJiti(import.meta.url, { fsCache: false, moduleCache: false });
+    const { executeGitOperation } = await isolated.import("./server.ts");
+    result = await executeGitOperation(repo, commit(repo), { ...approved, prepareReview: preparePluginReview,
+      operationReceipt(id, receipt) { snapshotOperationReceipt(id, receipt, 1); } });
+  }
+  finally { fs.renameSync = original; syncBuiltinESMExports(); }
+  failed(result, /Do not repeat/); assert.equal(failedRename, true);
+  assert.equal(result.details.completed, true); assert.notEqual(git(repo, "rev-parse", "HEAD"), before);
+  assert.equal(result.details.postflight.nativeOutcome, "completed");
+  assert.equal(result.details.postflight.finalization, "failed");
+  assert.equal(result.details.postflight.commit.oid, git(repo, "rev-parse", "HEAD"));
+});
+
+test("rebase reports rewritten and no-op tips and safely describes native conflicts", async () => {
+  const repo = fixture(); const path = feature(repo); change(path); git(path, "add", "a"); git(path, "commit", "-m", "Feature");
+  writeFileSync(join(repo, "b"), "target b\n"); git(repo, "add", "b"); git(repo, "commit", "-m", "Target");
+  const before = git(path, "rev-parse", "HEAD"), target = git(repo, "rev-parse", "HEAD");
+  const rewritten = await call(repo, { action: "rebase", checkout: path, featureBranch: "feature" }); success(rewritten);
+  assert.equal(rewritten.details.postflight.refs.feature.before, before);
+  assert.notEqual(rewritten.details.postflight.refs.feature.after, before);
+  assert.deepEqual(rewritten.details.postflight.refs.target, { branch: "main", before: target, after: target });
+  assert.equal(rewritten.details.postflight.relationships.targetIntegrated, true);
+  const noOp = await call(repo, { action: "rebase", checkout: path, featureBranch: "feature" }); success(noOp);
+  assert.equal(noOp.details.postflight.refs.feature.before, noOp.details.postflight.refs.feature.after);
+  writeFileSync(join(repo, "a"), "conflicting target a\n"); git(repo, "add", "a"); git(repo, "commit", "-m", "Conflict");
+  const conflict = await call(repo, { action: "rebase", checkout: path, featureBranch: "feature" });
+  failed(conflict, /partial changes or conflict state/);
+  assert.equal(conflict.details.postflight.nativeOutcome, "started");
+  assert.notEqual(conflict.details.postflight.verification, "verified");
+  assert.equal(conflict.details.postflight.checkouts.some(checkout => checkout.operationMarkers.includes("rebase-merge")), true);
+  assert.equal(conflict.details.postflight.cleanupReady, undefined);
+});
+
+test("terminal receipt failure retains completed merge facts and no-repeat warning", async () => {
+  const repo = fixture(); const path = feature(repo); change(path); git(path, "add", "a"); git(path, "commit", "-m", "Feature");
+  const result = await call(repo, { action: "merge", checkout: repo, featureBranch: "feature" }, {
+    ...approved, operationReceipt(_id, receipt) { if (receipt.phase === "succeeded") throw new Error("terminal storage unavailable"); },
+  });
+  failed(result, /Terminal receipt could not be persisted/);
+  assert.equal(result.details.completed, true);
+  assert.equal(result.details.postflight.verification, "verified");
+  assert.equal(result.details.receiptPersisted, false);
+  assert.match(result.content[0].text.slice(0, 350), /Do not repeat/);
+  assert.equal(result.details.postflight.commit.oid, git(repo, "rev-parse", "HEAD"));
 });
 
 test("merge wrong-checkout guidance handles a target with no registered checkout without creating one", async () => {

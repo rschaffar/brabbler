@@ -11,6 +11,7 @@ import { gitProjectActions } from "./project-management";
 type ProgressUpdate = (result: { content: Array<{ type: "text"; text: string }>; details: { action: string; completed: boolean; effectStarted: boolean; checksStarted: boolean; operationId?: string; effects: string[] } }) => void;
 const progress = (action: string, update?: ProgressUpdate) => (text: string) => update?.({ content: [{ type: "text", text }],
   details: { action, completed: false, effectStarted: false, checksStarted: false, effects: [] } });
+const postflightGuidance = " Fresh postflight facts are returned in tool content and details and saved in the outcome receipt. Verified facts satisfy routine result verification; re-read missing facts or after intervening changes, and obey stronger task instructions. A completed native effect with incomplete reporting must not be repeated. Reports never authorize the next operation.";
 const checkout = Type.String({ description: "Absolute registered checkout root in any local repository; the selected repository's settings apply, independently of the session cwd" });
 export const gitWorkflowPlugin: BundledPlugin = {
   manifest: gitWorkflowManifest,
@@ -19,21 +20,21 @@ export const gitWorkflowPlugin: BundledPlugin = {
   extension(cwd) {
     const commit = defineTool({
       name: "git_commit", label: "Git commit", executionMode: "sequential",
-      description: "Commit selected whole files (including their unstaged content) or the complete staged set with an exact message. Current settings deny, ask or allow. Required checks run here; never change your own permissions. Stronger user/repository instructions apply.",
+      description: "Commit selected whole files (including their unstaged content) or the complete staged set with an exact message. Current settings deny, ask or allow. Required checks run here; never change your own permissions. Stronger user/repository instructions apply." + postflightGuidance,
       parameters: Type.Object({ checkout, mode: Type.Union([Type.Literal("files"), Type.Literal("staged")]),
         files: Type.Optional(Type.Array(Type.String())), message: Type.String() }),
       execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, { action: "commit", ...params }, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id, progress("commit", _update)),
     });
     const rebase = defineTool({
       name: "git_rebase", label: "Git rebase", executionMode: "sequential",
-      description: "Rebase the explicitly selected feature checkout onto the configured local target branch. No automatic retry or conflict cleanup. Current permission applies; stronger user/repository instructions apply.",
+      description: "Rebase the explicitly selected feature checkout onto the configured local target branch. No automatic retry or conflict cleanup. Current permission applies; stronger user/repository instructions apply." + postflightGuidance,
       parameters: Type.Object({ checkout: Type.String({ description: "Absolute registered checkout root of the feature branch (HEAD must be featureBranch), not the target checkout. The selected repository's settings apply independently of the session cwd." }),
         featureBranch: Type.String(), targetBranch: Type.Optional(Type.String({ description: "Local target chosen via ask_user when target selection is Ask; does not change settings" })) }),
       execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, { action: "rebase", ...params }, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id, progress("rebase", _update)),
     });
     const merge = defineTool({
       name: "git_merge", label: "Git merge", executionMode: "sequential",
-      description: "Merge an explicitly selected feature into the configured local target's clean checkout using the configured FF-only or ordinary non-FF method. Find the target checkout with git worktree list --porcelain; do not reuse the preceding git_rebase checkout or switch the feature worktree to the target. Runs required checks in the feature checkout. No rebase, fallback or cleanup. Stronger user/repository instructions apply.",
+      description: "Merge an explicitly selected feature into the configured local target's clean checkout using the configured FF-only or ordinary non-FF method. Use the registered target path from a current verified Git report, or find the target checkout with git worktree list --porcelain; do not reuse the preceding git_rebase checkout or switch the feature worktree to the target. Runs required checks in the feature checkout. No rebase, fallback or cleanup. Stronger user/repository instructions apply." + postflightGuidance,
       parameters: Type.Object({ checkout: Type.String({ description: "Absolute registered checkout root of the target branch (HEAD must be targetBranch or the configured target), not the feature worktree. The selected repository's settings apply independently of the session cwd." }),
         featureBranch: Type.String(), targetBranch: Type.Optional(Type.String({ description: "Local target chosen via ask_user when target selection is Ask" })),
         mergeMethod: Type.Optional(Type.Union([Type.Literal("ff-only"), Type.Literal("non-ff")], { description: "Method chosen via ask_user when method selection is Ask; does not change settings" })) }),
@@ -50,7 +51,7 @@ export const gitWorkflowPlugin: BundledPlugin = {
     });
     const cleanup = defineTool({
       name: "git_cleanup", label: "Git feature cleanup", executionMode: "sequential",
-      description: "Clean up explicitly selected, verified integrated local feature resources together. Separate cleanupFeature permission defaults Ask. Requires full feature/integration IDs and named resources. Worktree removal discovers exact ignored artifact files/directories, including nested paths, without selecting tracked parents. Nested cleanup requires Linux no-follow directory handles; unsupported platforms fail closed before approval. Artifacts absent from the user-owned allowlist require a one-time cleanup card even under Allow; no settings editing is needed. Never removes main/caller/active/locked worktrees, unselected untracked files or source changes. No remote operations, retries or rollback; partial effects are reported. Workflow choices set to Ask require ask_user before invoking; never edit your own permissions.",
+      description: "Clean up explicitly selected, verified integrated local feature resources together. Separate cleanupFeature permission defaults Ask. Requires full feature/integration IDs and named resources. Worktree removal discovers exact ignored artifact files/directories, including nested paths, without selecting tracked parents. Nested cleanup requires Linux no-follow directory handles; unsupported platforms fail closed before approval. Artifacts absent from the user-owned allowlist require a one-time cleanup card even under Allow; no settings editing is needed. Never removes main/caller/active/locked worktrees, unselected untracked files or source changes. No remote operations, retries or rollback; partial effects are reported. Workflow choices set to Ask require ask_user before invoking; never edit your own permissions." + postflightGuidance,
       parameters: Type.Object({ checkout, featureBranch: Type.String(), featureTip: Type.String(), integrationCommit: Type.String(),
         targetBranch: Type.Optional(Type.String()), worktreePath: Type.Optional(Type.String()), removeWorktree: Type.Boolean(), deleteBranch: Type.Boolean(),
         artifactRoots: Type.Array(Type.String(), { description: "Explicit literal worktree-relative generated files/directories to propose, using / for nested paths (for example src/meetings/__pycache__). No traversal, aliases or overlapping roots. When removeWorktree is true, exact ignored artifacts are also discovered even with an empty array. Unlisted artifacts require one-time user approval; arguments never grant permission" }) }),
