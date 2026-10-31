@@ -125,8 +125,12 @@ contributor/security guides are included in the source snapshot. Temporary Git
 review compatibility code is admitted only under the exact
 `tools/migrations/git-operation-reviews/` subtree, through its classified core bridge
 and test/static filesets. Other `tools/` contents are not traversed/admitted; the
-application and packed runtime exclude the entire tools tree. Synthetic codec data
-is generated privately, not admitted through broader fixture-data extensions.
+application and packed runtime exclude the entire tools tree. Synthetic codec/converter data is generated privately, not admitted through broader
+fixture-data extensions. The existing classified migration bridge exercises real
+filesystem/native/SDK conversion, byte/graph/model projection, branch-local proof,
+durable interruption/resume/restore and no-follow/refusal cases; it never admits a
+real history dataset. Operational copied-data rehearsal runs outside builders in
+the supported Node 24 Nix environment, not as an application acceptance fallback.
 
 Application inputs exclude `*.test.*`, `*.fixture.*` and `lib/testing`; test/static
 inputs still admit their required support. Keep `package.json`'s packed-file

@@ -1,9 +1,11 @@
 # Temporary Git operation review migration support
 
-This directory currently contains **only the isolated legacy codec and synthetic
-tests**, not a converter CLI. P4 owns discovery/dry-run/check/apply/resume/restore,
-graph preservation, operator admission, backups and rehearsal. Nothing here
-converts live state or authorizes deletion. See the [active plan](../../../docs/plans/2026-10-31_git-backed-operation-reviews-plan.md).
+This temporary directory contains the explicit-root Linux/Node 24 offline CLI,
+isolated v1 codec and synthetic migration cases. It supports dry-run/check/apply/
+resume/restore, exact per-file backups/journal and private SDK/graph validation.
+It does not authorize live state conversion, repository admission or deletion.
+See [migration and recovery instructions](../../../docs/git-operation-review-migration.md)
+and the [active plan](../../../docs/plans/2026-10-31_git-backed-operation-reviews-plan.md).
 
 `legacyReviewStore(absoluteRoot)` requires an explicit root; it never calls SDK
 `getAgentDir` or searches global state. Its legacy writer exists only to generate
@@ -20,8 +22,53 @@ nix run .#test -- core --file lib/plugins/git-operation-review-migration.test.mj
 ```
 
 This focused check is not full application acceptance or a migration rehearsal.
-No historical converter revision/invocation is claimed until an actual tested CLI
-exists. P4 must preserve this isolation when adding that CLI.
+The parent records the actual tool-containing commit after committing; this source
+writer does not invent a tested historical revision. Retain that revision/lockfile
+before separately authorized retirement. No real dataset belongs in test inputs.
+
+## CLI and implementation map
+
+`nix develop --offline --no-write-lock-file -c node tools/migrations/git-operation-reviews/cli.mjs dry-run --sessions "$COPY_SESSIONS" --operations none --legacy "$COPY_REVIEWS" --output "$PRIVATE_RUN"`
+
+The maintained guide defines exact mutation confirmations, explicit absent operation
+roots, optional admissions/session-content maps, exit statuses and retained-block
+dispositions. No SDK opens on originals, live services, auth/provider bootstrap,
+current-ref/prose joins, patch recovery, fetch, retention refs or cleanup exist.
+
+| File | Scope |
+| --- | --- |
+| `cli.mjs`, `run.mjs` | Explicit arguments; immutable manifest/mappings; private reports, backup/install/check/resume/restore journal; exact confirmations |
+| `io.mjs`, `json.mjs` | Held Linux directory/no-follow regular boundaries, fsync/exclusive writes, strict duplicate-key UTF-8 parsing and exact token edits |
+| `codec.mjs` | Complete aggregate/index/range/per-entry streaming integrity, orphan/pending/corrupt classification, once-only presentation normalization/reconstruction |
+| `convert.mjs` | Every branch/occurrence, ancestry-only proposal sharing, occurrence-local result proof, terminal unavailable settlements, standalone inert consent, exact graph/SDK projection oracles |
+| `target.mjs` | New-format leaf validators/read-only Git and leaf SDK SessionManager only; no application bootstrap |
+| `converter.fixture.mjs` | B01–B22-derived synthetic filesystem/native/SDK cases, interruptions, corruption, no-follow/races, backup/write/journal/refusal and exact restore; registered by the existing bridge |
+| `legacy-store.ts`, `legacy-store.test.mjs` | Historical compatibility codec and synthetic writer/continuing assertions only |
+
+Original/new hashes and IDs are frozen in the private manifest, never regenerated
+on resume. Terminal missing facts stay unknown; result proof is not a latest UUID
+join. SDK validation uses separate private LF-framed copies to avoid SDK tail repair
+of exact staging. No source/message/selection/patch size cap is introduced. Large
+metadata/session objects remain resident; patch hashes use bounded buffers.
+Atomicity is one file at a time, not the whole dataset. Changed/newer user writes
+and unverified artifacts refuse. Reused backups re-establish held-FD and directory
+fsync barriers before publication. Physical output/input aliases are checked before
+artifact creation. Mutation errors conservatively report partial/uncertain state
+and explicit recovery commands, never automatic rollback or zero effects.
+`recorded-locators.json` is a manifest-bound PRIVATE finite locator/count report
+from already validated metadata, never a repository admission or prose authority.
+No mode deletes a tree, bundle, backup or residue.
+
+Review regressions cover real outer-owned standalone receipts/no-receipt states,
+positive owner-local results and v2 idempotence; complete required invocation facts;
+missing historical dependencies versus available contradictions; incomplete native
+action facts; actual reused-backup file/directory fsyncs and tamper refusal; physical
+identity/ancestry alias predicates without privileged mounts; a private source-only
+command-environment mutation/restore; and actual CLI reporting after rename failure.
+The explicit local helper closure is checked independently. Pinned dependency
+resolution in a private source-copy test is the only loader substitution; local
+helpers/policy/I/O are real. Process-local builtin fsync observations restore ES
+module bindings before teardown. Existing graph/byte/unknown/native cases remain.
 
 ## Assertion dispositions at P3
 
@@ -50,6 +97,6 @@ mechanisms change.
 Mounted DOM proves real React behavior/complete observed work, not physical layout,
 browser networking or native Git authority. Native tests use private repositories
 and persisted SDK/operation owners. Installed Nix browser checks retain actual
-package transport/layout/downloads. Complete core/browser/service acceptance,
-independent P3 review, realized-package inspection and all P4 obligations remain
-separately recorded gates, not implied by this ledger.
+package transport/layout/downloads. P3 independent reviews are closed. Complete core/browser/service acceptance,
+P4 independent review and operational gates remain separately recorded, not implied
+by this ledger or a focused migration pass.

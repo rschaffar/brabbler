@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createJiti } from 'jiti';
 import { cleanupReviewSnapshot } from './review-resources.fixture.mjs';
 const jiti = createJiti(import.meta.url, { fsCache: false });
-const { gitReviewResult, isGitReviewComparison, isCapturedGitReview, readGitReviewPayload, isGitReviewUnavailableComparison } = await jiti.import('./review-data.ts');
+const { gitReviewResult, isGitReviewComparison, isCapturedGitReview, readGitReviewPayload, isGitReviewUnavailableComparison, resolveGitReviewSettlement, isGitReviewResultBasis } = await jiti.import('./review-data.ts');
 const { snapshotOperationReview, readOperationReview } = await jiti.import('../../lib/plugins/review-metadata.ts');
 const oid = n => String(n).repeat(40);
 function fixture(action = 'commit') {
@@ -116,6 +116,39 @@ test('legacy unavailable schema retains trustworthy OIDs and complete once-only 
   assert.equal(readGitReviewPayload({ ...payload, patch: '+not metadata' }), null);
   assert.equal(readGitReviewPayload({ ...payload, details: { patch: '+not metadata' } }), null);
   assert.equal(isGitReviewUnavailableComparison({ ...unavailable, comparison: { before: 'HEAD', after: oid(2) } }), false);
+});
+
+test('unknown legacy outcome facts remain absent, not false/empty, and unavailable settlements can link incomplete proposals', () => {
+  const proposal = { version: 1, kind: 'legacy-unavailable', unavailable: { reason: 'legacy-endpoints-missing' } };
+  const settlement = { version: 1, kind: 'settlement', proposal: { version: 2, id: 'a046677d-8293-4445-9a2b-558317341280', operationId: 'a046677d-8293-4445-9a2b-558317341281' },
+    outcome: { phase: 'succeeded', effectStarted: true }, unavailableResult: { reason: 'result-unproven' }, relation: 'unknown' };
+  const decoded = readGitReviewPayload(settlement); assert.ok(decoded); assert.equal(resolveGitReviewSettlement(proposal, decoded), true);
+  assert.equal(Object.hasOwn(decoded.outcome, 'completed'), false); assert.equal(Object.hasOwn(decoded.outcome, 'checksStarted'), false); assert.equal(Object.hasOwn(decoded.outcome, 'effects'), false);
+  assert.ok(readGitReviewPayload({ ...settlement, outcome: { ...settlement.outcome, completed: false, checksStarted: false, effects: [] } }));
+});
+test('settlement-local display basis is strictly shaped and independently corresponds to commit/merge/rebase proposal and frozen method', () => {
+  const ref = { version: 2, id: 'a046677d-8293-4445-9a2b-558317341280', operationId: 'a046677d-8293-4445-9a2b-558317341281' };
+  for (const action of ['commit', 'merge', 'rebase']) {
+    const { baseline, report } = fixture(action), resultBasis = { action, refs: baseline.refs,
+      ...(action === 'commit' ? { candidateTree: oid(4) } : action === 'merge' ? { mergeMethod: 'non-ff' } : {}) };
+    const comparison = action === 'commit' ? { before: oid(1), after: oid(4) } : { before: oid(9), after: oid(2) };
+    const repository = { commonDirectory: '/fixture/.git', identity: '1:2:16877', checkout: '/fixture', primaryCheckout: '/fixture', bindingOrigin: 'offline-admitted' };
+    const proposal = { version: 1, kind: 'proposal', operation: action === 'commit' ? { action, checkout: '/fixture', mode: 'staged', message: 'exact' }
+      : { action, checkout: '/fixture', featureBranch: 'feature', targetBranch: 'main', ...(action === 'merge' ? { mergeMethod: 'non-ff' } : {}) },
+      cwd: '/fixture', fingerprint: 'a'.repeat(64), checks: [], nativeArgs: action === 'merge' ? ['-c', 'branch.main.mergeOptions=', 'merge', '--no-ff', '--commit', '--no-edit', '--no-gpg-sign', oid(2)]
+        : action === 'rebase' ? ['rebase', '--no-autostash', '--no-update-refs', '--no-rebase-merges', '--no-gpg-sign', oid(1)] : [],
+      source: { kind: 'git', captured: { version: 1, repository, comparison, trees: comparison } } };
+    const settlement = { version: 1, kind: 'settlement', proposal: ref, resultBasis, postflight: report,
+      outcome: { phase: 'succeeded', effectStarted: true, completed: true }, relation: 'unknown',
+      result: { captured: { version: 1, repository, comparison: { before: oid(1), after: oid(3) }, trees: { before: oid(1), after: oid(4) } }, commit: oid(3), label: action === 'rebase' ? 'Rebased feature changes' : 'Actual result' } };
+    assert.ok(readGitReviewPayload(proposal)); assert.ok(readGitReviewPayload(settlement)); assert.equal(resolveGitReviewSettlement(proposal, settlement), true);
+    assert.equal(isGitReviewResultBasis({ ...resultBasis, cwd: '/fictional' }), false);
+    assert.equal(resolveGitReviewSettlement({ ...proposal, baseline }, settlement), false, 'no redundant full baseline plus imported basis');
+    for (const completed of [undefined, false]) assert.equal(resolveGitReviewSettlement(proposal, { ...settlement, outcome: { ...settlement.outcome, completed } }), false);
+    const changed = structuredClone(proposal); changed.source.captured.comparison.after = oid(8); assert.equal(resolveGitReviewSettlement(changed, settlement), false);
+    if (action === 'merge') { const wrong = structuredClone(proposal); wrong.nativeArgs[3] = '--ff-only'; assert.equal(resolveGitReviewSettlement(wrong, settlement), false); }
+    if (action === 'rebase') { const wrong = structuredClone(proposal); wrong.nativeArgs[5] = oid(8); assert.equal(resolveGitReviewSettlement(wrong, settlement), false); }
+  }
 });
 
 const reference = { version: 2, id: 'a046677d-8293-4445-9a2b-558317341280', operationId: 'a046677d-8293-4445-9a2b-558317341281' };

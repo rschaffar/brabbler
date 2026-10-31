@@ -64,10 +64,14 @@ export interface GitReviewLegacyUnavailable {
   operation?: ReviewedGitOperation; fingerprint?: string; checks?: RequiredCheck[]; nativeArgs?: string[];
   details?: GitReviewDetails;
 }
+/** Historical display facts only, not a recovered physical execution baseline. */
+export type GitReviewResultBasis = Pick<PostflightBaseline, "action" | "refs" | "candidateTree" | "mergeMethod">;
 export interface GitReviewSettlement {
   version: 1; kind: "settlement"; proposal: OperationReviewReference;
-  outcome: { phase: PluginOperationReceipt["phase"]; effectStarted: boolean; completed: boolean; checksStarted: boolean;
-    effects: string[]; attemptedEffect?: string };
+  outcome: { phase: PluginOperationReceipt["phase"]; effectStarted: boolean; completed?: boolean; checksStarted?: boolean;
+    effects?: string[]; attemptedEffect?: string };
+  /** Settlement-local: never enrich a shared proposal using a later branch. */
+  resultBasis?: GitReviewResultBasis;
   /** Collected and finalized observations, never parsed receipt/summary prose. */
   postflight?: PostflightReport;
   result?: { captured: CapturedGitReview; commit: string; label: GitReviewResult["label"] };
@@ -205,13 +209,16 @@ export function readGitReviewPayload(value: unknown): GitReviewPayload | null {
       || value.details !== undefined && !details(value.details)) return null;
     return value as unknown as GitReviewLegacyUnavailable;
   }
-  if (value.kind !== "settlement" || !keys(value, ["version", "kind", "proposal", "outcome", "postflight", "result", "resourceResult", "unavailableResult", "relation"])
+  if (value.kind !== "settlement" || !keys(value, ["version", "kind", "proposal", "outcome", "resultBasis", "postflight", "result", "resourceResult", "unavailableResult", "relation"])
     || !isOperationReviewReference(value.proposal) || !object(value.outcome)
     || !keys(value.outcome, ["phase", "effectStarted", "completed", "checksStarted", "effects", "attemptedEffect"])
     || value.outcome.attemptedEffect !== undefined && !text(value.outcome.attemptedEffect)
     || !["same", "different", "unknown"].includes(value.relation as string)
     || !["succeeded", "failed", "cancelled"].includes(value.outcome.phase as string)
-    || ![value.outcome.effectStarted, value.outcome.completed, value.outcome.checksStarted].every(item => typeof item === "boolean") || !strings(value.outcome.effects)) return null;
+    || typeof value.outcome.effectStarted !== "boolean"
+    || [value.outcome.completed, value.outcome.checksStarted].some(item => item !== undefined && typeof item !== "boolean")
+    || value.outcome.effects !== undefined && !strings(value.outcome.effects)) return null;
+  if (value.resultBasis !== undefined && !isGitReviewResultBasis(value.resultBasis)) return null;
   if (value.postflight !== undefined && (!object(value.postflight) || value.postflight.version !== 1 || !object(value.postflight.refs) || !object(value.postflight.relationships) || !Array.isArray(value.postflight.issues))) return null;
   if (value.result !== undefined && (!object(value.result) || !keys(value.result, ["captured", "commit", "label"])
     || !isCapturedGitReview(value.result.captured) || !isGitReviewOid(value.result.commit) || !["Actual result", "Rebased feature changes"].includes(value.result.label as string))) return null;
@@ -223,17 +230,47 @@ export function readGitReviewPayload(value: unknown): GitReviewPayload | null {
 }
 /** Result content must agree with the exact immutable proposal's settled report.
  * Caller still owns metadata linkage/ancestry and Git object validation. */
-export function resolveGitReviewSettlement(proposal: GitReviewProposal, settlement: GitReviewSettlement): boolean {
+export function resolveGitReviewSettlement(proposal: GitReviewProposal | GitReviewLegacyUnavailable, settlement: GitReviewSettlement): boolean {
+  if (settlement.resultBasis && (proposal.kind !== "proposal" || proposal.baseline || !matchesGitReviewResultBasis(proposal, settlement.resultBasis))) return false;
   if (!settlement.result) return settlement.relation === "unknown";
-  if (!proposal.baseline || !settlement.postflight || proposal.source.kind !== "git" || !settlement.outcome.completed
-    || !settlement.outcome.effectStarted || settlement.outcome.phase !== "succeeded") return false;
+  if (proposal.kind !== "proposal") return false;
+  const basis = proposal.baseline ?? settlement.resultBasis;
+  if (!basis || !settlement.postflight || proposal.source.kind !== "git" || settlement.outcome.completed !== true
+    || settlement.outcome.effectStarted !== true || settlement.outcome.phase !== "succeeded") return false;
   try {
-    const result = gitReviewResult(proposal.baseline, settlement.postflight), captured = settlement.result.captured;
+    const result = gitReviewResult(basis, settlement.postflight), captured = settlement.result.captured;
     return !!result && result.commit === settlement.result.commit && result.label === settlement.result.label
       && result.comparison.before === captured.comparison.before && result.comparison.after === captured.comparison.after
       && captured.repository.identity === proposal.source.captured.repository.identity
       && captured.repository.commonDirectory === proposal.source.captured.repository.commonDirectory;
   } catch { return false; }
+}
+/** Exact narrow shape; no physical guard/identity fields can masquerade as display facts. */
+export function isGitReviewResultBasis(value: unknown): value is GitReviewResultBasis {
+  if (!object(value) || !keys(value, ["action", "refs", "candidateTree", "mergeMethod"]) || !object(value.refs)) return false;
+  const names = value.action === "commit" ? ["subject"] : value.action === "merge" || value.action === "rebase" ? ["feature", "target"] : [];
+  if (!names.length || Object.keys(value.refs).length !== names.length || !names.every(name => {
+    const ref = (value.refs as Record<string, unknown>)[name];
+    return object(ref) && Object.keys(ref).length === 2 && nonempty(ref.branch) && isGitReviewOid(ref.before);
+  })) return false;
+  return value.action === "commit" ? isGitReviewOid(value.candidateTree) && value.mergeMethod === undefined
+    : value.candidateTree === undefined && (value.action === "merge" ? ["ff-only", "non-ff"].includes(value.mergeMethod as string) : value.mergeMethod === undefined);
+}
+/** Independent proposal/OID/native-argument correspondence for imported display bases.
+ * Branch tips and report prose are never consulted. Live full baselines are unchanged. */
+export function matchesGitReviewResultBasis(proposal: GitReviewProposal, basis: GitReviewResultBasis): boolean {
+  if (!isGitReviewResultBasis(basis) || basis.action !== proposal.operation.action) return false;
+  const comparison = proposal.source.kind === "git" ? proposal.source.captured.comparison
+    : proposal.source.kind === "unavailable" ? proposal.source.unavailable.comparison : undefined;
+  if (!comparison) return false;
+  const op = proposal.operation, args = proposal.nativeArgs;
+  if (op.action === "commit") return basis.refs.subject.before === comparison.before && basis.candidateTree === comparison.after;
+  if (op.action !== "merge" && op.action !== "rebase" || basis.refs.feature.branch !== op.featureBranch
+    || basis.refs.feature.before !== comparison.after || op.targetBranch !== undefined && basis.refs.target.branch !== op.targetBranch) return false;
+  if (op.action === "rebase") return JSON.stringify(args) === JSON.stringify(["rebase", "--no-autostash", "--no-update-refs", "--no-rebase-merges", "--no-gpg-sign", basis.refs.target.before]);
+  return (op.mergeMethod === undefined || op.mergeMethod === basis.mergeMethod)
+    && JSON.stringify(args) === JSON.stringify(["-c", `branch.${basis.refs.target.branch}.mergeOptions=`, "merge",
+      basis.mergeMethod === "ff-only" ? "--ff-only" : "--no-ff", "--commit", "--no-edit", "--no-gpg-sign", comparison.after]);
 }
 export function isGitReviewComparison(value: unknown): value is GitReviewComparison {
   return object(value) && Object.keys(value).length === 2 && isGitReviewOid(value.before) && isGitReviewOid(value.after)
@@ -253,7 +290,7 @@ export function isCapturedGitReview(value: unknown): value is CapturedGitReview 
 /** Use only settled, verified observations. A populated report.commit is not proof:
  * it is collected before the final identity/ref guards and can survive their failure.
  * This projection never performs Git reads, retries effects or upgrades saved intent. */
-export function gitReviewResult(baseline: PostflightBaseline, report: PostflightReport): GitReviewResult | undefined {
+export function gitReviewResult(baseline: GitReviewResultBasis, report: PostflightReport): GitReviewResult | undefined {
   if (report.action !== baseline.action || report.nativeOutcome !== "completed" || report.verification !== "verified"
     || report.finalization !== "completed" || report.issues.length || !report.commit || !isGitReviewOid(report.commit.oid)) return;
   const holds = (...names: string[]) => names.every(name => report.relationships[name] === true);

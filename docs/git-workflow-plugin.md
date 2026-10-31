@@ -512,7 +512,9 @@ Git owns review content retention. Session JSONL/standalone backups preserve
 metadata and outcomes, not missing repositories/objects. New operations create no
 patch archive, database or content-retention refs. Retain any existing legacy review
 store and backups until separately authorized offline conversion and disposition;
-there is no automatic migration or cleanup. [ADR 0040](adr/0040-git-backed-operation-reviews.md)
+there is no automatic migration or cleanup. The explicit-root
+[offline conversion/recovery guide](git-operation-review-migration.md) describes the
+temporary CLI and its separate permissions. [ADR 0040](adr/0040-git-backed-operation-reviews.md)
 revises ADR 0018's archive choice while preserving size-independent approval scope.
 See the [schema/API map](git-operation-review-metadata.md) and
 [implementation plan](plans/2026-10-31_git-backed-operation-reviews-plan.md).

@@ -12,7 +12,7 @@ function sources(context: ReviewProviderContext) {
   const settlement = payload.kind === "settlement" ? payload : undefined;
   const captured: Partial<Record<ReviewView, CapturedGitReview>> = {};
   if (proposal.kind === "proposal" && proposal.source.kind === "git") captured.proposal = proposal.source.captured;
-  const trustworthy = proposal.kind === "proposal" && settlement && resolveGitReviewSettlement(proposal, settlement);
+  const trustworthy = settlement && resolveGitReviewSettlement(proposal, settlement);
   if (trustworthy && settlement.result) captured.result = settlement.result.captured;
   const resources = proposal.kind === "proposal" && proposal.source.kind === "resources";
   // A pre-effect failure/cancellation has no actual result. Anything that might

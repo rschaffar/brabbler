@@ -39,7 +39,12 @@ catalogue scan or a live wrapper. Tree-bearing versions 2/3 preserve raw IDs/par
 links; unsupported, torn or unstable input refuses byte-identically. Exact saved
 operation/interaction occurrences and same-ancestry metadata authorize only that
 review, not its repository paths. Copies remain self-contained after parent deletion.
-See the [review API](git-operation-review-metadata.md).
+See the [review API](git-operation-review-metadata.md). The separate
+[offline converter](git-operation-review-migration.md) supports strict v3 only;
+it preserves original bytes/IDs/targets and inserts hidden metadata before each
+reference on its own ancestry. Its SDK validation runs on separate private copies,
+never originals, and removal/splicing of inserted nodes reconstructs the original
+graph. It is not the runtime v2/v3 persisted reader or a general SDK format upgrader.
 
 ### Session files can be fully rewritten
 `parentSession` in the header is **display metadata only** — has zero effect on chat content. Safe to `writeFileSync` the entire file (pi does this itself during migrations). Used when cascade-reparenting children on delete.

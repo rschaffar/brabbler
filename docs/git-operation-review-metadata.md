@@ -4,7 +4,8 @@
 registered read-only provider, session/standalone GETs and existing per-file viewer.
 Focused native/mounted checks pass; installed-browser verification and independent
 P3 review are recorded in the active plan. This is not complete acceptance,
-conversion, deployment or an authorization to delete legacy state.
+live conversion, deployment or an authorization to delete legacy state. The
+[offline converter](git-operation-review-migration.md) remains separate from runtime.
 
 ## Generic host boundary
 
@@ -77,6 +78,18 @@ records, worktree/head/registration observations, check definitions and optional
 resource results. Unknown body fields and malformed counts/digests refuse; array
 and text lengths are not card-bounded. Incomplete metadata is not silently promoted
 to a typed resource capture.
+
+Legacy settlement `outcome.completed`, `checksStarted` and `effects` are optional:
+absence is unknown, not false or an empty list. Existing live producers still supply
+full facts. Every migrated terminal occurrence links its own settlement even when
+its proposal is `legacy-unavailable`; that no-result link cannot label a proposal
+as actual. A settlement-local optional `resultBasis` contains only action/refs/
+candidateTree/mergeMethod display facts, never fictional physical execution guards.
+It is strictly decoded and independently matched to proposal OIDs, operation and
+frozen argument grammar. It cannot coexist with a full live proposal baseline.
+Actual results still require `completed === true`, started effect, succeeded phase,
+the unchanged finalization/action/parent/tree/relationship gates and repository-bound
+capture. Missing admission/objects retains trustworthy endpoints as unavailable.
 
 `review.ts` composes proposals and settlements; `compactGitCard` only bounds
 presentation. Result endpoints come from finalized, verified postflight with its
@@ -164,8 +177,10 @@ materialization requests return unsupported (501). The UI's v1 placeholder perfo
 no bundle request. The old codec/tests now live only under
 `tools/migrations/git-operation-reviews`, admitted to tests via one classified bridge,
 not application/package inputs. Its README records continuing assertion dispositions.
-P4 still owns the converter, unknown legacy outcome adaptation, graph preservation,
-rehearsal and full acceptance; no facts are recovered from prose or current HEAD.
+The isolated converter implements unknown legacy outcome adaptation, exact graph/
+byte preservation and private rehearsal; its [guide](git-operation-review-migration.md)
+defines the supported contract and recovery boundaries. Independent P4 review and
+full acceptance remain separate. No facts are recovered from prose or current HEAD.
 
 See [the plan](plans/2026-10-31_git-backed-operation-reviews-plan.md) and
 [ADR 0040](adr/0040-git-backed-operation-reviews.md). Focused native/SDK/mounted tests

@@ -8,8 +8,13 @@ nested-schema and started-wrapper containment repairs. P3 now connects the regis
 provider, no-write session/standalone GETs and existing per-file viewer. Focused
 native/mounted checks and installed Git/worktree/shared-context groups pass. Two
 independent P3 reviews are closed after download-admission, restored-context,
-bounded-state and generic supplied-context lifecycle repairs. Complete acceptance remains open. Legacy codec/tests are isolated outside application inputs. Converter tooling
-and rehearsal remain P4. Live migration, activation and old-state deletion require separate authorization.
+bounded-state and generic supplied-context lifecycle repairs. Legacy codec/tests
+are isolated outside application inputs. P4 implements the isolated converter;
+130 focused native/SDK/filesystem tests and a fresh source-bound, all-mode private-copy
+rehearsal pass. Both independent P4 re-reviews close the adapter, durability,
+physical-alias, code-identity and failure-reporting findings. Complete settled-candidate
+acceptance remains open. Live migration, activation and old-state deletion require
+separate authorization.
 
 **Workspace:** `feat/git-backed-operation-reviews`, created from local `main`
 `fed9415359e3867a3c9bdd25801034d6e5c820ee`; reviewed planning commit `ee32fb3f`.
@@ -583,8 +588,8 @@ Legacy codec/tests live only under `tools/migrations/git-operation-reviews`, beh
 one classified bridge and exact export/test fileset admission. No application
 imports them; the realized package was checked for retired codec/context names.
 The [temporary support README](../../tools/migrations/git-operation-reviews/README.md)
-records historical assertion/input dispositions. No converter CLI or live conversion
-is claimed. The Git ADR was renumbered to 0040 because main's SSH decision owns 0039.
+records historical assertion/input dispositions. P3 itself did not implement the converter; the P4 checkpoint below describes its
+current scope. No live conversion is claimed. The Git ADR was renumbered to 0040 because main's SSH decision owns 0039.
 
 Focused evidence (not complete acceptance): the five ownership/API/migration files
 passed **65 tests** at export `b3134e8df0b17b22862082e4f0fa35e7340fd27b6ccd7b7b850bbf955d275668`;
@@ -649,9 +654,66 @@ companion (not additive to earlier P3 selections). Installed `git-plugin`,
 `ba0ab9e5fecfd45b68886ce18e4862d7f4f840047f5734947e05b70e1cf9da65`.
 Both independent reviewers closed the API and viewer findings on re-review.
 Earlier evidence above retains its exact inputs/counts.
-P4 owns converter/legacy unknown-fact adaptation, rehearsal and full core/browser/deployment
-acceptance. There is no live conversion, activation, old-state deletion or integration
+The P4 checkpoint below supplies converter/legacy unknown-fact adaptation and private
+rehearsal. Parent-coordinated review and full core/browser/deployment acceptance stay
+open. There is no live conversion, activation, old-state deletion or integration
 claim in this checkpoint.
+
+## P4 converter checkpoint
+
+The temporary explicit-root Linux/Node 24 CLI supports strict v3-only JSONL and
+version-1 standalone owners, complete streamed v1 bundle integrity, all retained
+branches/occurrences, known Git inline sources and explicitly missing sources.
+Unsupported/corrupt/ambiguous owners are whole-file blocks, never partial rewrites.
+Unknown terminal facts remain absent, and each terminal gets its own linked
+settlement/unavailable result. The narrow settlement-local display basis is not a
+fictional physical execution baseline. Existing live producers and all native
+execution safeguards remain intact.
+
+Held-directory/no-follow boundaries, private verified byte/mode backups, immutable
+hash/ID/edge mapping, fsync/atomic per-file intent journal, exact interruption
+resume/check/restore and newer-write refusal are implemented. Actual SDK model
+projections at every original leaf/branch point/reference and the exact edge-splice
+oracle validate private outputs. Separate LF-framed SDK copies avoid SDK tail repair
+of byte-exact staging. Original provider/tool-result/pause bytes remain opaque.
+Full presentation-only resources survive once with a private reconstruction witness;
+no patches, fixtures, legacy decoder or converter enter runtime inputs.
+
+P4 review repairs retain that design: real standalone receipts use their outer
+plugin owner and allow no-receipt states; invocation proof requires complete required
+fields; missing merge/rebase dependencies stay unavailable while available graph
+contradictions reject; incomplete action facts stay unproven, not fabricated.
+Reused backups re-establish verified FD/directory durability, physical identity and
+ancestry guards precede output creation, and code identity binds the child command
+environment/local helper closure. CLI mutation failures disclose possible partial
+state with explicit recovery instructions. A private finite recorded-locator/count
+report reuses validated metadata without probing/admitting saved paths.
+
+The existing classified bridge owns B01–B22-derived real filesystem/native/SDK cases,
+including killed-child rename interruption, backup/write/journal faults and restore.
+The registered standalone API additionally refuses a missing/denied owner anchor
+while captured Git content remains independently readable. The focused 10-file Nix
+initial selection passed **121 tests**, typegen/tsc/lint and 33 exporter cases (not complete
+acceptance). A private source fault that defaults unknown facts to false/empty
+produced exactly the two intended session/standalone runtime failures; it never
+entered receiving source. After the reviewed repairs, the settled 10-file selection
+passed **130 tests**, including **34 migration-bridge cases**, with no failures,
+skips or cancellations. Both independent re-reviews close their concrete findings;
+these focused checks are not complete application acceptance.
+
+The fresh repaired-source private-copy rehearsal completed dry-run/apply/check/resume/restore
+without any repository admission or mapping. Captured metadata/OIDs survived with
+explicit unavailable content; the known pre-existing dangling-parent owner stayed
+blocked unchanged. Full copied-baseline and restored-copy checksums and supported
+modes match. Exact counts, immutable input identities, timings, paths and retained
+failures stay in private evidence, not repository data. This unquiesced copy is not
+a live-consistency proof. No original state, saved real checkout, credential store,
+reserved archive, service or foreign repository was accessed by the converter.
+
+[Migration/recovery instructions](../git-operation-review-migration.md) own the CLI,
+permissions, unknown/unavailable semantics and limits. Record the actual tested
+tool-containing Git revision before retirement. Independent source/safety re-review
+is closed; full acceptance, operational cutover and retirement remain open.
 
 ## Implementation packages
 
@@ -680,10 +742,11 @@ new permission.
   flush, save-before-publication, failed-append quarantine, copied review ancestry,
   final clone barrier and complete nested resources pass. Independent re-review
   closed the concrete findings. This does not certify the pending viewer or rollout.
-- [ ] Pin down repository replacement/removal and copied-session identity behavior;
-  test known surviving worktree fallback and unavailable whole-repository moves.
-  Preserve standalone owner-anchor admission and distinct owner/receipt IDs; account
-  for missing original legacy binding through explicit offline-admitted provenance.
+- [x] Pin down repository replacement/removal and copied-session identity behavior.
+  Native reader/provider cases verify surviving-primary fallback, unavailable whole
+  moves/replacements, copied-owner resolution and independent standalone owner-anchor
+  admission with distinct IDs. Converter/native cases identify new bindings as
+  offline-admitted rather than inventing an original legacy physical capture.
 
 **Gate:** No patch-archive replacement if it requires a new permanent object store,
 weakens path/object ownership, loses complete resource selections or reintroduces
@@ -728,19 +791,21 @@ large-patch admission limits. Return for a bounded design decision if these fail
 
 ### P4 — Offline converter, rehearsal and application acceptance
 
-- [ ] Implement the isolated converter with dry-run/check/apply/resume/restore modes,
+- [x] Implement the isolated converter with dry-run/check/apply/resume/restore modes,
   exact backups and journal; preserve complete session graph and standalone
   acknowledgment history through native synthetic fixtures and fault injection.
-- [ ] Exercise old bundle and inline formats, success/proposal-only/unavailable,
+- [x] Exercise old bundle and inline formats, success/proposal-only/unavailable,
   all branches/forks, corrupt orphans, missing owners, duplicate IDs, disk/write
   failures, symlink refusals, interruption and unchanged reruns. Include a prepared
   fork versus successful sibling, terminal copy after parent deletion, unequal
   standalone owner/receipt IDs, native-success/reporting-error shapes, and dry-run
   original-file hash invariance. No live writes.
-- [ ] Write portable migration/recovery instructions; rehearse against a separately
+- [x] Write portable migration/recovery instructions; rehearse against a separately
   authorized private copy and report classifications without tracking private data.
-- [ ] Complete independent source/safety review and the required acceptance matrix
-  below on the settled candidate. Preserve failures and exact input identities.
+- [x] Complete independent source/safety review; both re-reviews close the concrete
+  adapter and I/O/durability/code-identity/reporting findings on the frozen repairs.
+- [ ] Complete the required acceptance matrix below on the settled candidate.
+  Preserve failures and exact input identities.
 
 ### P5 — Separately authorized operational handoff and retirement
 
