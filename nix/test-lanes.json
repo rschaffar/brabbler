@@ -4,6 +4,26 @@
   "reviewBasis": "Native entries use the source-audited per-file inventory in the coordinator's parallel-test design (runtime 14/15/3/5 split); F entries were read with their implementation imports. Initial scheduling reviews assumed two workers, not proven timing margins. Automatic selection remains capped at four; widths through eight are explicit opt-in experiments whose isolation review is not proof of native timing margins or complete acceptance. Re-review when resource/fixture behavior changes. The 2026-10-22 audit JSON is immutable historical evidence, not live authority or a current source-byte/reason/estimate requirement. Live unresolved holds carry the concerns still requiring review; source digests alone do not prove isolation. Original73 plus12 finite additional clients re-reviewed at coherent union; SessionTools pending Apply peer fixed with actual failure-settlement contrast. Native closed gates bind configured Jiti L, eager SDK I/V and actual external-root X; 3 bounded guarded in-process F, 9 native N eligible, runtime generation/catalogue and invoked trust discovery are now separately source-bound N at their selected inputs. Fresh combined four-job run required; no worker/deadline/runner policy change. Current explicit Source/input projection closes finite Worktree/Terminal, Cards/Pierre/FDIFF, Usage/SSH UI, runtime/trust and actual queue domains, with passive native SSH/RPC error-retention remedies. No browser/native retirement or universal constructor/escaped/future work certification; complete combined four-job validation remains required.",
   "files": [
     {
+      "path": "lib/git-file-context-lifecycle.test.mjs",
+      "lane": "N",
+      "reason": "Actual immutable context reader owns real per-case native Git children through private executable wrappers and named blob-read gates. PATH is process-local and restored only after owned promises and observed wrapper PIDs settle; fixtures have registered cleanup, safety closure and no grandchildren while held. Cancellation, failed-side sibling closure and pre-abort tests run serially with private repositories; no provider, fixed port, shared source output or SDK actor."
+    },
+    {
+      "path": "lib/plugins/review-metadata.test.mjs",
+      "lane": "N",
+      "reason": "Actual metadata snapshot/ancestry owners and pinned SDK SessionManager append/reopen/branch/all-branch copy use explicit per-case mkdtemp session roots. No AgentSession, provider/account discovery, globals/environment mutation, child, listener or source-relative output. All SDK file operations are synchronous; private-root removal is registered before writes. Covers multi-megabyte metadata outside model/navigation bodies, caller detachment, sibling/terminal copy boundaries and the source-qualified custom-only initial-flush requirement."
+    },
+    {
+      "path": "plugins/git-workflow/review-data.test.mjs",
+      "lane": "F",
+      "reason": "Actual pure saved-comparison and settled-result production owners, imported through Jiti with filesystem caching disabled. Literal per-case data only; no runtime postflight imports, filesystem writes, timers, transport, SDK or native work. Covers failed/late postflight guards, exact endpoints and no-op/divergent/rebase result semantics."
+    },
+    {
+      "path": "plugins/git-workflow/review-reader.test.mjs",
+      "lane": "N",
+      "reason": "Actual local Git review reader uses only per-case mkdtemp repositories and explicit path-admission capabilities. Native Git writes and hostile helper/config fixtures are private; no provider, fixed port, shared environment mutation or source-relative output. Every asynchronous read/stream is awaited, including cancellation and partial-failure paths, before registered root removal. Git metadata reads disable optional locks, external diff/textconv, fsmonitor and lazy fetch; capture creates no retention refs or persistent patch data. No SDK/runtime owner is constructed."
+    },
+    {
       "path": "lib/third-party-notices.test.mjs",
       "lane": "N",
       "reason": "Runs the real notice collector/version guard on per-case mkdtemp dependency/metadata/legal-text/symlink fixtures. All I/O and JSON-only module resolution are synchronous; fixture removal is registered before writes. No dependency JavaScript, source writes, installer, network, child, native signal or shared environment mutation. Deterministic root-independent output, preserved bytes/ownership, and refusal boundaries are covered; final installed artifact/source access remains a separate native bridge."

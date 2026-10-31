@@ -490,6 +490,12 @@ review history; do not delete it during rollback. Insufficient disk space or
 failed pre-effect persistence still refuses execution. See
 [ADR 0018](adr/0018-size-independent-git-reviews.md).
 
+[ADR 0039](adr/0039-git-backed-operation-reviews.md) records the accepted replacement
+direction: metadata in sessions/existing standalone records and diffs generated
+from Git objects. Its initial reader/metadata foundation does not yet replace this
+running archive protocol; producer/UI cutover and offline migration remain in the
+[implementation plan](plans/2026-10-31_git-backed-operation-reviews-plan.md).
+
 ### Optional full-file patch context
 
 Small new Git patch approvals may carry an optional opaque UUID handle in the plugin's

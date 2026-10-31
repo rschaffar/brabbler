@@ -1,13 +1,14 @@
 # Git-backed operation reviews
 
-**Status:** Plan independently reviewed and ready for implementation authorization;
-implementation has not started. Planning and independent plan review only are
-currently authorized. No application changes, live migration, service activation
-or deletion are authorized by this document.
+**Status:** Implementation authorized; the initial P1 reader/metadata foundation is
+implemented, independently reviewed and core-verified. The feature is **not yet
+switched over**: active cards still use the old archive. Runtime host/producer/UI
+wiring, migration tooling and complete acceptance remain open. Live migration,
+service activation and old-state deletion still require separate authorization.
 
 **Workspace:** `feat/git-backed-operation-reviews`, created from local `main`
-`fed9415359e3867a3c9bdd25801034d6e5c820ee`. Retain the linked worktree for the
-subsequent implementation; do not integrate or clean it up merely to finish planning.
+`fed9415359e3867a3c9bdd25801034d6e5c820ee`; reviewed planning commit `ee32fb3f`.
+Retain this linked worktree while the implementation packages are incomplete.
 
 ## Executive summary
 
@@ -485,26 +486,90 @@ individual owner/reference mappings and graph preservation.
   its old review source is unsupported. Old standalone record loading needs the
   same treatment. The fallback must not read old bundle files.
 
+## Implementation checkpoint — P1 foundation
+
+Implemented owners are `plugins/git-workflow/review-{data,reader}.ts` and
+`lib/plugins/review-metadata.ts`. They supply immutable native comparisons,
+settled-result projection and hidden, detached metadata with exact ancestry
+resolution. Navigation projection strips metadata bodies without changing raw
+SDK ownership. This is a tested foundation, not an activated v2 card protocol.
+
+Two independent implementation reviewers identified selected file/directory
+broadening, ambient ordering, missing-blob availability, context cancellation,
+logical-ID conflict and lossless numeric-snapshot defects. All were fixed and
+both reviewers closed their findings on a second pass. Their additional copy,
+compaction, navigation-topology and fixture-cleanup checks were incorporated.
+The final ordering-test nit was also fixed and rerun. Private fault copies
+reintroduced those defects and produced exactly 3 reader, 2 metadata and 3 context
+lifecycle test failures, with no observed surviving processes. Faults never touched
+the implementation checkout.
+
+### Verified evidence and limits
+
+- **Full core/static/plugin:** `nix run .#test -- core --jobs 12` passed all
+  **534 files / 4,455 tests / 14 suites**, with zero failures, skips, cancellations
+  or observed surviving processes. Requested/effective runner width was **12/12**,
+  admitted on x86_64 Linux, 32 CPUs and about 44 GiB available memory. This is not
+  browser/terminal or genuine deployment acceptance.
+- The full-core input was export
+  `e2884d5dfbfc361873098b734a8385b7f1d14ecfc53a5101664385afb6fa38eb`;
+  core output is `/nix/store/8jaq3nr38n30jz1kb8g9fpmhvmgzw6j5-brabbler-core-checks`
+  (`artifacts/run-RgvKWI/summary.json`). End-to-end command wall time was about
+  **279 s**; initial preparation before the runner was about **5.7 s**, and the
+  first-to-last test interval was **273.5 s**. These exclude model/review time and
+  are not a benchmark against differently prepared runs.
+- A subsequent test-only correction moved the opposite-order assertion before
+  changing an order file. `nix run .#test -- core --file
+  plugins/git-workflow/review-reader.test.mjs` passed **16/16** at export
+  `929abd0b869d9c3dff20cfbde20101aaa41bc0925d44998dd9af6e6bb13c860f`
+  (about **47 s** command wall time, including updated lint realization). Runtime
+  implementation bytes were unchanged; the earlier full-core evidence is not
+  relabelled as a new-tip full run.
+- SDK fixtures preserve a 2 MiB message and 5,000 selected names through append,
+  reopen and copies, keep metadata out of model/display/navigation bodies, and
+  distinguish prepared/cancelled versus terminal branches across compaction and
+  original-file deletion. These are real SDK custom-entry tests, **not** production
+  receipt/card/interaction integration. No chunking is justified by this fixture;
+  it does not promise constant memory or arbitrary-size performance.
+- Preserve the intentional navigation-body leakage RED and the corrected greens,
+  both rounds of implementation reviews, source fingerprints and private fault
+  logs outside the repository. No live sessions/review data were read or changed
+  during implementation or testing.
+
+### Next bounded slice
+
+P2 must connect the metadata save port to real session and standalone owners before
+any producer publishes v2 references. The inspected SDK can leave custom-only data
+unflushed, can retain failed appends in memory, and does not provide an fsync barrier.
+The host must define/enforce successful save-before-publication, reject references
+from failed saves, and repair the metadata-only `fork_branch` first-flush edge.
+Full payloads must stay out of standalone status/list responses. These are known
+host integration obligations, not a reason for another permanent store.
+
 ## Implementation packages
 
-All packages below are **proposed / unchecked**. P1 must close concrete discovery
-questions before P2 hardens the schema. Keep one repository writer and one receiving
-candidate; independent reviewers do not edit it. Record exact acceptance evidence
-without treating this checklist as new permission.
+Unchecked tasks remain proposed/incomplete; checked tasks state their actual scope.
+P1 must close concrete discovery questions before P2 hardens the complete protocol.
+Keep one repository writer and one receiving candidate; independent reviewers do
+not edit it. Record exact acceptance evidence without treating this checklist as
+new permission.
 
 ### P1 — Freeze the contract and prove the smallest slice
 
 - [ ] Inventory actual producers, owners and consumers in the files above, including
   standalone records, interaction receipts, paused snapshots, forks/branches and
   migration/export packaging; record a bounded source/test map in this plan.
-- [ ] Add a successor ADR and update the owning guide to describe intentional loss
-  of repository-independent history while preserving immutable approval scope.
-- [ ] Prove with private native fixtures that HEAD/candidate tree and captured
-  merge comparisons can supply file inventory, patch and full context without
-  staged/working-file reads or persistent patch output; preserve 40-file paging,
-  giant-line/binary streaming and unchanged existing native guards.
-- [ ] Validate large metadata persistence/copy behavior and target entry/schema
-  design through real SDK/host fixtures; settle any chunking need before rollout.
+- [x] Add [ADR 0039](../adr/0039-git-backed-operation-reviews.md) and link it from
+  the owning guide, explicitly distinguishing the initial foundation from the
+  unchanged running archive. The remaining cutover must implement that decision.
+- [x] Prove the standalone native comparison reader with private repositories:
+  immutable candidate/commit trees, 40-file paging, giant-line/binary streaming,
+  local missing-object failure, SHA-256, fallback admission and context closure.
+  Full core, including existing native-operation guard tests, passes. No active
+  producer/card cutover is claimed by these fixtures.
+- [ ] Finish target entry/schema validation through real host fixtures before
+  rollout. SDK-only large-metadata/copy/compaction/hiddenness tests pass; the
+  save/first-flush/failure/durability port and v2 publication integration remain open.
 - [ ] Pin down repository replacement/removal and copied-session identity behavior;
   test known surviving worktree fallback and unavailable whole-repository moves.
   Preserve standalone owner-anchor admission and distinct owner/receipt IDs; account
@@ -521,6 +586,9 @@ large-patch admission limits. Return for a bounded design decision if these fail
   copied/branched access, immutable proposal/result linkage and unsupported fallback.
 - [ ] Replace Git bundle preparation with structured proposal metadata based on the
   existing private candidate tree; preserve exact-state/check/cancellation behavior.
+  Implement host initial-flush/save-barrier and failed-append containment before
+  returning references; fix the custom-only `fork_branch` flush edge with real
+  host fixtures. A pure result comparison does not certify terminal persistence.
   Check original object availability before preview can recreate it, with a native
   missing-candidate-between-publication-and-approval refusal fixture.
 - [ ] Capture structured trustworthy result endpoints at settlement from postflight,
