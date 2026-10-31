@@ -1,11 +1,11 @@
 # Optional Git Workflow plugin
 
-**Implementation checkpoint:** new operation reviews now use saved structured
-metadata, not patch bundles. P2 host/producer integration is focused-tested;
-P3 full viewer/API wiring remains pending, so operation attachments currently
-show an explicit pending placeholder. The shared per-file viewer is retained and
-must be reconnected before rollout. See the [schema/API map](git-operation-review-metadata.md).
-No live conversion or deployment is claimed.
+**Implementation checkpoint:** new operation reviews use saved structured metadata,
+not patch bundles. The registered read-only provider connects session/standalone
+GETs to the existing per-file viewer. Focused native/mounted evidence and pending
+independent/full-acceptance gates are recorded in the active plan. See the
+[schema/API map](git-operation-review-metadata.md). No live conversion or deployment
+is claimed.
 
 Brabbler works with every bundled plugin disabled. **Settings → Plugins → Git
 Workflow** enables this browser-only bundled plugin; it is off by default.
@@ -328,7 +328,8 @@ top-level operation metadata, the complete saved review or selected resources.
 It is an explicit application presentation argument, never operation JSON,
 user-facing Git policy or an environment/test-mode switch. Smaller native boundary
 tests use the same executor with a lower budget; cheap production-owner tests retain
-the default 24/25 boundary and larger resource lists. P3's required viewer restoration reuses the [shared diff-review controls](worktrees.md#full-file-diff-review)
+the default 24/25 boundary and larger resource lists. Reviews use the
+[shared diff-review controls](worktrees.md#full-file-diff-review)
 with one selected file: a searchable file sidebar where space permits, otherwise a
 **Files (N)** drawer. Selecting a file closes the drawer; **Previous/Next file**
 move within the displayed inventory. One sticky split/unified/raw and wrap toolbar
@@ -339,9 +340,9 @@ reads and explicitly page-local filtering; **Previous/Next files** change pages.
 Only lightweight reading positions persist across large-review entry changes;
 parsed patches and contents are released when their selected reader unmounts.
 Metadata-only exact details remain collapsed until requested. Interactive rendering is display-bounded;
-large individual entries have 256 KiB raw content pages. Complete exact reviews,
-raw patches and individual entries can always be streamed for download while the
-saved material is available. Binary and metadata-only changes remain explicit.
+large individual patches have 256 KiB raw preview pages. Complete patches (including
+binary data) stream from the selected saved comparison; metadata is downloaded
+separately on demand while its owner is accessible. Git objects may become unavailable. Binary and metadata-only changes remain explicit.
 Preview errors leave the operation card and action footer available. A page,
 excerpt or expanded file never narrows the captured operation's approval scope.
 No raw patch is reconstructed from context or silently dropped to fit a card.
@@ -489,43 +490,49 @@ append/initial-flush/fsync and standalone atomic-save failures refuse pre-effect
 authority; failed final saving never implies rollback or permits a native retry.
 Full metadata stays out of ordinary standalone status/list responses.
 
-GET `/api/sessions/[id]/reviews/[reviewId]` and the standalone counterpart currently
-validate saved ownership, then return an explicit pending/unsupported response.
-P3 must connect plugin-owned materialization and the retained full viewer. Legacy
-v1 references keep cards/outcomes with **Legacy review unavailable; offline migration
-required**, without opening old bundles. Generic supplied-patch cards remain supported.
+GET `/api/sessions/[id]/reviews/[reviewId]` and the standalone counterpart dispatch
+exact owned metadata to the registered plugin provider, even when execution is
+disabled. Overview, 40-file pages, selected 256 KiB previews, immutable context,
+complete streamed patch downloads and lazy metadata/details share the strict
+[read protocol](git-operation-review-metadata.md#registered-read-only-composition).
+Session review GETs never use SDK open/migration or a writing catalogue fallback.
+Standalone owner-anchor admission precedes any content fallback; saved paths/OIDs
+grant no access. Legacy v1 references keep cards/outcomes with **Legacy review
+unavailable; offline migration required**, without opening old bundles. Generic
+supplied-patch cards remain supported.
+
+Trustworthy settled **Actual result** is the default; rebase says **Rebased feature
+changes**. A neutral different/unknown relation can offer **View original proposal**
+in that same viewer. Missing actual never silently becomes proposal. Explicit no-op
+is empty. Cancelled/pre-effect failures may show a clearly labelled original proposal,
+never an invented result; missing/unknown effect facts are not treated as false.
+Per-view availability is independent, and read errors leave actions/outcomes intact.
 
 Git owns review content retention. Session JSONL/standalone backups preserve
 metadata and outcomes, not missing repositories/objects. New operations create no
 patch archive, database or content-retention refs. Retain any existing legacy review
 store and backups until separately authorized offline conversion and disposition;
-there is no automatic migration or cleanup. [ADR 0039](adr/0039-git-backed-operation-reviews.md)
+there is no automatic migration or cleanup. [ADR 0040](adr/0040-git-backed-operation-reviews.md)
 revises ADR 0018's archive choice while preserving size-independent approval scope.
 See the [schema/API map](git-operation-review-metadata.md) and
 [implementation plan](plans/2026-10-31_git-backed-operation-reviews-plan.md).
 
 ### Optional full-file patch context
 
-Existing supplied-patch cards may carry an optional opaque UUID handle in the plugin's
-namespace. New metadata-backed Git operations do not mint these expiring handles;
-P3 supplies their historical context from the captured comparison instead. Commit snapshots bind captured **HEAD / candidate index tree** IDs;
-rebase/merge snapshots bind **merge-base / feature commit** IDs. They supplement
-the exact supplied patch, never replace or reconstruct it. The in-memory registry
-stores comparison/file identifiers, not file contents, with a **one-hour TTL,
-64 handles and at most 256 files per handle**. Reads recheck the physical common
-Git-directory identity before reading those objects.
+Metadata-backed Git context uses the selected saved review/view/file identity,
+not an expiring handle. Commit proposals bind captured **HEAD / candidate tree**;
+merge/rebase proposals bind **merge base / feature tip**. Settled context uses the
+validated actual-result endpoints. It never reconstructs patches from current files.
+The shared **1 MiB per side / 50,000 combined lines** limits and
+[text/object rejection rules](worktrees.md#full-file-diff-review) still apply.
+Unavailable context leaves the original patch readable.
 
-Core's generic **GET `/api/plugins/bundled/[id]/patch-context`** accepts only
-`handle` and a numeric `file` ID (0–255). The plugin resolves the captured file;
-there are no arbitrary paths or Git revisions, new previews, checks or mutations
-in this read. The shared **1 MiB per side / 50,000 combined lines per file** limits
-and [text/object rejection rules](worktrees.md#full-file-diff-review) apply; failed
-context leaves the patch readable.
-
-Historical receipts may read the same handle while retained. Legacy cards,
-expiry, eviction, server restart or unavailable objects remain patch-only; there
-is no durable content backfill or substitution from current working files.
-Context availability does not extend an approval's lifetime or execution authority.
+The obsolete Git-only one-hour registry and registration/reader are removed.
+Core retains the optional generic supplied-patch `patchContext` capability/route
+for other bundled producers, with strict opaque handle/file validation; Git no
+longer registers it. Unconverted supplied Git patches remain patch-only rather than
+opening old archive/context resources. Neither context nor history restores approval
+or execution authority.
 
 ## Standalone project removal API
 
@@ -589,9 +596,9 @@ Other external filesystem/checkout writers remain uncoordinated.
   approval while awaiting outcome and prevents only undispatched steps. Saved consent
   is read-only evidence; restart cannot recover live authority.
 - Status supplies `reviewBaseUrl`: operation-bound `/reviews/[reviewId]`, without
-  a session ID. P2 returns an explicit pending/unsupported response after saved
-  ownership and surviving-project admission; P3 must connect paged reads,
-  downloads and the full viewer. Disabled-plugin history still requires that
+  a session ID. It serves provider-dispatched paged reads, immutable context,
+  streamed patches and lazy full metadata after saved ownership and surviving-project
+  admission. Disabled-plugin history still requires that
   allowed physical owner anchor, even after a feature checkout is gone.
 
 An operation owns preparation/confirmation/effect lifetime independently of HTTP
@@ -608,7 +615,7 @@ See [ADR 0021](adr/0021-standalone-project-cleanup.md) and its
 ## Verification
 
 Bundled plugin Node tests, including real Pi registration/toggle lifecycle and
-snapshot expiry/bounds, participate in the sandboxed core inventory. Full sandboxed
+immutable review bounds/cancellation, participate in the sandboxed core inventory. Full sandboxed
 browser acceptance includes the explicit `git-plugin` and `session-launch` groups. See
 [Testing](testing.md) and [browser fixture notes](../e2e/README.md):
 

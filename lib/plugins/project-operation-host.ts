@@ -24,7 +24,7 @@ export interface ProjectOperationPorts {
   store: ProjectOperationStore;
   capability(pluginId: string): Capability;
   enabled(plugin: BundledPlugin, cwd: string): boolean;
-  admission: { allowed(cwd: string): Promise<void>; assertInvocation(cwd: string): void; admitRelated(paths: string[]): void };
+  admission: { allowed(cwd: string): Promise<void>; allowedHistory?(cwd: string): Promise<void>; assertInvocation(cwd: string): void; admitRelated(paths: string[]): void };
   observers(): Promise<(path: string) => boolean>;
   reserveDirectory(path: string, inUse: (path: string) => boolean): () => void;
   scheduler: ProjectOperationScheduler;
@@ -78,10 +78,10 @@ export function createProjectOperationHost(ports: ProjectOperationPorts, live = 
     return value;
   }
   /** Saved project ownership authorizes history through a surviving anchor, not the removed worktree. */
-  async function owned(pluginId: string, id: string): Promise<Stored> {
+  async function owned(pluginId: string, id: string, history = false): Promise<Stored> {
     const record = live.get(id)?.record ?? read(id);
     if (!record || record.pluginId !== pluginId) throw new Error("Operation not found");
-    await allowed(record.anchor);
+    await (history ? admission.allowedHistory ?? allowed : allowed)(record.anchor);
     const { adapter } = capability(pluginId);
     if ((await adapter.resolveProject(record.anchor)).identity !== record.project) throw new Error("Project identity changed");
     return record;
@@ -290,7 +290,7 @@ export function createProjectOperationHost(ports: ProjectOperationPorts, live = 
   /** Internal P3 provider input, never a polling/list DTO. Resolve only exact
    * linked identities in this admitted owner snapshot; no latest-by-operation join. */
   async function resolveProjectOperationReview(pluginId: string, id: string, reviewId: string) {
-    const record = await owned(pluginId, id);
+    const record = await owned(pluginId, id, true);
     const ref = record.receipt?.card.review;
     if (!ref || ref.id !== reviewId) throw new Error("Review is not owned by this operation");
     const resolveLinked = (reference: import("./review-metadata").OperationReviewReference) => {
@@ -301,7 +301,7 @@ export function createProjectOperationHost(ports: ProjectOperationPorts, live = 
     };
     const metadata = ref.version === 2 ? resolveLinked(ref) : undefined;
     if (ref.version === 2 && !metadata) throw new Error("Review metadata owner mismatch or not saved");
-    return { ref, pluginId, metadata, resolveLinked };
+    return { ref, pluginId, metadata, resolveLinked, revalidate: async () => { await owned(pluginId, id, true); } };
   }
   async function projectOperationReview(pluginId: string, id: string, reviewId: string) {
     return (await resolveProjectOperationReview(pluginId, id, reviewId)).ref;

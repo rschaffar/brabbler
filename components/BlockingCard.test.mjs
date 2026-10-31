@@ -5,6 +5,7 @@ import test from 'node:test';
 import { createElement, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { packet, click, input, key, textButton } from './cards-git.fixture.mjs';
+import { review, overview, page, preview, live, deliver } from './operation-review.fixture.mjs';
 
 async function ssr(t) {
   const h = await packet(t), { I18nProvider } = await h.load('../hooks/useI18n.tsx');
@@ -17,59 +18,36 @@ const pluginRequest = () => ({ type: 'extension_ui_request', id: 'request', meth
     { title: 'Warning', text: 'All selected files', notice: true }, { title: 'Technical details', text: 'full IDs', collapsible: true }],
   scope: 'Approve the entire candidate', actions: [{ id: 'reject', label: 'Reject' }, { id: 'approve', label: 'Approve commit', primary: true }] });
 
-test('observer-only attachment and selected-entry rerenders retain accepted reads; new entries use the current observer', async t => {
+test('observer-only native attachment and selected-file rerenders retain accepted reads; new files use the current observer', async t => {
   const h = await packet(t, { review: true }), { ReviewAttachment } = await h.load('./plugin-ui/ReviewAttachment.tsx');
   const old = [], first = [], current = [];
   const observe = list => work => { list.push(work); h.onReadWork(work); };
-  const oldObserver = observe(old), firstObserver = observe(first), currentObserver = observe(current);
-  const metadata = { id: 0, label: 'Exact operation', bytes: 100, kind: 'text', sha256: 'a'.repeat(64) };
-  const patch = { id: 1, label: 'a/file b/file', bytes: 100, kind: 'patch', sha256: 'b'.repeat(64) };
-  const review = { version: 1, id: 'review', operationId: 'operation', bytes: 1024, entries: 2, sha256: 'c'.repeat(64) };
   const render = observer => h.render(createElement(ReviewAttachment, { sessionId: 'current', review, onReadWork: observer }));
-  const live = name => h.requests.findLast(request => !request.signal.aborted && request.url.searchParams.has(name));
-  await render(oldObserver);
-  const pageRead = live('start'), aggregateRead = live('patch'), count = h.requests.length, oldCount = old.length;
-  assert.equal(old.includes(pageRead.readWork), true); assert.equal(old.includes(aggregateRead.readWork), true);
-  await render(firstObserver);
-  assert.equal(h.requests.length, count, 'observer-only update cannot restart page or aggregate reads');
-  assert.equal(pageRead.signal.aborted, false); assert.equal(aggregateRead.signal.aborted, false);
-  assert.equal(first.length, 0, 'accepted work is not replayed to a replacement observer');
-  await h.reply(pageRead, { entries: [metadata, patch], total: 2, next: null });
-  await h.reply(aggregateRead, '', { status: 503 });
-  const metadataRead = live('entry');
-  assert.equal(metadataRead.url.searchParams.get('entry'), '0');
-  assert.equal(first.includes(metadataRead.readWork), true, 'the newly mounted entry receives the current observer and exact promise');
-  await h.reply(metadataRead, { text: 'Exact metadata body', complete: true, offset: 0, next: null });
+  await render(observe(old));
+  const accepted = live(h, 'overview'), count = h.requests.length, oldCount = old.length;
+  assert.equal(old.includes(accepted.readWork), true);
+  await render(observe(first)); assert.equal(h.requests.length, count); assert.equal(first.length, 0);
+  assert.equal(accepted.signal.aborted, false);
+  await deliver(h, 'overview', overview()); await deliver(h, 'page', page('first', 'second'));
+  const selectedRead = live(h, 'preview'); assert.equal(first.includes(selectedRead.readWork), true);
+  await deliver(h, 'preview', preview('raw first file'));
   await click(h.view, h.view.container.querySelector('[aria-label="Next file"]'));
-  const heldEntry = live('entry'), heldCount = h.requests.length, firstCount = first.length;
-  assert.equal(heldEntry.url.searchParams.get('entry'), '1'); assert.equal(first.includes(heldEntry.readWork), true);
-  const browser = h.view.container.querySelector('.review-file-browser');
-  const content = browser.querySelector('.review-file-content');
-  const selected = browser.querySelector('.review-file-navigation [aria-live]');
-  assert.equal(selected.textContent, patch.label);
-  await render(currentObserver);
-  assert.equal(h.requests.length, heldCount, 'neither the entry nor its parent reads may restart on an observer swap');
-  assert.equal(heldEntry.signal.aborted, false); assert.equal(pageRead.signal.aborted, false); assert.equal(aggregateRead.signal.aborted, false);
+  const held = live(h, 'preview'), heldCount = h.requests.length, firstCount = first.length;
+  assert.equal(held.url.searchParams.get('file'), '1'); assert.equal(first.includes(held.readWork), true);
+  const browser = h.view.container.querySelector('.review-file-browser'), content = browser.querySelector('.review-file-content');
+  const selected = browser.querySelector('.review-file-navigation [aria-live]'); assert.equal(selected.textContent, 'second');
+  await render(observe(current)); assert.equal(h.requests.length, heldCount); assert.equal(held.signal.aborted, false);
   assert.equal(h.view.container.querySelector('.review-file-browser') === browser, true);
-  assert.equal(browser.querySelector('.review-file-content') === content, true);
-  assert.equal(browser.querySelector('.review-file-navigation [aria-live]') === selected, true); assert.equal(selected.textContent, patch.label);
+  assert.equal(browser.querySelector('.review-file-content') === content, true); assert.equal(browser.querySelector('.review-file-navigation [aria-live]') === selected, true);
   assert.equal(current.length, 0); assert.equal(first.length, firstCount); assert.equal(old.length, oldCount);
-  // Invalid raw supplied material intentionally does not claim parsed descendant
-  // highlighter/context closure; that remains the independent review's limit.
-  await h.reply(heldEntry, { text: 'raw selected exact patch', complete: true, offset: 0, next: null });
-  const raw = content.querySelector('[aria-label="Raw patch"]'); assert.equal(raw.textContent, 'raw selected exact patch');
-  assert.equal(current.length, 0); assert.equal(first.length, firstCount);
-  const before = h.requests.length;
+  await deliver(h, 'preview', preview('raw second file'));
+  assert.equal(content.querySelector('[aria-label="Raw patch"]').textContent, 'raw second file');
+  const from = h.requests.length;
   await click(h.view, h.view.container.querySelector('[aria-label="Previous file"]'));
-  const admitted = h.requests.slice(before);
-  assert.equal(admitted.length > 0, true); assert.equal(current.length, admitted.length);
-  for (const request of admitted) {
-    assert.equal(request.url.searchParams.get('entry'), '0');
-    assert.equal(current.includes(request.readWork), true, 'current observer gets each exact already-created production promise');
-  }
+  const admitted = h.requests.slice(from); assert.ok(admitted.length);
+  for (const read of admitted) { assert.equal(read.url.searchParams.get('file'), '0'); assert.equal(current.includes(read.readWork), true); }
   assert.equal(old.length, oldCount); assert.equal(first.length, firstCount);
-  await h.reply(admitted.findLast(request => !request.signal.aborted), { text: 'Current metadata body', complete: true, offset: 0, next: null });
-  assert.match(content.textContent, /Current metadata body/);
+  await deliver(h, 'preview', preview('current first file')); assert.match(content.textContent, /current first file/);
 });
 
 test('shared shell SSR labels grouped sections/forms, escapes titles, and retains collapsed draft markup', async t => {
@@ -99,53 +77,39 @@ test('large reference-only review SSR remains bounded with the complete live act
     review: { version: 1, id: 'review', operationId: 'operation', sha256: 'a'.repeat(64), entries: 100000, bytes: 5_000_000_000 },
     actions: [{ id: 'approve', label: 'Approve merge', primary: true }] };
   const html = h.html(createElement(PluginCard, { request, sessionId: 'current-session', onRespond() {} }));
-  assert.match(html, /Download complete exact patch/); assert.match(html, /\/api\/sessions\/current-session\/reviews\/review/);
+  assert.match(html, /Legacy review unavailable; offline migration required/); assert.doesNotMatch(html, /Download complete exact/);
   assert.match(html, /data-primary="true"[^>]*>Approve merge/); assert.match(html, /Approve the entire operation/);
   assert.equal(html.length < 10000, true); assert.equal(h.requests.length, 0, 'SSR never starts attachment reads');
 });
 
-test('failed aggregate patch naturally falls back to one selected entry; metadata-only review remains collapsed', async t => {
+test('selected native patch download remains exact-owner scoped; complete resource metadata is collapsed and lazy', async t => {
   const h = await packet(t, { review: true }), { ReviewAttachment } = await h.load('./plugin-ui/ReviewAttachment.tsx');
-  const metadata = { id: 0, label: 'Exact operation', bytes: 100, kind: 'text', sha256: 'a'.repeat(64) };
-  const patch = { id: 1, label: 'a/file b/file', bytes: 100, kind: 'patch', sha256: 'b'.repeat(64) };
-  await h.render(createElement(ReviewAttachment, { sessionId: 'current', onReadWork: h.onReadWork,
-    review: { version: 1, id: 'review', operationId: 'operation', bytes: 1024, entries: 2, sha256: 'c'.repeat(64) } }));
-  const live = key => h.requests.filter(request => !request.signal.aborted && request.url.searchParams.has(key)).at(-1);
-  await h.reply(live('start'), { entries: [metadata, patch], total: 2, next: null });
-  await h.reply(live('patch'), '', { status: 503 });
-  assert.match(h.view.container.textContent, /Exact patch unavailable/);
-  assert.equal(Boolean(h.view.container.querySelector('.review-file-browser')), true);
+  await h.render(createElement(ReviewAttachment, { sessionId: 'current', onReadWork: h.onReadWork, review }));
+  await deliver(h, 'overview', overview()); await deliver(h, 'page', page('first', 'second'));
   await click(h.view, h.view.container.querySelector('[aria-label="Next file"]'));
-  const entry = live('entry');
-  assert.equal(entry.url.searchParams.get('entry'), '1');
-  await h.reply(entry, { text: 'raw selected exact patch', complete: true, offset: 0, next: null });
+  await deliver(h, 'preview', preview('raw selected exact patch'));
   assert.equal(h.view.container.querySelector('[aria-label="Raw patch"]').textContent, 'raw selected exact patch');
-  const selectedEntryDownloads = [...h.view.container.querySelectorAll('.review-file-content a')].map(link => link.getAttribute('href'));
-  assert.deepEqual(selectedEntryDownloads, ['/api/sessions/current/reviews/review?entry=1&download=1'], 'the selected entry retains its exact session-bound download URL');
-  assert.match(h.view.container.textContent, /Download complete exact patch/);
-  assert.equal(h.view.container.querySelectorAll('.review-file-content [aria-label="Raw patch"]').length, 1);
-  // Same endpoint, new component lifetime: actual metadata page, no hook-index seeding.
-  await h.render(createElement(ReviewAttachment, { key: 'metadata', sessionId: 'current', onReadWork: h.onReadWork,
-    review: { version: 1, id: 'review', operationId: 'operation', bytes: 1024, entries: 1, sha256: 'c'.repeat(64) } }));
-  await h.reply(live('start'), { entries: [metadata], total: 1, next: null }); await h.reply(live('patch'), '');
-  const details = [...h.view.container.querySelectorAll('details')].find(node => /Exact operation/.test(node.textContent));
-  assert.equal(Boolean(details), true); assert.equal(details.open, false);
+  assert.deepEqual([...h.view.container.querySelectorAll('.review-file-content a')].map(a => a.getAttribute('href')),
+    ['/api/sessions/current/reviews/review?view=proposal&file=1&op=patch']);
+  const details = h.view.container.querySelector('details'); assert.equal(details.open, false);
+  assert.equal(h.requests.some(read => read.url.searchParams.get('op') === 'details'), false);
+  await h.render(createElement(ReviewAttachment, { key: 'metadata', sessionId: 'current', onReadWork: h.onReadWork, review }));
+  const resource = overview(); resource.hasFiles = false; resource.views[0].available = false; resource.views[0].reason = 'Resources, not a patch.';
+  await deliver(h, 'overview', resource);
   assert.equal(h.view.container.querySelector('.review-file-browser') === null, true);
-  assert.doesNotMatch(h.view.container.textContent, /Loading review|Exact details/);
+  assert.equal(h.view.container.querySelector('details').open, false);
 });
 
 test('live review failure keeps whole scope and current actions; collapse/fullscreen never narrow or answer it', async t => {
   const h = await packet(t, { review: true }), { BlockingRequestCard } = await h.load('./BlockingRequestCard.tsx');
   const request = { ...pluginRequest(), id: 'live-review', allowDetails: true,
-    review: { version: 1, id: 'review', operationId: 'operation', bytes: 1024, entries: 2, sha256: 'c'.repeat(64) } };
+    review };
   const old = [], current = [];
   let props = { request, sessionId: 'current', onReadWork: h.onReadWork, onRespond: async (...args) => { old.push(args); } };
   const render = async next => { props = { ...props, ...next }; await h.render(createElement(BlockingRequestCard, props)); };
   await render({});
-  const live = name => h.requests.filter(item => !item.signal.aborted && item.url.searchParams.has(name)).at(-1);
-  await h.reply(live('start'), { entries: [], total: 0, next: null });
-  await h.reply(live('patch'), '', { status: 503 });
-  assert.match(h.view.container.querySelector('[role=alert]').textContent, /Exact patch unavailable/);
+  await deliver(h, 'overview', { error: 'Review unavailable' }, { status: 409 });
+  assert.match(h.view.container.querySelector('[role=alert]').textContent, /Review unavailable/);
   assert.match(h.view.container.querySelector('.blocking-card-footer').textContent, /Approve the entire candidate/);
   const field = h.view.container.querySelector('textarea'); await input(h.view, field, 'exact additional details'); field.focus();
   await click(h.view, h.view.container.querySelector('[aria-label="Collapse"]'));

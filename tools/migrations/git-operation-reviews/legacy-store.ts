@@ -1,17 +1,25 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { mkdir, open, rename, rm, type FileHandle } from "node:fs/promises";
-import { join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
-// Legacy archive codec retained for the offline converter; no runtime host imports.
-import type { LegacyPluginReviewReference as PluginReviewReference, PluginReviewWriter } from "./types";
-import { isOperationId } from "./ui";
+import { isAbsolute, join } from "node:path";
+// Temporary offline codec. Application modules must never import this subtree.
+import type { LegacyPluginReviewReference as PluginReviewReference } from "../../../lib/plugins/types";
+import { isOperationId } from "../../../lib/plugins/review-reference";
+interface PluginReviewWriter {
+  begin(label: string, kind: "text" | "patch"): Promise<void>;
+  write(chunk: Uint8Array): Promise<void>;
+  end(): Promise<void>;
+}
 
 export const REVIEW_PAGE_SIZE = 40;
 export const REVIEW_PREVIEW_BYTES = 256 * 1024;
 export interface ReviewEntry { id: number; label: string; kind: "text" | "patch"; start: number; bytes: number; sha256: string }
 interface Manifest { version: 1; pluginId: string; operationId: string; entries: number; bytes: number; sha256: string }
-const root = () => join(getAgentDir(), "brabbler", "reviews");
+/** Explicit operator/test root only; never discovers SDK/global agent state.
+ * Writer retained solely for synthetic legacy fixtures, not runtime production. */
+export function legacyReviewStore(legacyRoot: string) {
+if (!isAbsolute(legacyRoot)) throw new Error("An explicit absolute legacy root is required");
+const root = () => legacyRoot;
 function directory(id: string) {
   if (!isOperationId(id)) throw new Error("Invalid review identity");
   return join(root(), id);
@@ -34,7 +42,7 @@ async function readOnly(path: string) {
 /** Host-owned immutable storage. No TTL/automatic GC: references can survive moves,
  * forks and deletion of the original session or checkout. Failed unpublished work
  * is removed; successfully published bundles are retained, including orphans. */
-export async function preparePluginReview(pluginId: string, operationId: string,
+async function preparePluginReview(pluginId: string, operationId: string,
   build: (writer: PluginReviewWriter) => Promise<void>): Promise<PluginReviewReference> {
   if (!/^[a-z][a-z0-9-]{0,63}$/.test(pluginId) || !isOperationId(operationId)) throw new Error("Invalid review owner");
   await mkdir(root(), { recursive: true, mode: 0o700 });
@@ -84,7 +92,7 @@ export async function preparePluginReview(pluginId: string, operationId: string,
     throw error;
   }
 }
-export async function reviewManifest(ref: PluginReviewReference, pluginId: string): Promise<Manifest> {
+async function reviewManifest(ref: PluginReviewReference, pluginId: string): Promise<Manifest> {
   const file = await readOnly(join(directory(ref.id), "manifest.json"));
   try {
     if ((await file.stat()).size > 4096) throw new Error("Invalid review manifest");
@@ -120,7 +128,7 @@ async function verifyReview(ref: PluginReviewReference) {
     verified.set(key, signature);
   } finally { for (const file of handles) await file.close(); }
 }
-export async function reviewEntry(ref: PluginReviewReference, id: number): Promise<ReviewEntry> {
+async function reviewEntry(ref: PluginReviewReference, id: number): Promise<ReviewEntry> {
   if (!Number.isSafeInteger(id) || id < 0 || id >= ref.entries) throw new Error("Invalid review entry");
   const offsets = await readOnly(join(directory(ref.id), "offsets"));
   let entries: FileHandle | undefined;
@@ -136,13 +144,13 @@ export async function reviewEntry(ref: PluginReviewReference, id: number): Promi
     return entry;
   } finally { await offsets.close(); await entries?.close(); }
 }
-export async function reviewPage(ref: PluginReviewReference, start: number) {
+async function reviewPage(ref: PluginReviewReference, start: number) {
   if (!Number.isSafeInteger(start) || start < 0 || start > ref.entries) throw new Error("Invalid review page");
   const entries: ReviewEntry[] = [];
   for (let id = start; id < Math.min(start + REVIEW_PAGE_SIZE, ref.entries); id++) entries.push(await reviewEntry(ref, id));
   return { entries, total: ref.entries, next: start + entries.length < ref.entries ? start + entries.length : null };
 }
-export async function reviewPreview(ref: PluginReviewReference, entry: ReviewEntry, offset = 0) {
+async function reviewPreview(ref: PluginReviewReference, entry: ReviewEntry, offset = 0) {
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > entry.bytes) throw new Error("Invalid review offset");
   const file = await readOnly(join(directory(ref.id), "data"));
   try {
@@ -152,9 +160,11 @@ export async function reviewPreview(ref: PluginReviewReference, entry: ReviewEnt
   } finally { await file.close(); }
 }
 /** Stream from a no-follow descriptor; never return a private filesystem path. */
-export async function reviewStream(ref: PluginReviewReference, entry?: ReviewEntry) {
+async function reviewStream(ref: PluginReviewReference, entry?: ReviewEntry) {
   const file = await readOnly(join(directory(ref.id), "data"));
   const start = entry?.start ?? 0, length = entry?.bytes ?? ref.bytes;
   if (!length) { await file.close(); return null; }
   return file.createReadStream({ autoClose: true, start, end: start + length - 1 });
+}
+return { preparePluginReview, reviewManifest, reviewEntry, reviewPage, reviewPreview, reviewStream };
 }

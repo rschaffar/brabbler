@@ -1,4 +1,4 @@
-import { getSessionEntries, readSessionHeader, resolveSessionPath } from "../session-reader";
+import { readPersistedReviewEntries } from "./review-session-entries";
 import { OPERATION_RECEIPT_TYPE, readOperationReceipt } from "../operation-receipts";
 import { INTERACTION_RECEIPT_TYPE, readInteractionReceipt } from "../interaction-receipts";
 import { isOperationId } from "./ui";
@@ -8,14 +8,12 @@ import { findOperationReview, type OperationReviewRecord, type OperationReviewRe
 
 /** Raw persisted entries, not the active branch/page or live wrapper. Copied
  * references authorize review in forks; cwd and creator lifetime are irrelevant. */
-export async function resolveSessionReview(sessionId: string, reviewId: string): Promise<{ ref: PluginReviewReference; pluginId: string;
+export async function resolveSessionReview(sessionId: string, reviewId: string, signal?: AbortSignal): Promise<{ ref: PluginReviewReference; pluginId: string;
   metadata?: OperationReviewRecord; resolveLinked?: (reference: OperationReviewReference) => OperationReviewRecord | null } | null> {
   if (!isPluginSessionId(sessionId) || !isOperationId(reviewId)) return null;
-  const path = await resolveSessionPath(sessionId);
-  try { if (!path || readSessionHeader(path)?.id !== sessionId) return null; }
-  catch { return null; }
-  if (!path) return null;
-  const entries = getSessionEntries(path);
+  let entries;
+  try { entries = await readPersistedReviewEntries(sessionId, signal); } catch { return null; }
+  if (!entries) return null;
   const owner = (ref: PluginReviewReference, pluginId: string, leafId: string) => {
     if (ref.version === 1) return { ref, pluginId }; // Unsupported legacy identity only.
     const metadata = findOperationReview(entries, pluginId, ref, leafId);

@@ -46,7 +46,9 @@ export interface BundledPlugin {
     resolveProject(cwd: string): Promise<{ identity: string; anchor: string; relatedDirectories: string[] }>;
     execute(cwd: string, action: string, payload: unknown, ui: PluginUiContext, signal: AbortSignal, progress: (text: string) => void): Promise<unknown>;
   };
-  /** Read-only opaque display resources; repository semantics remain plugin-owned. */
+  /** Registered independently of execution enablement; never mutation authority. */
+  reviewProvider?: import("./review-provider").OperationReviewProvider;
+  /** Read-only opaque display resources for generic supplied patches. */
   readPatchContext?(handle: string, fileId: string): Promise<import("../diff-context").DiffContext>;
 }
 export type Overrides = Record<string, SettingValue>;
@@ -81,12 +83,6 @@ export interface LegacyPluginReviewReference {
   version: 1; id: string; operationId: string; sha256: string; entries: number; bytes: number;
 }
 export type PluginReviewReference = import("./review-reference").OperationReviewReference | LegacyPluginReviewReference;
-/** Sequential streaming writer. The host publishes only a completely settled bundle. */
-export interface PluginReviewWriter {
-  begin(label: string, kind: "text" | "patch"): Promise<void>;
-  write(chunk: Uint8Array): Promise<void>;
-  end(): Promise<void>;
-}
 /** Browser presentation only; never instructions or execution authority. */
 export interface PluginCard {
   /** Correlates a decision card with durable operation stage snapshots. */

@@ -27,6 +27,10 @@ function compose(store: ProjectOperationStore, operations?: Map<string, LiveProj
     },
     enabled: (plugin, cwd) => readPluginSettings(plugin.manifest, cwd).enabled,
     admission: {
+      async allowedHistory(cwd) {
+        const roots = getKnownAllowedFileRoots();
+        if (!isFilePathAllowed(cwd, roots) || !isExistingFilePathAllowed(cwd, roots) || !samePath(realpathSync(cwd), cwd)) throw new Error("Access denied: select an allowed physical directory");
+      },
       async allowed(cwd) {
         const roots = await getAllowedFileRoots();
         if (!isFilePathAllowed(cwd, roots) || !isExistingFilePathAllowed(cwd, roots) || !samePath(realpathSync(cwd), cwd)) throw new Error("Access denied: select an allowed physical directory");

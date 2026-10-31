@@ -106,7 +106,15 @@ Parsed patches, loaded context, gap/full-file expansion, selected version and
 reading anchors stay in local memory across file collapse and layout changes,
 scoped to the exact commit view, approval card or working-file revision. Only
 split/unified/raw and wrap preferences use browser `localStorage`, best effort;
-contents and context choices are never persisted there.
+contents and context choices are never persisted there. Paged operation reviews
+retain only lightweight per-view/file reading state when changing files; selected
+patch/context contents are released. Restoring full/clean-version intent rereads
+only that selected immutable file, not the rest of the inventory. While that
+context is loading/unavailable, the original patch remains accessible; absence is
+reported only for an explicitly missing side of loaded context. Retry restores the
+clean-version intent. Operation positions and raw offsets share a bounded LRU
+(128 entries / 64 KiB payload weight, with bounded query/expansion snapshots);
+eviction loses convenience only, never file or approval access.
 
 Full context is limited to **1 MiB on each side** and **50,000 combined lines per
 file**. Invalid UTF-8, NUL/binary content, symlinks, gitlinks, missing objects and

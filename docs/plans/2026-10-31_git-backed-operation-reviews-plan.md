@@ -4,11 +4,12 @@
 reviewed and core-verified. P2 host/producer integration now saves metadata and v2
 references instead of new patch bundles; focused host/SDK/native/standalone checks
 pass. Two independent P2 reviews are closed after persistence, copy-barrier,
-nested-schema and started-wrapper containment repairs. The full viewer/API is
-**not yet wired**:
-attachments currently show explicit pending/unsupported placeholders, with shared
-viewer controls retained for P3. Migration tooling and complete acceptance remain
-open. Live migration, activation and old-state deletion require separate authorization.
+nested-schema and started-wrapper containment repairs. P3 now connects the registered
+provider, no-write session/standalone GETs and existing per-file viewer. Focused
+native/mounted checks and installed Git/worktree/shared-context groups pass. Two
+independent P3 reviews are closed after download-admission, restored-context,
+bounded-state and generic supplied-context lifecycle repairs. Complete acceptance remains open. Legacy codec/tests are isolated outside application inputs. Converter tooling
+and rehearsal remain P4. Live migration, activation and old-state deletion require separate authorization.
 
 **Workspace:** `feat/git-backed-operation-reviews`, created from local `main`
 `fed9415359e3867a3c9bdd25801034d6e5c820ee`; reviewed planning commit `ee32fb3f`.
@@ -556,9 +557,101 @@ acceptance remains open.
 
 The [exported schema/API map](../git-operation-review-metadata.md) includes explicit
 unavailable legacy comparisons, offline-admitted provenance and lossless once-only
-legacy presentation details. P3 must connect those exact owned records to the
-retained full viewer/API. P4 owns converter/legacy codec relocation and package
-retirement. No live state has been converted, activated or deleted.
+legacy presentation details. P3 connects those exact owned records to the
+retained full viewer/API and isolates the legacy codec/test obligations under the
+exact migration subtree. P4 owns the converter, rehearsal and full acceptance.
+No live state has been converted, activated or deleted.
+
+## P3 connected-reader checkpoint
+
+P3 replaces the temporary attachment/old supplied-page adapter with the actual
+ReviewFileBrowser/CommittedPatchDiff composition. Core dispatches registered
+formats after exact owner/envelope/link checks; the Git plugin validates payloads,
+settled evidence and immutable comparisons. Session GETs use a narrow read-only
+persisted-entry reader/non-writing lookup, not SDK open or catalogue persistence.
+Standalone physical owner-anchor admission remains before content fallback.
+
+Complete streamed binary/file patches, 40-file inventory pages, 256 KiB previews,
+immutable context and lazy paged metadata are connected. Actual result defaults;
+proposal is a neutral same-view alternative, missing actual remains unavailable,
+and explicit no-op is empty. Unknown/absent outcome facts are not pre-effect false.
+Stale reads are aborted/fenced by source/view/file; restored reading intent reloads
+only the selected file after releasing contents/context. Generic supplied patches,
+notebooks and the unchanged operation authority/effect safeguards remain.
+
+Legacy codec/tests live only under `tools/migrations/git-operation-reviews`, behind
+one classified bridge and exact export/test fileset admission. No application
+imports them; the realized package was checked for retired codec/context names.
+The [temporary support README](../../tools/migrations/git-operation-reviews/README.md)
+records historical assertion/input dispositions. No converter CLI or live conversion
+is claimed. The Git ADR was renumbered to 0040 because main's SSH decision owns 0039.
+
+Focused evidence (not complete acceptance): the five ownership/API/migration files
+passed **65 tests** at export `b3134e8df0b17b22862082e4f0fa35e7340fd27b6ccd7b7b850bbf955d275668`;
+the wider selection's runtime/RPC/native reader/schema/shared-viewer files passed,
+with one subsequently repaired stale browser-coverage expectation. Installed
+`git-plugin`, `worktrees` and `diff-context` groups passed at export
+`9fb530629754f2727700c6067c07f6b1df955cc4da8a880c5c5e2fdb2924c9c3`, using
+one sandbox per invocation and the isolated production package. Both Git widths
+include native divergent actual/proposal switching and a genuinely empty no-op;
+worktree history reads complete owned metadata after removal. The first Git run's
+mobile context-count failure is retained: selected reads could be cancelled before
+dispatch, so named response/body joins now make those retained reselect premises
+explicit rather than adding sleeps or changing deadlines.
+
+The final runtime export `790e900ab7cded3ca2e04d7213e4fdce5504589b2691905e87b289de5491419b`
+passed a **20-file selection / 277 tests**, including original native server/large,
+RPC receipt/copy/failure, registered API, immutable reader/schema and mounted viewer
+owners. Width was **12 requested/effective 12**, with 32 CPUs and about 30 GB available
+at runner admission. Command wall was **176.952 s**, before-first-file envelope
+**45.944 s**, file execution window **130.836 s**. Static typegen/tsc/lint passed with
+seven existing warnings; exporter contracts passed 33 cases. Audit found one selected
+dynamic-directory route file reported zero cases, so that file is **not** claimed
+as assertion proof. Moving only that test to a literal filename produced its three
+actual cases: a **5-file / 45-test** companion passed at
+`a9abc6e5c764a6283274b2e24e0e78b51860f1112cad4f3ebff5b54bcf52b8ea`
+(4/4 width, 52.433 s wall). A final historical-parent/error/observer reinforcement
+passed **4 files / 36 tests** at
+`c1d2a715eadf1cfd65ee61d3b787bc15f91ea8d9261175cd7ae0336cfbb304bb`
+(4/4, 47.364 s). Counts overlap and are not additive.
+
+Final isolated-package `git-plugin` and `worktrees` groups passed at the 790e900a
+export above, using package `b97n4ssdpjzzwqdnf8r4msgz2iq6ai4s-brabbler-0.1.0`.
+Widths were 1/1 per focused invocation. Git command wall was **144.155 s**, including
+**78.826 s** support/package preparation, **4.411 s** definition preparation and
+**56.881 s** group-client interval; worktrees was **32.460 s**, with **2.759 / 4.434 /
+23.029 s** corresponding intervals. These are serial envelopes, not benchmarks.
+The earlier shared `diff-context` group passed in **28.529 s** at its explicitly
+named older export/package; its shared client inputs are unchanged, not relabelled
+as a new-package run. No standalone `history` group or full browser/VM pass is
+claimed; installed Git covers native saved interaction/outcome readers, and RPC
+native tests retain actual fork/clone ownership.
+
+A private source-copy negative control changed only the plugin default to proposal.
+The real native/API result-default and missing-result-default assertions failed
+(`proposal` versus `result`), while four peer cases passed. Static checks passed;
+this was a meaningful runtime counterexample, not an import/setup failure. The
+receiving checkout never contained that fault. Final evidence/guide-only edits do
+not relabel earlier executions.
+
+The two independent P3 reviews requested narrow corrections, now implemented with
+focused checks: pre-header native file-ID validation and own-key operation decoding;
+truthful restored-context loading/error/raw fallback; a shared count/weight-bounded
+navigation/offset LRU with detached text/expansion limits; and a real mounted non-Git
+supplied-patch context/queue lifecycle owner. The latter is a continuing contract,
+not retired with the old Git adapter. Runtime REDs reproduce the two API defects
+and false absence; private source controls also witness missing weight eviction and
+missing generic queue-worker forwarding. The receiving source passes the affected
+10-file / 66-test selection plus the 4-file / 25-test design/lane/isolation/literal-route
+companion (not additive to earlier P3 selections). Installed `git-plugin`,
+`diff-context`, and `worktrees` all passed against the rebuilt package
+`/nix/store/a3jl9n5w1nszpaa85psnq4v1s1mdxfg9-brabbler-0.1.0`; browser input digest
+`ba0ab9e5fecfd45b68886ce18e4862d7f4f840047f5734947e05b70e1cf9da65`.
+Both independent reviewers closed the API and viewer findings on re-review.
+Earlier evidence above retains its exact inputs/counts.
+P4 owns converter/legacy unknown-fact adaptation, rehearsal and full core/browser/deployment
+acceptance. There is no live conversion, activation, old-state deletion or integration
+claim in this checkpoint.
 
 ## Implementation packages
 
@@ -575,7 +668,7 @@ new permission.
   operation/interaction receipts and existing standalone JSON are reference owners.
   Paused waiting strings are inert. The converter needs the classified bridge and
   narrow export/fileset admission described below; those edits remain P3/P4.
-- [x] Add [ADR 0039](../adr/0039-git-backed-operation-reviews.md) and link it from
+- [x] Add [ADR 0040](../adr/0040-git-backed-operation-reviews.md) and link it from
   the owning guide, explicitly distinguishing the initial foundation from the
   unchanged running archive. The remaining cutover must implement that decision.
 - [x] Prove the standalone native comparison reader with private repositories:
@@ -609,7 +702,7 @@ large-patch admission limits. Return for a bounded design decision if these fail
 - [x] Capture structured trustworthy result endpoints at settlement from postflight,
   outside bounded human summary strings; distinguish observed/verified/unknown and
   final persistence failure without repeating native effects.
-- [ ] Implement local-only Git provider inventory, selected-file/raw-preview,
+- [x] Implement local-only Git provider inventory, selected-file/raw-preview,
   streaming download and context reads; exercise literal names, mode changes,
   binary/symlink/gitlink cases and vanished objects with real repositories.
 - [x] Implement the simple `same`/`different`/`unknown` rule through the real data
@@ -618,18 +711,18 @@ large-patch admission limits. Return for a bounded design decision if these fail
 
 ### P3 — Preserve the viewer and retire the running archive code
 
-- [ ] Wire the new source into `ReviewAttachment` / `PluginCard` and operation and
+- [x] Wire the new source into `ReviewAttachment` / `PluginCard` and operation and
   interaction history. Preserve shared file viewer, lazy reads, preferences,
   navigation, desktop/mobile focus and whole-card fullscreen/action footer.
-- [ ] Add actual-result default and conditional original-proposal switch in that same
+- [x] Add actual-result default and conditional original-proposal switch in that same
   viewer; test partial availability, no-op merge, failure/unknown labels and stale
   asynchronous responses on switch/reload/navigation.
-- [ ] Replace old download wording/protocol as needed, with explicit source labels
+- [x] Replace old download wording/protocol as needed, with explicit source labels
   and complete streamed data; no filesystem write from a review GET.
-- [ ] Remove production bundle writer/reader/index/manifest paths, old host ports
+- [x] Remove production bundle writer/reader/index/manifest paths, old host ports
   and Git-only expiring context wiring made obsolete by the new source. Retain
   unrelated supplied-patch features and notebook storage.
-- [ ] Confirm by import/realized-package checks that only the temporary converter
+- [x] Confirm by import/realized-package checks that only the temporary converter
   contains old review-store handling. Record assertion-by-assertion dispositions
   for retired store-specific tests, with replacements for continuing obligations.
 

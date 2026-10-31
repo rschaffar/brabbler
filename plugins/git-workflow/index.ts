@@ -4,7 +4,7 @@ import { createPluginExtension } from "../../lib/plugins/runtime";
 import type { BundledPlugin, PluginUiContext } from "../../lib/plugins/types";
 import { gitWorkflowManifest } from "./manifest";
 import { executeGitOperation } from "./server";
-import { readGitPatchContext } from "./context";
+import { gitReviewProvider } from "./review-provider";
 import { gitPolicy, gitPolicyGuidance } from "./policy";
 import { gitProjectActions } from "./project-management";
 
@@ -16,7 +16,7 @@ const checkout = Type.String({ description: "Absolute registered checkout root i
 export const gitWorkflowPlugin: BundledPlugin = {
   manifest: gitWorkflowManifest,
   projectActions: gitProjectActions,
-  readPatchContext: readGitPatchContext,
+  reviewProvider: gitReviewProvider,
   extension(cwd) {
     const commit = defineTool({
       name: "git_commit", label: "Git commit", executionMode: "sequential",

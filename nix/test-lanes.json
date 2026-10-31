@@ -142,12 +142,6 @@
       "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
     },
     {
-      "path": "app/api/plugins/bundled/[id]/patch-context/route.test.mjs",
-      "lane": "N",
-      "reason": "Actual immutable Git context reads and a synchronous forwarding shim operate only on repositories/logs beneath one unique root; PATH is restored and after-hook synchronously removes all artifacts.",
-      "estimatedMs": 1000
-    },
-    {
       "path": "app/api/plugins/bundled/route.test.mjs",
       "lane": "N",
       "reason": "Real plugin settings, saved session headers and Git repos are confined to one unique root/private agent; settings locks release synchronously and registered after-hook restores env/removes root.",
@@ -378,7 +372,7 @@
     {
       "path": "components/BlockingCard.test.mjs",
       "lane": "F",
-      "reason": "Entry bytes SAME; explicit union retains complete Cards ownership and LIFO restoration. Genuine root/React aliases reviewed; readDomain import extension and native/context adapter remain opt-in. Parent current-source/input binding and fresh combined four-job gate required; AST ownership is independent of isolation, and E never repairs a leak.",
+      "reason": "P3 actual guarded Card/ReviewAttachment composition plus retained generic shell/supplied-patch/SSR/history bodies. Finite v2 overview/page/selected HTTP capabilities, original promise/current-observer/action ownership and LIFO private DOM/global restoration. No SDK/native Git/filesystem/network/source writes; native layout/download/authority remain separate. Shared fixture closes transport before unmount and joins renderer/read teardown before realm restoration.",
       "estimatedMs": 1802
     },
     {
@@ -637,12 +631,12 @@
     {
       "path": "components/ReviewAttachment.pagination.test.mjs",
       "lane": "F",
-      "reason": "Reviewed one file-private Cards capability realm and serial 1280/390 data rows: actual Card/review/picker/entry readers, finite page 0/40 and entry 0/1/40 transport, original continuations joined before descriptor/realm cleanup. No SDK, native Git, child, listener, external provider or source-relative write. Native cold review, geometry and actual 45-file effects remain independent browser authority."
+      "reason": "P3 actual v2 Card/ReviewAttachment/file-browser composition in one private guarded React realm; original 1280/390 content tuples, finite page 0/40 and file 0/40 capability bodies, joined original read continuations and realm teardown. No adapter alias, SDK/Git/child/network/source-relative writes. Native cold review, geometry and 45-file effects remain installed browser authority."
     },
     {
       "path": "components/PluginCard.preview-cleanup.test.mjs",
       "lane": "F",
-      "reason": "Actual card/review/patch-stack and strict opt-in context tuple; original body/publication/catch/action and queue-slot finally observations. Genuine ESM preload adapter independently joins every actual native original and already-captured production handler after unmount/release, without awaiting call.promise or manufacturing parent business forwarding. Missing handler and original errors remain failures. Parent current-source/input binding and fresh combined four-job gate required; AST ownership is independent of isolation, and E never repairs a leak."
+      "reason": "P3 real v2 Card/attachment/Pierre graph with guarded finite synthetic HTTP bodies, seven operation/resource tuples and both original 5000-line reader inputs. Default context/read/body/error/action promises and native preload originals are joined, missing handlers/errors remain fatal. Private DOM/global capability restoration; synchronous renderer teardown frames remain allowed only until actual unmount while transport closes first. No SDK/Git/native filesystem/network or source writes; physical layout/authority remain installed/native owners."
     },
     {
       "path": "components/ProjectPrivacySettings.behavior.test.mjs",
@@ -1664,6 +1658,11 @@
       "reason": "Known offline-contract failures must remain visible; included exclusive, no network enablement or skip workaround."
     },
     {
+      "path": "lib/operation-review-state.test.mjs",
+      "lane": "F",
+      "reason": "Pure production ReviewNavigationState owner: detached primitive/map snapshots, both-view entry/text/expansion/offset budgets and harmless LRU eviction. Type-only diff-model import; no DOM, SDK, filesystem writes, timers, children, transport or source-relative effects. Jiti filesystem caching disabled."
+    },
+    {
       "path": "lib/plugins/patch-context.test.mjs",
       "lane": "F",
       "reason": "Only opaque card validation and detached receipt snapshots are exercised; runtime imports are pure validators/receipt transforms.",
@@ -2471,7 +2470,9 @@
     }
   ],
   "holds": {
-    "components/OperationReviewAttachment.test.mjs": "P2 real BlockingRequestCard/default operation attachment mount with denied external transports, private DOM realm and joined existing fixture disposal. Checks v2 pending/legacy unsupported placeholders and retained action footer, never native layout/Git or P3 materialization. Conservative E pending independent broad-import/fixture-closure review; no pool promotion claimed.",
+    "app/api/plugins/bundled/patch-context-route.test.mjs": "P3 generic optional supplied-patch route contract moved to a literal discovery path: Node bracket-glob invocation previously reported zero cases. Explicit process-local provider capability restored after each test; no native Git/SDK owner/model effects invoked. Conservative E pending independent import/closure review; native immutable review assertions remain in real provider/reader suites.",
+    "components/PluginCard.supplied-context.test.mjs": "P3 review repair preserves the actual generic non-Git PluginCard/SuppliedPatchStack/Pierre/default context queue. Guarded exact opaque transport, held ignored-abort JSON body, current observer and independently tracked real queue-worker/finally plus native preload joins before private realm restoration. Conservative E pending independent changed fixture/import/closure review; no Git TTL/archive or native authority claim.",
+    "components/OperationReviewAttachment.test.mjs": "P3 real BlockingRequestCard/v2 attachment mount: actual-result default, proposal toggle, ignored-abort stale preview/context, unavailable actual/partial/no-op and legacy footer with finite guarded HTTP capabilities. Original work/body/error and renderer teardown joins in private DOM realm. Conservative E pending independent changed composition/fixture-closure review; not native layout/Git or pool promotion.",
     "lib/guided-review-browser-contract.test.mjs": "Actual installed-bridge agent-command observation/assertion helper over literal request capabilities, exact get_tools/bodyless same-session lease tuples and adversarial prompt/new-session/extra-key/other-session/query/body/method matrices. Conservative E hold pending independent live isolation review; no browser transport, model execution or native closure claim.",
     "components/ChatInput.review-handoff.test.mjs": "Actual composer plus current-destination handoff policy through the existing guarded composer fixture; exact retained text, cursor-selection replacement refusal, same attachment node and no Send callback. Conservative E pending independent changed-input/closure review; no full AppShell or browser image decoding claim.",
     "app/api/review-data/route.test.mjs": "Actual native route/store in private temporary roots with process-local allowed-root cache and an original async request-body identity-swap gate. Conservative E pending independent import/global-cache/teardown review; no host service or power-loss claim.",
@@ -2521,7 +2522,8 @@
     "lib/brabbler-source-extension.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Unique native source-tree fixtures are cleaned synchronously, but npm pack --dry-run runs in shared writable source cwd and the npm/SDK import effect boundary was not fully verified; hold packaging subprocess.",
     "lib/plugin-card-details.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Plugin feedback/receipt checks use synthetic objects, but interaction-receipts imports operation-receipts/ask-user/question-set whose runtime effects were not fully inspected.",
     "lib/plugins/project-operations.test.mjs": "P2 adds real existing-record metadata saves, 2 MiB/5000-selection DTO exclusion, unequal host/native/review IDs, immutable linked settlement and historical-consent preservation. Private-root host/store tests release gates and join fullySettled before root removal with a controlled scheduler. Retain E pending complete runtime-import/default-composition isolation review; the old 20ms teardown concern is historical, not a required implementation.",
-    "lib/plugins/review-store.test.mjs": "P2 isolates the legacy codec for the future offline converter. Old runtime HTTP success assertions are explicitly replaced with unsupported placeholders; native codec pagination/integrity/stream-byte and descriptor-close assertions remain. Every opened legacy stream is drained/destroyed and its close joined before private-root removal. Retain E pending independent full import/teardown review; no runtime archive support or pool promotion claimed.",
+    "lib/plugins/git-operation-review-migration.test.mjs": "Temporary classified bridge to the exact offline legacy codec subtree. Private explicit root, streaming byte/hash/index/no-follow obligations and joined descriptors; no SDK/global state discovery. Conservative E pending independent relocation/closure review; never shipped application code.",
+    "lib/plugins/review-provider.test.mjs": "P3 default registered provider and real session/standalone routes with private native Git/SDK/JSON owners. Owned bodies and cancelled streams joined before fixture cleanup; no live state/network. Conservative E pending independent full composition/failure-closure review.",
     "lib/project-acceptance-fixture.test.mjs": "Unresolved isolation review for lib/project-acceptance-fixture.test.mjs: transitive import effects and fixture-owned completion/teardown have not been established for pooled scheduling; retain exclusive inclusion without a safety claim.",
     "lib/project-command-env.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Hold: real Bash/local operations execute with shared process.cwd and loader agentDir points at source-relative .test-agent; private HOME/TMP does not privatize the source cwd.",
     "lib/project-privacy-fixture.test.mjs": "Unresolved isolation review for lib/project-privacy-fixture.test.mjs: transitive import effects and fixture-owned completion/teardown have not been established for pooled scheduling; retain exclusive inclusion without a safety claim.",
@@ -2543,7 +2545,6 @@
     "lib/terminal-disconnect-fixture.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Ephemeral upstream/proxy listeners are normally awaited closed, but nested resource acquisition precedes cleanup registration/try blocks; proxy acquisition/route failure can strand the already-started upstream.",
     "lib/worktree-management-view.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Management functions and tests are synthetic, but the imported English catalog/message helper closure was not inspected completely.",
     "plugins/acceptance/runtime.test.mjs": "Unresolved isolation review for plugins/acceptance/runtime.test.mjs: transitive import effects and fixture-owned completion/teardown have not been established for pooled scheduling; retain exclusive inclusion without a safety claim.",
-    "plugins/git-workflow/context.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Unique-root Git fixtures and cleanup are present, but negative missing-object cases call parallel native tree reads through Promise.all, which rejects before the sibling subprocess is joined; root removal can race that remaining reader.",
     "plugins/git-workflow/large-operations.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Retain documented timeout/descendant/resource hold. Real large Git operations and noisy shell checks include a 50ms timeout path; fixture-only filesystem locations do not resolve descendant settlement or concurrent resource pressure."
   }
 }

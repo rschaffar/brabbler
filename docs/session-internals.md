@@ -30,6 +30,17 @@ Do not call a replacement/fork API on the source's own manager or runtime: `crea
 - **Fork** ("New session" on user message): creates a new independent `.jsonl` file. Shown as a child in the sidebar tree via `parentSession` header field.
 - **In-session branch** ("Edit from here" / BranchNavigator): calls `navigate_tree` within the same file. Multiple entries share the same `parentId`. Switching between them calls `/api/sessions/[id]/context?leafId=`.
 
+### Review-only persisted history
+
+`lib/plugins/review-session-entries.ts` is deliberately separate from normal chat
+SDK readers. Review GETs use a non-writing targeted lookup and read-only descriptor,
+never `SessionManager.open` (which can migrate/rewrite old files), a persisted
+catalogue scan or a live wrapper. Tree-bearing versions 2/3 preserve raw IDs/parent
+links; unsupported, torn or unstable input refuses byte-identically. Exact saved
+operation/interaction occurrences and same-ancestry metadata authorize only that
+review, not its repository paths. Copies remain self-contained after parent deletion.
+See the [review API](git-operation-review-metadata.md).
+
 ### Session files can be fully rewritten
 `parentSession` in the header is **display metadata only** — has zero effect on chat content. Safe to `writeFileSync` the entire file (pi does this itself during migrations). Used when cascade-reparenting children on delete.
 

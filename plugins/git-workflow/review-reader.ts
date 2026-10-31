@@ -63,7 +63,11 @@ export async function captureGitReview(cwd: string, comparison: GitReviewCompari
 }
 async function guard(cwd: string, captured: CapturedGitReview, access: GitReviewAccess, signal?: AbortSignal) {
   signal?.throwIfAborted();
-  try { await access.assertAllowed(cwd); } catch { throw new GitReviewReadError("ACCESS_DENIED", "Access to this review repository is denied."); }
+  try { await access.assertAllowed(cwd); }
+  catch (error) {
+    if (error instanceof GitReviewReadError && error.code === "UNAVAILABLE") throw error;
+    throw new GitReviewReadError("ACCESS_DENIED", "Access to this review repository is denied.");
+  }
   physical(cwd);
   const common = physical(await commonDirectory(cwd, signal));
   if (!samePath(common, captured.repository.commonDirectory) || directoryIdentity(common) !== captured.repository.identity) throw unavailable();
@@ -85,13 +89,16 @@ async function checkout(captured: CapturedGitReview, access: GitReviewAccess, si
       if (error instanceof GitReviewReadError && error.code === "ACCESS_DENIED") denied = true;
     }
   }
-  if (denied) throw new GitReviewReadError("ACCESS_DENIED", "No allowed checkout of this review repository is available.");
+  if (denied) throw new GitReviewReadError("ACCESS_DENIED", "Access denied: no allowed checkout of this review repository is available.");
   throw unavailable();
 }
 /** Also used before execution revalidation can regenerate a missing candidate. */
-export async function assertGitReviewAvailable(captured: CapturedGitReview, access: GitReviewAccess, signal?: AbortSignal) {
+export async function assertGitReviewAvailable(captured: CapturedGitReview, access: GitReviewAccess, signal?: AbortSignal, fileId?: number) {
   const cwd = await checkout(captured, access, signal);
   await assertChangedBlobs(cwd, captured, signal);
+  // Download admission must validate the SAME native selection before headers;
+  // gitReviewPatch repeats selection/guards at streaming time, without a cache.
+  if (fileId !== undefined) await selected(cwd, captured, fileId, signal);
   await guard(cwd, captured, access, signal);
 }
 async function* framedRecords(source: AsyncIterable<Uint8Array>, delimiter = 0) {

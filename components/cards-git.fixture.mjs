@@ -12,9 +12,9 @@ import { ignoredAbortFetch } from '../lib/testing/ignored-abort-fetch.fixture.mj
 
 // Local capability fixture, not a React implementation or a feature state machine.
 // Guards precede every production import. No server, filesystem, SDK or Git effects.
-export async function packet(t, { git = false, review = false, readDomain, setup: setupCapability, beforeUnmount: beforeUnmountCapability, traceFrames = false, cardDescendants = false, reviewStarts = [0], reviewEntryIds = [0, 1] } = {}) {
+export async function packet(t, { git = false, review = false, suppliedContext, readDomain, setup: setupCapability, beforeUnmount: beforeUnmountCapability, traceFrames = false, cardDescendants = false, reviewStarts = [0], reviewEntryIds = [0, 1] } = {}) {
   const failures = [], work = [], expected = new Set();
-  let closed = false, view, disposal, domainDisposal;
+  let closing = false, closed = false, view, disposal, domainDisposal;
   // Register the optional HTTP domain before dependency loading or realm setup.
   // Its route failures survive even when a production loader catches them.
   const releases = readDomain ? [() => readDomain.release()] : [];
@@ -40,51 +40,56 @@ export async function packet(t, { git = false, review = false, readDomain, setup
   };
   const settle = async (from = 0) => {
     let end = from;
-    while (end < work.length) {
-      const batch = work.slice(end); end = work.length;
-      await Promise.allSettled(batch.map(entry => entry.promise));
-    }
+    await act(async () => {
+      while (end < work.length) {
+        const batch = work.slice(end); end = work.length;
+        await Promise.allSettled(batch.map(entry => entry.promise));
+      }
+    });
   };
   const requests = [], reviewBodies = [];
   let gitTransport;
   const fetchReview = async (input, init = {}) => {
     try {
-      assert.equal(closed, false, 'closed review admission');
+      assert.equal(closed || closing, false, 'closed review admission');
       const url = new URL(String(input), 'https://fixture.invalid');
       assert.equal(url.origin, 'https://fixture.invalid');
-      const context = cardDescendants && url.pathname === '/api/plugins/bundled/git-workflow/patch-context';
-      if (!context) assert.equal(url.pathname, '/api/sessions/current/reviews/review');
       assert.equal(init.method ?? 'GET', 'GET');
       assert.equal(init.cache, 'no-store');
       assert.equal(init.signal instanceof AbortSignal, true);
       const keys = [...url.searchParams.keys()].sort();
       assert.equal(new Set(keys).size, keys.length, 'no duplicate query keys');
-      if (context) {
+      if (suppliedContext) {
+        assert.equal(url.pathname, `/api/plugins/bundled/${suppliedContext.pluginId}/patch-context`);
         assert.equal(keys.join(','), 'file,handle');
-        assert.equal(url.searchParams.get('handle'), 'captured-context');
+        assert.equal(url.searchParams.get('handle'), suppliedContext.handle);
         assert.equal(url.searchParams.get('file'), '0');
-      } else assert.equal(['start', 'patch', 'entry,offset'].includes(keys.join(',')), true);
-      if (url.searchParams.has('patch')) assert.equal(url.searchParams.get('patch'), '1');
-      if (url.searchParams.has('start')) assert.equal(reviewStarts.map(String).includes(url.searchParams.get('start')), true, 'declared review page only');
-      if (url.searchParams.has('entry')) {
-        assert.equal(reviewEntryIds.map(String).includes(url.searchParams.get('entry')), true, 'declared review entry only');
-        assert.equal(url.searchParams.get('offset'), '0');
+      } else {
+        assert.equal(url.pathname, '/api/sessions/current/reviews/review');
+        const op = url.searchParams.get('op');
+        const shapes = { overview: 'op', page: 'op,start,view', preview: 'file,offset,op,view', context: 'file,op,view', details: 'offset,op' };
+        assert.equal(keys.join(','), shapes[op], 'exact native review query shape');
+        if (url.searchParams.has('view')) assert.ok(['proposal', 'result'].includes(url.searchParams.get('view')));
+        if (op === 'page') assert.equal(reviewStarts.map(String).includes(url.searchParams.get('start')), true, 'declared page only');
+        if (url.searchParams.has('file')) assert.equal(reviewEntryIds.map(String).includes(url.searchParams.get('file')), true, 'server-issued file only');
+        if (url.searchParams.has('offset')) assert.equal(url.searchParams.get('offset'), '0');
       }
       assert.equal(init.body, undefined);
-      const gate = deferred(); let delivered = false;
-      const record = { url, signal: init.signal, bodyCalls: 0,
-        reply(payload, { status = 200, error } = {}) {
+      const gate = deferred(), bodyGate = deferred(), bodyEntered = deferred(); let delivered = false;
+      const record = { url, signal: init.signal, bodyCalls: 0, bodyEntered: bodyEntered.promise, releaseBody: () => bodyGate.resolve(),
+        reply(payload, { status = 200, error, holdBody = false } = {}) {
           assert.equal(delivered, false); delivered = true;
           record.status = status; // headers are read only after this named response gate
-          gate.resolve({ payload, status, error });
+          gate.resolve({ payload, status, error, holdBody });
         },
       };
-      requests.push(record); reviewBodies.push({ gate, undelivered: () => !delivered });
+      requests.push(record); reviewBodies.push({ gate, undelivered: () => !delivered, releaseBody: record.releaseBody });
       // Named response gate; actual json()/text() consumption is still part of
       // the complete observed production continuation, including after abort.
       const response = await gate.promise;
-      const consume = () => {
-        record.bodyCalls++;
+      const consume = async () => {
+        record.bodyCalls++; bodyEntered.resolve();
+        if (response.holdBody) await bodyGate.promise; // Deliberately ignores abort; not a headers-only hold.
         if (response.error) {
           if (!expected.has(response.error)) failures.push(response.error);
           throw response.error;
@@ -160,8 +165,9 @@ export async function packet(t, { git = false, review = false, readDomain, setup
       for (const release of releases) {
         try { release(); } catch (error) { failures.push(error); }
       }
-      for (const body of reviewBodies) if (body.undelivered()) {
-        try { body.gate.resolve({ payload: {}, status: 503 }); } catch (error) { failures.push(error); }
+      for (const body of reviewBodies) {
+        try { if (body.undelivered()) body.gate.resolve({ payload: {}, status: 503 }); body.releaseBody(); }
+        catch (error) { failures.push(error); }
       }
       const pendingJoins = [];
       try { pendingJoins.push(gitTransport?.dispose(() => Promise.resolve())); } catch (error) { failures.push(error); }
@@ -200,7 +206,10 @@ export async function packet(t, { git = false, review = false, readDomain, setup
   };
   const cleanup = async () => {
     if (!disposal) disposal = (async () => {
-      closed = true;
+      closing = true;
+      // Close transport admission now, but permit Pierre's synchronous teardown
+      // frames until actual unmount ends; queued frames are then cancelled by
+      // settleDomain before realm restoration. Teardown is not a new read grant.
       // Independently attempt every boundary; collectors stay live through realm close.
       try { await view?.unmount(); } catch (error) { failures.push(error); }
       try { await beforeDispose(); } catch (error) { failures.push(error); }
@@ -208,7 +217,11 @@ export async function packet(t, { git = false, review = false, readDomain, setup
       for (const restore of properties.toReversed()) {
         try { restore(); } catch (error) { failures.push(error); }
       }
-      if (failures.length) throw new AggregateError(failures, 'cards/Git capability or cleanup failure');
+      if (failures.length) {
+        console.log('cards/Git cleanup diagnostics', JSON.stringify(failures, (_key, value) => value instanceof Error
+          ? { name: value.name, message: value.message, ...(value instanceof AggregateError ? { errors: value.errors } : {}) } : value).slice(0, 8000));
+        throw new AggregateError(failures, 'cards/Git capability or cleanup failure');
+      }
     })();
     void disposal.catch(() => {});
     return disposal;
@@ -239,7 +252,7 @@ export async function packet(t, { git = false, review = false, readDomain, setup
     const admittedFetch = globalThis.fetch;
     install(globalThis, 'fetch', (input, init = {}) => {
       try {
-        assert.equal(closed, false);
+        assert.equal(closed || closing, false);
         const url = new URL(String(input), 'https://fixture.invalid');
         assert.equal(url.origin, 'https://fixture.invalid');
         assert.equal(url.pathname, '/api/git/explorer');
@@ -256,7 +269,7 @@ export async function packet(t, { git = false, review = false, readDomain, setup
         return admittedFetch(input, init);
       } catch (error) { failures.push(error); throw error; }
     });
-  } else if (review) install(globalThis, 'fetch', fetchReview);
+  } else if (review || suppliedContext) install(globalThis, 'fetch', fetchReview);
   else if (readDomain) install(globalThis, 'fetch', readDomain.fetch);
   view = await mount(t, null, { beforeDispose, beforeUnmount: beforeUnmountCapability, setup(window) {
     for (const name of ['WebSocket', 'EventSource', 'XMLHttpRequest', 'Worker', 'Audio', 'Image']) {
@@ -321,11 +334,7 @@ export async function packet(t, { git = false, review = false, readDomain, setup
   } });
   const style = new URL('./cards-git-style.fixture.mjs', import.meta.url).pathname;
   const jiti = createJiti(import.meta.url, { fsCache: false, jsx: { runtime: 'automatic' }, tsconfigPaths: true,
-    // Archive transport assertions now exercise the retained supplied-page viewer
-    // as an explicit external display adapter, not runtime v1 history support.
-    // P3 replaces this adapter with the Git provider connection.
-    alias: { ...(review ? { './OperationReviewAttachment': fileURLToPath(new URL('./plugin-ui/ReviewAttachment.tsx', import.meta.url)) } : {}),
-      './ChatMinimap.module.css': style, [new URL('./ChatMinimap.module.css', import.meta.url).pathname]: style,
+    alias: { './ChatMinimap.module.css': style, [new URL('./ChatMinimap.module.css', import.meta.url).pathname]: style,
       './ScratchpadPanel.css': style, [new URL('./ScratchpadPanel.css', import.meta.url).pathname]: style,
       // Resolve both public import-only exports through native ESM. The explicit
       // /react alias must not become a child of the optional root adapter file.

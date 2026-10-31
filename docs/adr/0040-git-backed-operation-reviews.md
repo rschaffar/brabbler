@@ -1,8 +1,8 @@
-# ADR 0039: Git-backed operation reviews
+# ADR 0040: Git-backed operation reviews
 
-- Status: Accepted direction; reader/metadata foundation and P2 host/producer
-  integration independently reviewed on the feature branch with focused checks.
-  Full viewer/API wiring, connected-solution review, migration and deployment remain pending.
+- Status: Accepted; metadata production and Git-backed viewer/API independently
+  reviewed on the feature branch with focused native and installed-browser checks.
+  Converter implementation, complete acceptance and operational cutover remain pending.
 - Revises: ADR 0018's permanent, repository-independent patch archive when the new
   producer is activated; preserves its size-independent approval scope.
 - Execution owner: [Git-backed operation reviews plan](../plans/2026-10-31_git-backed-operation-reviews-plan.md).
@@ -70,15 +70,16 @@ availability. Whole-repository moves/replacements can require an explicitly
 admitted offline mapping or leave the view unavailable; saved paths are not access
 permission.
 
-P2 replaces new Git bundle production with hidden structured metadata, small v2
-references and immutable linked settlement. Session save barriers and existing-owner
-standalone persistence precede publication; failed final reporting cannot repeat a
-native effect. Legacy decoding is no longer imported by production hosts/APIs.
+New Git operations save hidden structured metadata, small v2 references and immutable
+linked settlement. Session save barriers and existing-owner standalone persistence
+precede publication; failed final reporting cannot repeat a native effect.
 
-This is not the finished viewer cutover: operation attachments/API materialization
-are explicit pending placeholders until P3 reconnects the retained shared viewer.
-The [schema/API map](../git-operation-review-metadata.md) names current exports and
-unavailable legacy descriptors. No existing state has been converted or removed;
-legacy codec relocation/package retirement, complete acceptance, connected-solution
-review and operational authorization remain open. Do not advertise a finished rollout
-from focused P2 evidence.
+The existing per-file viewer and read-only APIs use the registered Git provider.
+Actual-result/proposal selection, unavailable states and bounded convenience state
+retain the same renderer and approval scope. Legacy decoding lives only in temporary
+offline support, outside the realized runtime package. The
+[schema/API map](../git-operation-review-metadata.md) owns current interfaces.
+
+No existing state has been converted or removed. Converter implementation, full
+acceptance, connected migration review and separately authorized operational cutover
+remain open; focused application checks are not a completed rollout.

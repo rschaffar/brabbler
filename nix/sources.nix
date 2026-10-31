@@ -21,6 +21,7 @@ let
     (fileset.fileFilter (file: !(lib.hasPrefix ".env" file.name)) root)
     (fileset.union application (paths [
     "app" "components" "hooks" "lib" "plugins" "public" "e2e" "nix" "docs" ".github"
+    "tools/migrations/git-operation-reviews"
     "AGENTS.md" "CONTEXT.md" "README.md" "eslint.config.mjs"
     "flake.nix" "flake.lock" ".gitignore" ".agents/skills/writing-plans"
   ]));
