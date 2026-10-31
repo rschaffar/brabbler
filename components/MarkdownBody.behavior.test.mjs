@@ -13,6 +13,35 @@ async function production() {
   return { MarkdownBody, FileMarkdownBody, I18nProvider, setRemoteImagesEnabled, REMOTE_IMAGES_STORAGE_KEY };
 }
 
+test('session links preserve browser navigation and their full destination in chat and file previews', async t => {
+  const f = markdownDom(t);
+  const { MarkdownBody, FileMarkdownBody, I18nProvider } = await production();
+  const opened = [];
+  const onOpenFile = (...args) => opened.push(args);
+  const destinations = [
+    '/?session=example-session&entry=example-entry#details',
+    '?session=example-session',
+    'https://example.test/?session=example-session',
+  ];
+  const text = destinations.map((href, index) => `[Session ${index}](${href})`).join('\n\n');
+  const view = await f.mount(createElement(I18nProvider, null, createElement('section', null,
+    createElement(MarkdownBody, { cwd: '/repo', onOpenFile }, text),
+    createElement('div', { className: 'markdown-body' },
+      createElement(FileMarkdownBody, { baseDir: '/repo/docs', relativeRoot: '/repo', onOpenFile, markdown: text })))));
+  for (const body of view.container.querySelectorAll('.markdown-body')) {
+    for (const [index, href] of destinations.entries()) {
+      const link = byText(body, 'a', `Session ${index}`);
+      assert.equal(link.getAttribute('href'), href, 'query and fragment survive rendering');
+      for (const modifiers of [{}, { ctrlKey: true }, { metaKey: true }]) {
+        assert.equal(await f.click(link, modifiers), false, 'browser default remains available');
+      }
+    }
+  }
+  assert.equal(view.container.querySelectorAll('.markdown-body').length, 2);
+  assert.deepEqual(opened, [], 'no session URL reaches the file viewer');
+  await f.dispose();
+});
+
 test('remote images default off across chat and file previews; explicit global enable and peer disable update immediately', async t => {
   const f = markdownDom(t);
   const { MarkdownBody, FileMarkdownBody, I18nProvider, setRemoteImagesEnabled, REMOTE_IMAGES_STORAGE_KEY } = await production();

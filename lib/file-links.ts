@@ -115,6 +115,10 @@ export function resolveLocalFileLink(
 ): LocalFileLinkResolution | null {
   if (!href) return null;
 
+  // The app root (including /?session=… and /?cwd=…) is navigation, not
+  // the filesystem root. Classify before discarding URL query/fragment data.
+  if (/^\/(?:[?#]|$)/.test(href.trim())) return null;
+
   const cleanHref = href.split("#", 1)[0].split("?", 1)[0].trim();
   if (!cleanHref) return null;
 
