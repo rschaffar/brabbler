@@ -1,6 +1,6 @@
 import { settingsFixture } from './settings.fixture.mjs';
 
-// Supplied empty metadata limits real privacy/SSH branches; no child replacement.
+// Supplied empty metadata limits real privacy branches; no child replacement.
 export async function generalFixture(t, overrides = {}, { family = 'all', ...capabilities } = {}) {
   const f = await settingsFixture(t, capabilities), graph = await f.load(family);
   const data = {
@@ -14,7 +14,6 @@ export async function generalFixture(t, overrides = {}, { family = 'all', ...cap
     cwd: '/project', sessionId: 'session-A', initialSection: 'general',
     trustStatus: null, quoteSelectionEnabled: false, sessions: [],
     privacy: { keys: new Set(), error: false, pendingKey: null, refresh() { throw new Error('Unexpected privacy refresh'); }, setHidden() { throw new Error('Unexpected privacy write'); } },
-    sshController: {},
     onClose() {}, onSessionReloaded() {}, onManageTrust() {}, onQuoteSelectionChange() {}, ...overrides,
   };
   f.route('GET', '/api/web-auth', { reply: () => ({ data: data.auth }) });

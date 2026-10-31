@@ -18,7 +18,7 @@ const fs = require("fs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { getHelpText, parseLaunchOptions } = require("./brabbler-options");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { launchManagedNext } = require("./ssh-agent-launch");
+const { launchManagedNext } = require("./next-launch");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { commandEnvironment } = require("./command-env");
 

@@ -3,9 +3,11 @@
 Brabbler's downstream SDK patch owns twelve modular SDK distribution targets, not a
 sandbox for extensions or a repair of Pi's standalone CLI/RPC bundles. It keeps
 normal `SSH_AUTH_SOCK`, explicit isolation, provider/account configuration and Pi
-session metadata, while removing `BRABBLER_PASSWORD` and `BRABBLER_SSH_RUNTIME` only
-from final child-process environment copies. The trusted supervised Next worker
-continues to receive its login password and private SSH runtime locator.
+session metadata, while removing `BRABBLER_PASSWORD` and the retired
+`BRABBLER_SSH_RUNTIME` locator only from final child-process environment copies.
+The trusted supervised Next worker continues to receive its login password.
+The locator is still scrubbed defensively; no managed SSH runtime is created or
+consumed. Removing browser SSH does not remove this command-secret protection.
 
 ## Installation and verification
 
@@ -36,8 +38,7 @@ no writes.
 `--check` and `checkSdkCommandEnvironment()` only read. They require the v2
 policy, exactly twelve target recipes, all twelve patched hashes and the exact
 helper; originals, missing helpers and known mixtures refuse. A former nine-target
-installation cannot pass this check. The launcher checks before router allocation
-or worker spawning. It never patches installed packages or changes the server process environment. npm installs
+installation cannot pass this check. The launcher checks before worker spawning. It never patches installed packages or changes the server process environment. npm installs
 that deliberately omit lifecycle scripts will refuse startup until an authorized
 installation step applies the patch; they do not silently run an unpatched SDK.
 

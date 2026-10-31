@@ -7,7 +7,7 @@
 - [Session launch](session-launch.md), [models and speed](model-speed.md)
 - [Browser questions](questions.md), [review notebooks](review-notebooks.md)
 - [Worktrees and Git Explorer](worktrees.md), [optional Git Workflow](git-workflow-plugin.md)
-- [Workspace terminals](terminal.md), [browser SSH](browser-ssh-agent.md)
+- [Workspace terminals and native SSH forwarding](terminal.md)
 - [Security reporting](../SECURITY.md), [release status](release.md)
 
 ## Development and maintenance

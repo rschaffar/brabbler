@@ -1,7 +1,7 @@
 # 0033 — Stable runtime-wide SSH routing and per-key browser verification
 
 Date: 2026-10-22
-Status: Accepted and implemented. Routing, public registry, browser policies, authenticated interface and the approved SDK subprocess-environment hardening passed complete core/browser/deployment-VM acceptance; the completed implementation record retains exact evidence.
+Status: Superseded by [ADR 0039](0039-remove-browser-ssh.md). Browser signing and managed routing are removed; SDK command-environment hardening remains. The historical implementation passed core/browser/deployment-VM acceptance; the completed implementation record retains that evidence.
 
 ## Context and supersession
 

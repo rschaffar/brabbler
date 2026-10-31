@@ -242,7 +242,7 @@ export async function main(args) {
     report.checks.push('restart-persistence-rotation-revocation-header-guard');
     await server.stop(); server = await start(app, env, ['--no-auth']);
     assert.equal((await request(server, '/api/sessions')).status, 200);
-    assert.equal((await request(server, '/api/ssh-agent', { cookie: nextCookie, body: { action: 'status' } })).status, 403);
+    assert.equal((await request(server, '/api/ssh-agent', { cookie: nextCookie, body: { action: 'status' } })).status, 404);
     assert.match(server.logs(), /authentication is DISABLED/);
     assert.equal((await request(server, '/api/terminal', { body: {}, headers: { Origin: 'https://untrusted.invalid' } })).status, 403);
     report.checks.push('explicit-no-auth-warning-retained-origin-and-ssh-boundaries');

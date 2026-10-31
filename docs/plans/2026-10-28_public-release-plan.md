@@ -69,7 +69,7 @@ on by default, portable, and explicitly bypassable at startup.
 
 [Release](../release.md), [Dependencies](../dependencies.md),
 [Testing](../testing.md), [Feature contracts](../feature-internals.md),
-[Browser SSH](../browser-ssh-agent.md), and [Branding](../branding.md) own maintained
+[Native SSH forwarding](../terminal.md#ssh-and-agent-forwarding), and [Branding](../branding.md) own maintained
 behavior. This plan proposes deliberate updates, not exceptions hidden in a plan.
 The CLI-auth and branding archives remain historical evidence. Active account,
 CLI-backend, fullscreen and performance plans retain their existing scope; this
@@ -275,8 +275,8 @@ and `BRABBLER_REQUIRE_AUTH=0` behavior needs an explicit compatibility dispositi
 
 No-auth does **not** disable Host/Origin/CSRF or the pre-Next request-header guard,
 file/project authorization, Git policy, or plugin approvals. Do not mint an
-artificial authenticated cookie: browser SSH key management still needs genuine
-signed login authority and remains unavailable without it. No generic path-security
+artificial authenticated cookie. Browser SSH management has since been removed
+under [ADR 0039](../adr/0039-remove-browser-ssh.md). No generic path-security
 or descriptor-pinned Git cleanup change belongs in this task.
 
 ### Portable artifact proposal
@@ -328,8 +328,8 @@ not come from the builder's platform. Packaging success is not portability proof
 - [ ] Verify focused owners: `lib/brabbler-options.test.mjs`,
   `lib/web-auth-store.test.mjs`, `lib/web-auth-proxy.test.mjs`,
   `app/api/web-auth/route.test.mjs`, request-security/header-guard tests,
-  browser-SSH route tests and the installed auth/PTY fixtures. Preserve genuine
-  browser-SSH cookie requirements, rate limits and existing revocation tests.
+  and the installed auth/PTY fixtures. Preserve rate limits and existing cookie
+  revocation tests; browser-SSH-specific obligations are retired by ADR 0039.
 
 ### P2 — current advisories and redistribution obligations
 

@@ -32,9 +32,6 @@ import { TabBar, type Tab } from "./TabBar";
 import { useQuotedChatBranch } from "@/hooks/useQuotedChatBranch";
 import { SessionToolbarActions, SessionStatsButton, MainFileToggle, ToolbarActionsStrip, MobileSessionIdentity, shellExpansionState, toggleFileExpansion, SidebarToolbarToggle, GitToolbarToggle, MobileChatToolbar, useTopPanelState, SubagentToolbarMarker, mobileToolbarVisible } from "./AppShellToolbar";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
-import { useSshAgent } from "@/hooks/useSshAgent";
-import { SshSigningCards } from "./SshSigningCards";
-import { SshSidebarButton } from "./SshSidebarButton";
 import { AcceptancePanel } from "./AcceptancePanel";
 import { ScratchpadPanel } from "./ScratchpadPanel";
 import { ProjectTrustDialog, type TrustChoice } from "./ProjectTrustDialog";
@@ -158,7 +155,6 @@ export function AppShell() {
   const [fileRevealRequest, setFileRevealRequest] = useState<FileRevealRequest>();
   const fileRevealId = useRef(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
-  const sshController = useSshAgent();
   const [acceptanceOpen, setAcceptanceOpen] = useState(false);
   const [pluginSettingsSession, setPluginSettingsSession] = useState<{ id: string; cwd: string } | null>(null);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
@@ -584,7 +580,6 @@ export function AppShell() {
         onBackgroundTaskDone={handleBackgroundTaskDone}
         activityController={activityController}
       />
-      <SshSidebarButton controller={sshController} onOpen={() => setSettingsSection("ssh")} />
       <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
         {([
           ["models", translate("common.models")],
@@ -1431,15 +1426,12 @@ export function AppShell() {
         cwd={pluginSettingsSession?.cwd ?? projectTrustCwd}
         sessionId={pluginSettingsSession?.id ?? selectedSession?.id ?? null}
         initialSection={settingsSection}
-        sshController={sshController}
         initialPluginScope={pluginSettingsSession ? "session" : undefined}
         sessions={sessionsWithSelection}
         privacy={projectPrivacy}
         quoteSelectionEnabled={quoteSelectionEnabled}
         onQuoteSelectionChange={handleQuoteSelectionChange}
         onClose={() => {
-          sshController.cancelDiscovery();
-          if (sshController.busy && !sshController.approvingId) sshController.cancel();
           setSettingsSection(null);
           setPluginSettingsSession(null);
           setModelsRefreshKey((key) => key + 1);
@@ -1463,7 +1455,6 @@ export function AppShell() {
       />
     )}
     {scratchpadMounted && <ScratchpadPanel open={scratchpadOpen} projectCwd={activeCwd} onClose={() => setScratchpadOpen(false)} />}
-    <SshSigningCards controller={sshController} />
     </FileLinkMenuContext.Provider>
     </ReviewNavigationContext.Provider>
   );

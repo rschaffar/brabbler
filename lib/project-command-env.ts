@@ -7,7 +7,6 @@ import {
   type LoadExtensionsResult,
 } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
-import { browserSshAgent } from "./browser-ssh-agent";
 
 const HOST_EXTENSION_NAME = "brabbler-project-command-environment";
 const HOST_EXTENSION_PATH = `<inline:${HOST_EXTENSION_NAME}>`;
@@ -23,7 +22,6 @@ type ProjectCommandBashOperationsOptions = {
   localOperations?: BashOperations;
   platform?: NodeJS.Platform;
   shellPath?: string;
-  sessionId?: string;
 };
 
 function isHostRuntimeVariable(name: string, platform: NodeJS.Platform): boolean {
@@ -34,7 +32,7 @@ function isHostRuntimeVariable(name: string, platform: NodeJS.Platform): boolean
     // The browser login password guards this server; commands run on behalf of
     // a project (and the model reading their output) have no use for it.
     || comparableName === "BRABBLER_PASSWORD"
-    // Server-only control locator, not the public SSH_AUTH_SOCK default.
+    // Continue stripping the retired private locator from command copies.
     || comparableName === "BRABBLER_SSH_RUNTIME";
 }
 
@@ -83,12 +81,6 @@ export function createProjectCommandBashOperations(
         agentBinDir,
         platform,
       );
-      // A launcher-owned runtime supersedes legacy bindings immediately, even
-      // before setup. Retain markers as migration evidence; never consult them
-      // or replace an explicit child environment with an old browser socket.
-      if (options.sessionId && !process.env.BRABBLER_SSH_RUNTIME) {
-        Object.assign(environment, browserSshAgent().environment(options.sessionId));
-      }
       return localOperations.exec(command, cwd, {
         ...executionOptions,
         env: environment,
@@ -116,7 +108,6 @@ export function createProjectCommandBashExtension(options: {
             commandPrefix: options.settings.getShellCommandPrefix(),
             operations: createProjectCommandBashOperations({
               shellPath: options.settings.getShellPath(),
-              sessionId: context?.sessionManager.getSessionId(),
             }),
           });
           return executionDefinition.execute(toolCallId, params, signal, onUpdate, context);

@@ -1,13 +1,11 @@
 import type { LocalePlugin } from "../types";
 import { worktreeManagerEnglish } from "../worktree-manager-messages";
-import { sshAgentEnglish } from "../ssh-agent-messages";
 
 /** Brabbler 内置英语语言包。 */
 export const enLocale: LocalePlugin = {
   id: "en",
   label: "English",
   messages: {
-    ...sshAgentEnglish,
     "pluginMatrix.settings": "{name} settings",
     "pluginMatrix.intro": "Defaults flow from left to right. Click a cell to edit that scope; a saved override stops following its parent.",
     "pluginMatrix.global": "All repositories",
@@ -278,26 +276,6 @@ export const enLocale: LocalePlugin = {
     "nativeTools.cancel": "Cancel",
     "nativeTools.apply": "Apply",
     "nativeTools.applying": "Applying…",
-    "browserSsh.title": "Browser SSH agent",
-    "browserSsh.close": "Close browser SSH agent",
-    "browserSsh.description": "Use a separate FIDO security-key credential in this browser to sign SSH authentication and SSHSIG requests. Your existing SSH keys and global agent are unchanged.",
-    "browserSsh.compatibility": "Requires a Brabbler password, HTTPS (or localhost), an ES256 security key with user verification, and OpenSSH 10.3 or the WebAuthn agent-signature backport. Keep this page connected; each signature needs approval.",
-    "browserSsh.unsupported": "Use a supported browser in a secure, top-level page. Unix sockets are required on the Brabbler host.",
-    "browserSsh.disconnected": "Browser SSH agent disconnected.",
-    "browserSsh.storageFailed": "Public credential metadata could not be saved. It remains usable until this page closes.",
-    "browserSsh.enroll": "Enroll security key",
-    "browserSsh.connect": "Connect security key",
-    "browserSsh.forget": "Forget credential metadata",
-    "browserSsh.disconnect": "Disconnect / cancel",
-    "browserSsh.publicKey": "SSH public key",
-    "browserSsh.export": "Terminal export command",
-    "browserSsh.bind": "Use for selected session Bash",
-    "browserSsh.unbind": "Clear selected session binding",
-    "browserSsh.forgetWarning": "Forgetting metadata does not delete the key or revoke access. Remove its public key from destinations separately. Bound session Bash fails closed after disconnect/restart until reconnected or explicitly cleared. Extensions and subagents are not bound automatically.",
-    "browserSsh.request": "SSH signing request",
-    "browserSsh.untrusted": "The request description is untrusted, not proof of a destination or document. Approve only a signature you just requested.",
-    "browserSsh.approve": "Approve with security key",
-    "browserSsh.deny": "Deny signature",
     "review.stop": "Review stop: {title}",
     "review.effort": "Effort: {priority}",
     "review.readOnly": "Read-only",

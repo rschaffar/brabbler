@@ -181,9 +181,7 @@ This deliberately skips password checks without reading, deleting or changing sa
 credentials. It prints a prominent warning on **every** bind, and may also be used
 with an explicitly selected non-loopback address. Anyone who can reach that listener
 can access this coding workspace. Host/Origin and file-access checks remain active;
-this is not a safe public service. Browser SSH key management still requires a real
-signed login and is unavailable in no-auth mode. Mandatory-auth mode rejects the
-bypass. Remove the flag to restore normal credential checks.
+this is not a safe public service. Mandatory-auth mode rejects the bypass. Remove the flag to restore normal credential checks.
 
 For authenticated remote access, configure authentication before binding beyond loopback:
 
@@ -247,7 +245,7 @@ For npm dependency changes, use `nix develop .#update` and `npm install --packag
 - [Worktrees and Git Explorer](./docs/worktrees.md)
 - [Optional Git Workflow plugin](./docs/git-workflow-plugin.md)
 - [Workspace terminal](./docs/terminal.md)
-- [Browser-backed FIDO SSH agent](./docs/browser-ssh-agent.md)
+- [SSH and native agent forwarding](./docs/terminal.md#ssh-and-agent-forwarding)
 - [English interface messages](./docs/i18n.md)
 - [Release status and portable artifact verification](./docs/release.md)
 - [Breaking rename and later cutover](./docs/brabbler-rename.md)

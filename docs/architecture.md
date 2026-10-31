@@ -90,25 +90,14 @@ app/api/
   push/config/route.ts            GET VAPID public key for push subscriptions
   push/subscribe/route.ts         POST register a push subscription
   tools/settings/route.ts         GET/PUT shell tool settings (PowerShell on Windows)
-  ssh-agent/route.ts              POST browser-owned FIDO agent lifecycle/signing, outside chat
 
 bin/
-  ssh-agent-launch.js   shared installed/npm ownership and readiness-before-spawn boundary
-  ssh-agent-router.js   stable private front, selected backend, discovery, settings and fenced lifecycle
-  ssh-agent-lease.js    PID/nonce ownership, atomic unique-marker claims and conservative crash recovery
-  ssh-agent-client.js   server-only private Unix control connector (no import-time allocation)
+  next-launch.js       shared installed/npm auth checks and child-process supervision; native agent inheritance
   command-env.js        child hygiene for server login/control fields, preserving public socket and account env
   patch-sdk-command-env.js install-only exact-version SDK patcher and read-only startup verifier
   sdk-command-env-payload.js twelve modular SDK recipes/original-patched fingerprints and self-contained filter
 
 lib/
-  ssh-key-registry.ts  versioned public-only registrations, immutable policies, durable revision CAS
-  managed-ssh-agent.ts exact owned browser connections, active/standby, monotonic grants and enrollment proofs
-  ssh-agent-types.ts   public management/signing wire types (no live control capabilities)
-  browser-ssh-enrollment.ts bounded creation/COSE/SPKI validation; separate fresh possession proof required
-  browser-ssh-protocol.ts WebAuthn assertion validation, web-safe payloads and OpenSSH wire encodings
-  browser-ssh-agent.ts bounded private browser sockets, pending admission, cancellation and leases
-  browser-ssh-client.ts browser ceremonies, bounded transport and inert per-credential public recovery
   agent-client.ts      typed fetch helper for /api/agent commands
   draft-store.ts       local draft persistence helpers
   scratchpad.ts        bounded personal-note wire contract
@@ -163,7 +152,6 @@ lib/
 
 components/
   ScratchpadPanel.tsx native two-editor personal Notes modal
-  BrowserSshAgent.tsx opt-in enrollment, connection and explicit signing UI independent of chat
   AppShell.tsx        outer layout + URL/session state + retained terminal tabs
   AcceptancePanel.tsx project acceptance recipes, shared queue/status/logs and explicit controls
   FileWorkspace.tsx   scoped file groups, stable view hosts, routing and responsive projection
