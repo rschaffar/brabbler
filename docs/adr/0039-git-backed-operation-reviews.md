@@ -1,7 +1,8 @@
 # ADR 0039: Git-backed operation reviews
 
-- Status: Accepted direction; initial reader/metadata foundation implemented on the
-  feature branch. Runtime producer/UI cutover, migration and deployment are pending.
+- Status: Accepted direction; reader/metadata foundation and P2 host/producer
+  integration independently reviewed on the feature branch with focused checks.
+  Full viewer/API wiring, connected-solution review, migration and deployment remain pending.
 - Revises: ADR 0018's permanent, repository-independent patch archive when the new
   producer is activated; preserves its size-independent approval scope.
 - Execution owner: [Git-backed operation reviews plan](../plans/2026-10-31_git-backed-operation-reviews-plan.md).
@@ -69,9 +70,15 @@ availability. Whole-repository moves/replacements can require an explicitly
 admitted offline mapping or leave the view unavailable; saved paths are not access
 permission.
 
-The first implementation slice adds standalone native reader, metadata and settled
-result projection owners with tests. It does **not** yet replace the active bundle
-producer, change the current card protocol or migrate old state. ADR 0018 continues
-to describe the running storage path until those later plan packages activate the
-replacement. Do not advertise archive removal, complete acceptance or deployment
-from foundation tests alone.
+P2 replaces new Git bundle production with hidden structured metadata, small v2
+references and immutable linked settlement. Session save barriers and existing-owner
+standalone persistence precede publication; failed final reporting cannot repeat a
+native effect. Legacy decoding is no longer imported by production hosts/APIs.
+
+This is not the finished viewer cutover: operation attachments/API materialization
+are explicit pending placeholders until P3 reconnects the retained shared viewer.
+The [schema/API map](../git-operation-review-metadata.md) names current exports and
+unavailable legacy descriptors. No existing state has been converted or removed;
+legacy codec relocation/package retirement, complete acceptance, connected-solution
+review and operational authorization remain open. Do not advertise a finished rollout
+from focused P2 evidence.

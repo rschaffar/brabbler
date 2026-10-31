@@ -6,7 +6,6 @@ import { allowFileRoot, getAllowedFileRoots, getKnownAllowedFileRoots, isExistin
 import { samePath } from "../paths";
 import { bundledPlugin } from "./registry";
 import { readPluginSettings } from "./settings";
-import { preparePluginReview } from "./review-store";
 import { createProjectOperationHost, projectOperationScheduler } from "./project-operation-host";
 import type { LiveProjectOperation } from "./project-operation-host";
 import { createFileProjectOperationStore } from "./project-operation-store";
@@ -48,7 +47,6 @@ function compose(store: ProjectOperationStore, operations?: Map<string, LiveProj
       return (path: string) => rpc.value.hasBusyRpcSessionWithin(path) || terminal.value.hasActiveTerminalWithin(path);
     },
     reserveDirectory: acquireDirectoryReservation,
-    prepareReview: preparePluginReview,
   }, operations);
 }
 
@@ -61,4 +59,4 @@ export function createProjectOperationService(store: ProjectOperationStore = cre
 
 /** Preserve the process-wide HMR owner and the existing route API. */
 export const projectOperationHost = compose(createFileProjectOperationStore(root), live);
-export const { prepareProjectAction, getProjectOperation, decideProjectOperation, listProjectOperations, projectOperationReview } = projectOperationHost;
+export const { prepareProjectAction, getProjectOperation, decideProjectOperation, listProjectOperations, projectOperationReview, resolveProjectOperationReview } = projectOperationHost;

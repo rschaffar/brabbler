@@ -1,5 +1,12 @@
 # Optional Git Workflow plugin
 
+**Implementation checkpoint:** new operation reviews now use saved structured
+metadata, not patch bundles. P2 host/producer integration is focused-tested;
+P3 full viewer/API wiring remains pending, so operation attachments currently
+show an explicit pending placeholder. The shared per-file viewer is retained and
+must be reconnected before rollout. See the [schema/API map](git-operation-review-metadata.md).
+No live conversion or deployment is claimed.
+
 Brabbler works with every bundled plugin disabled. **Settings → Plugins → Git
 Workflow** enables this browser-only bundled plugin; it is off by default.
 Ordinary coding/shell tools, Git Explorer and standalone worktrees do not depend
@@ -321,7 +328,7 @@ top-level operation metadata, the complete saved review or selected resources.
 It is an explicit application presentation argument, never operation JSON,
 user-facing Git policy or an environment/test-mode switch. Smaller native boundary
 tests use the same executor with a lower budget; cheap production-owner tests retain
-the default 24/25 boundary and larger resource lists. Small reviews use the [shared diff-review controls](worktrees.md#full-file-diff-review)
+the default 24/25 boundary and larger resource lists. P3's required viewer restoration reuses the [shared diff-review controls](worktrees.md#full-file-diff-review)
 with one selected file: a searchable file sidebar where space permits, otherwise a
 **Files (N)** drawer. Selecting a file closes the drawer; **Previous/Next file**
 move within the displayed inventory. One sticky split/unified/raw and wrap toolbar
@@ -472,34 +479,36 @@ an effect started or completed. A failed terminal write is reported in the tool
 result without pretending the Git mutation was rolled back. Native partial effects
 and check failures remain explicit. SDK HTML export does not render these cards.
 
-### Durable exact review storage
+### Durable review metadata
 
-Generic session-scoped GET `/api/sessions/[id]/reviews/[reviewId]` validates the
-exact reference in persisted operation/interaction receipts, including prepared
-operations. It never creates wrappers, reads a checkout or grants permission.
-The existing application authentication/origin boundary applies. Reads validate
-stored integrity; bounded pages and streamed downloads do not impose an operation
-size ceiling. Old inline receipts continue to render unchanged.
+New Git operations save a detached proposal as hidden session metadata, or inside
+the existing standalone operation JSON, before publishing their small v2 reference.
+A separate immutable settlement links that exact proposal and may capture a
+verified result. Receipts never use a latest-by-operation UUID lookup. Session
+append/initial-flush/fsync and standalone atomic-save failures refuse pre-effect
+authority; failed final saving never implies rollback or permits a native retry.
+Full metadata stays out of ordinary standalone status/list responses.
 
-Private `brabbler/reviews/` storage is independent of cwd and creator-session paths.
-Moves preserve references; forks with copied receipts retain access even after
-the parent is deleted. Published bundles have no TTL or automatic garbage
-collection, including bundles orphaned after publication. Unpublished scratch is
-removed by its writer. Back up this directory along with session JSONL for full
-review history; do not delete it during rollback. Insufficient disk space or
-failed pre-effect persistence still refuses execution. See
-[ADR 0018](adr/0018-size-independent-git-reviews.md).
+GET `/api/sessions/[id]/reviews/[reviewId]` and the standalone counterpart currently
+validate saved ownership, then return an explicit pending/unsupported response.
+P3 must connect plugin-owned materialization and the retained full viewer. Legacy
+v1 references keep cards/outcomes with **Legacy review unavailable; offline migration
+required**, without opening old bundles. Generic supplied-patch cards remain supported.
 
-[ADR 0039](adr/0039-git-backed-operation-reviews.md) records the accepted replacement
-direction: metadata in sessions/existing standalone records and diffs generated
-from Git objects. Its initial reader/metadata foundation does not yet replace this
-running archive protocol; producer/UI cutover and offline migration remain in the
+Git owns review content retention. Session JSONL/standalone backups preserve
+metadata and outcomes, not missing repositories/objects. New operations create no
+patch archive, database or content-retention refs. Retain any existing legacy review
+store and backups until separately authorized offline conversion and disposition;
+there is no automatic migration or cleanup. [ADR 0039](adr/0039-git-backed-operation-reviews.md)
+revises ADR 0018's archive choice while preserving size-independent approval scope.
+See the [schema/API map](git-operation-review-metadata.md) and
 [implementation plan](plans/2026-10-31_git-backed-operation-reviews-plan.md).
 
 ### Optional full-file patch context
 
-Small new Git patch approvals may carry an optional opaque UUID handle in the plugin's
-namespace. Commit snapshots bind captured **HEAD / candidate index tree** IDs;
+Existing supplied-patch cards may carry an optional opaque UUID handle in the plugin's
+namespace. New metadata-backed Git operations do not mint these expiring handles;
+P3 supplies their historical context from the captured comparison instead. Commit snapshots bind captured **HEAD / candidate index tree** IDs;
 rebase/merge snapshots bind **merge-base / feature commit** IDs. They supplement
 the exact supplied patch, never replace or reconstruct it. The in-memory registry
 stores comparison/file identifiers, not file contents, with a **one-hour TTL,
@@ -579,11 +588,11 @@ Other external filesystem/checkout writers remain uncoordinated.
   UUIDs do not replay effects; conflicting input refuses. Stop remains available after
   approval while awaiting outcome and prevents only undispatched steps. Saved consent
   is read-only evidence; restart cannot recover live authority.
-- Status supplies `reviewBaseUrl`: operation-bound `/reviews/[reviewId]`, with the
-  existing `start`, `entry`, `offset`, `download` and `patch` query protocol. No
-  session ID is needed. Saved ownership and allowed surviving project access
-  authorize historical reads even when the plugin is disabled or a feature
-  checkout is gone; integrity checks still apply.
+- Status supplies `reviewBaseUrl`: operation-bound `/reviews/[reviewId]`, without
+  a session ID. P2 returns an explicit pending/unsupported response after saved
+  ownership and surviving-project admission; P3 must connect paged reads,
+  downloads and the full viewer. Disabled-plugin history still requires that
+  allowed physical owner anchor, even after a feature checkout is gone.
 
 An operation owns preparation/confirmation/effect lifetime independently of HTTP
 requests. Closing pending review explicitly sends Stop; transport loss alone

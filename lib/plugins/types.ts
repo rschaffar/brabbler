@@ -76,9 +76,11 @@ export interface PluginCardSection {
   collapsible?: boolean;
   notice?: boolean;
 }
-export interface PluginReviewReference {
+/** Legacy archive shape. Runtime cards keep its identity/outcome, never decode its content. */
+export interface LegacyPluginReviewReference {
   version: 1; id: string; operationId: string; sha256: string; entries: number; bytes: number;
 }
+export type PluginReviewReference = import("./review-reference").OperationReviewReference | LegacyPluginReviewReference;
 /** Sequential streaming writer. The host publishes only a completely settled bundle. */
 export interface PluginReviewWriter {
   begin(label: string, kind: "text" | "patch"): Promise<void>;
@@ -135,7 +137,8 @@ export interface PluginUiContext {
   /** Synchronously reject busy/overlapping use and block new managed admissions until release.
    * Release in finally only after the native effect settles, not merely on abort. */
   reserveDirectory(path: string): () => void;
-  prepareReview(pluginId: string, operationId: string, build: (writer: PluginReviewWriter) => Promise<void>): Promise<PluginReviewReference>;
+  /** Save detached, hidden metadata before returning a publishable reference. No content archive. */
+  saveOperationReview(pluginId: string, operationId: string, format: string, payload: unknown): Promise<import("./review-reference").OperationReviewReference>;
   pluginCard(pluginId: string, card: PluginCard, signal?: AbortSignal): Promise<string | null>;
   pluginCardWithDetails?(pluginId: string, card: PluginCard, signal?: AbortSignal): Promise<{ action: string; details?: string } | null>;
   /** Synchronous durable append, outside model context. Throws on failure; never gated by abort. */

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { finished } from "node:stream/promises";
 import fs, { lstatSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -18,11 +17,11 @@ const jiti = createJiti(import.meta.url);
 const { executeGitOperation: executeWithReceipts } = await jiti.import("./server.ts");
 const { OPERATION_MARKERS } = await jiti.import("./operation-paths.ts");
 const { capturePostflight, collectPostflight, summarizeStatus, postflightText, postflightReceiptSummary, nativePostflightAccess } = await jiti.import("./postflight.ts");
-const { preparePluginReview, reviewEntry, reviewPreview, reviewManifest, reviewStream } = await jiti.import("../../lib/plugins/review-store.ts");
+import { saveOperationReview, reviewMetadata, reviewProposal, reviewFiles, reviewPatch } from "./review-host.fixture.mjs";
 const { snapshotOperationReceipt } = await jiti.import("../../lib/operation-receipts.ts");
 const { validatePluginCard } = await jiti.import("../../lib/plugins/ui.ts");
 const executeGitOperation = (cwd, op, ui, ...rest) => executeWithReceipts(cwd, op, {
-  prepareReview: preparePluginReview,
+  saveOperationReview,
   operationReceipt(id, receipt) { snapshotOperationReceipt(id, receipt, 1); },
   ...ui,
   ...(ui?.pluginCard ? { pluginCard: (id, card, signal) => { validatePluginCard(card); return ui.pluginCard(id, card, signal); } } : {}),
@@ -109,7 +108,7 @@ test("ask shows exact resource, message, patch and checks; decline and no UI do 
   assert.ok(card.sections.find((section) => section.title === "Technical details").collapsible);
   assert.equal(card.actions.find((action) => action.primary).label, "Approve commit");
   assert.equal(card.patch, undefined);
-  assert.match((await reviewPreview(card.review, await reviewEntry(card.review, 1))).text, /changed a/);
+  assert.match(await reviewPatch(card.review, 0), /changed a/);
   assert.equal(git(repo, "rev-parse", "HEAD"), before);
   failed(await call(repo, commit(repo), {}), /live Brabbler/);
   success(await call(repo, commit(repo)));
@@ -183,17 +182,8 @@ function feature(repo, branch = "feature") {
   return path;
 }
 test("five browser preview/reject tuples preserve selected native resources and exact read-only cards", async () => {
-  // Native storage download API, not HTTP/browser historical-download proof.
-  const download = async (ref, entry) => {
-    const stream = await reviewStream(ref, entry);
-    if (!stream) return Buffer.alloc(0);
-    const closed = finished(stream, { cleanup: true }); void closed.catch(() => {});
-    const chunks = [];
-    try { for await (const chunk of stream) chunks.push(Buffer.from(chunk)); }
-    finally { stream.destroy(); await closed; }
-    assert.equal(stream.closed, true); assert.equal(stream.fd, null);
-    return Buffer.concat(chunks);
-  };
+  // Archive hash/offset/descriptor assertions remain in the isolated legacy
+  // codec suite. These native tuples now own structured captures and Git reads.
   // Frozen command resources, in the original order; one shared native history.
   const repo = fixture(); git(repo, "branch", "comparison-base");
   git(repo, "branch", "target"); git(repo, "switch", "-c", "feature");
@@ -232,35 +222,25 @@ test("five browser preview/reject tuples preserve selected native resources and 
         assert.equal(fields["Base branch"], op.baseBranch); assert.equal(fields["Worktree branch"], op.branch);
         assert.equal(fields.Destination, destination);
       }
-      // Bundle identity includes data, entry metadata AND offsets. Validate it
-      // through the public owner API; it is not SHA256(downloaded data alone).
-      assert.deepEqual(await reviewManifest(card.review, "git-workflow"), {
-        version: 1, pluginId: "git-workflow", operationId: card.operationId,
-        entries: card.review.entries, bytes: card.review.bytes, sha256: card.review.sha256,
-      });
-      const entries = []; let offset = 0;
-      for (let id = 0; id < card.review.entries; id++) {
-        const entry = await reviewEntry(card.review, id), body = await reviewPreview(card.review, entry);
-        assert.equal(body.complete, true);
-        const bytes = Buffer.from(body.text);
-        assert.equal(entry.start, offset); assert.equal(bytes.length, entry.bytes); offset += entry.bytes;
-        assert.equal(createHash("sha256").update(bytes).digest("hex"), entry.sha256);
-        assert.deepEqual(await download(card.review, entry), bytes);
-        entries.push({ entry, text: body.text });
-      }
-      const exact = JSON.parse(entries[0].text);
-      assert.deepEqual(exact.operation, op); assert.equal(exact.presentation.operationId, card.operationId);
-      assert.deepEqual(exact.presentation.fields, card.fields);
-      const bytes = Buffer.from(entries.map(e => e.text).join(""));
-      assert.equal(bytes.length, card.review.bytes);
-      assert.deepEqual(await download(card.review), bytes, "complete native download preserves all exact entry bytes");
-      const patch = entries.filter(e => e.entry.kind === "patch").map(e => e.text).join("");
+      assert.equal(card.review.version, 2);
+      assert.deepEqual(Object.keys(card.review).sort(), ["id", "operationId", "version"]);
+      const exact = reviewMetadata(card.review);
+      assert.deepEqual(exact.operation, op);
+      assert.equal(exact.kind, "proposal"); assert.match(exact.fingerprint, /^[a-f0-9]{64}$/);
+      assert.equal(exact.cwd, op.checkout); assert.ok(Array.isArray(exact.nativeArgs));
+      assert.equal(Object.hasOwn(exact, "presentation"), false, "no repeated unbounded presentation copy");
       if (action === "merge" || action === "rebase") {
         const base = git(repo, "merge-base", "target", "feature"), tip = git(repo, "rev-parse", "feature");
-        assert.deepEqual(exact.comparison, { before: base, after: tip });
-        const expected = execFileSync("git", ["-C", repo, "diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv", base, tip, "--"], { encoding: "utf8" });
+        assert.deepEqual(exact.source.captured.comparison, { before: base, after: tip });
+        const expected = execFileSync("git", ["-C", repo, "diff", "--binary", "--full-index", "--no-renames", "--no-color", "--no-ext-diff", "--no-textconv", base, tip, "--"], { encoding: "utf8" });
+        const patch = await reviewPatch(card.review);
         assert.equal(patch, expected); assert.notEqual(patch, "");
-      } else { assert.equal(patch, ""); assert.equal(exact.comparison, undefined); }
+      } else {
+        assert.equal(exact.source.kind, "resources");
+        assert.equal(exact.source.resources.checkout, op.checkout);
+        assert.ok(exact.source.resources.registrations.some(item => item.path === target));
+      }
+      assert.equal(existsSync(join(root, "agent/brabbler/reviews")), false);
       return "reject";
     } });
     failed(result, /not approved/); assert.equal(cards, 1);
@@ -474,7 +454,7 @@ test("successful native commit remains completed when index reconciliation fails
     // the file's pre-existing Jiti graph has already bound the original export.
     const isolated = createJiti(import.meta.url, { fsCache: false, moduleCache: false });
     const { executeGitOperation } = await isolated.import("./server.ts");
-    result = await executeGitOperation(repo, commit(repo), { ...approved, prepareReview: preparePluginReview,
+    result = await executeGitOperation(repo, commit(repo), { ...approved, saveOperationReview,
       operationReceipt(id, receipt) { snapshotOperationReceipt(id, receipt, 1); } });
   }
   finally { fs.renameSync = original; syncBuiltinESMExports(); }
@@ -877,11 +857,10 @@ test("original foreign Ask/PWD approval and selected Deny cancellation preserve 
               [{ label: checks[0].name, value: checks[0].command, code: true }]);
             assert.equal(card.sections.find(section => section.title === 'Commit message').text, op.message);
             assert.equal(card.review.operationId, card.operationId);
-            const entry = await reviewEntry(card.review, 0);
-            const exact = JSON.parse((await reviewPreview(card.review, entry)).text);
+            const exact = reviewMetadata(card.review);
             assert.deepEqual(exact.operation, op);
-            assert.equal(exact.presentation.operationId, card.operationId);
-            assert.equal(exact.comparison.before, beforeSelected);
+            assert.equal(card.review.operationId, card.operationId);
+            assert.equal(exact.source.captured.comparison.before, beforeSelected);
             assert.equal(receipts[from].authorization.revision, digest(origin));
             return 'approve';
           } catch (error) { remember(error); throw error; }
@@ -899,7 +878,7 @@ test("original foreign Ask/PWD approval and selected Deny cancellation preserve 
       const terminal = receipts.at(-1), nativeCard = cards.at(-1);
       assert.equal(terminal.phase, 'succeeded');
       assert.equal(terminal.operationId, nativeCard.operationId);
-      assert.equal(terminal.card.review.id, nativeCard.review.id);
+      assert.deepEqual(reviewMetadata(terminal.card.review).proposal, nativeCard.review);
       assert.equal(terminal.authorization.mode, 'ask'); assert.equal(terminal.authorization.source, 'project');
       assert.equal(terminal.authorization.decision, 'user-approved');
       assert.equal(terminal.authorization.revision, digest(origin));
@@ -935,7 +914,7 @@ test("original foreign Ask/PWD approval and selected Deny cancellation preserve 
       assert.deepEqual(callerState(), beforeCaller);
       assert.equal(readFileSync(join(selected, 'second-draft.txt'), 'utf8'), `Second plugin candidate cross-cancel-${width}\n`);
       assert.equal(receipts.at(-1).operationId, cancelledCard.operationId);
-      assert.equal(receipts.at(-1).card.review.id, cancelledCard.review.id);
+      assert.deepEqual(reviewMetadata(receipts.at(-1).card.review).proposal, cancelledCard.review);
       assert.equal(receipts.at(-1).authorization.revision, digest(cancelOrigin));
       updatePluginSettings(gitWorkflowManifest, 'project', caller, {}, ['commit', 'commitChecks'], undefined, session);
       assert.equal(readPluginSettings(gitWorkflowManifest, selected, undefined, session).effective.commit, 'deny');
@@ -1027,15 +1006,15 @@ test('original own Cancel keeps its live signal, builtin Ask session origin and 
             assert.equal(card.sections.find(section => section.title === 'Commit message').text, op.message);
             assert.equal(card.sections.some(section => section.title === 'Required checks'), false);
             assert.equal(card.review.operationId, card.operationId);
-            assert.equal(card.review.entries, 3);
-            const exact = JSON.parse((await reviewPreview(card.review, await reviewEntry(card.review, 0))).text);
+            assert.equal((await reviewFiles(card.review)).total, 2);
+            const exact = reviewMetadata(card.review);
             assert.deepEqual(exact.operation, op);
-            assert.equal(exact.presentation.operationId, card.operationId);
-            assert.deepEqual(exact.presentation.fields, card.fields);
-            assert.equal(exact.comparison.before, before.head);
+            assert.equal(card.review.operationId, card.operationId);
+            assert.equal(exact.source.captured.repository.checkout, card.fields.find(field => field.label === 'Checkout').value);
+            assert.equal(exact.source.captured.comparison.before, before.head);
             assert.equal(receipts[from].authorization.revision, digest(origin), 'own Cancel receipt retains the complete own-session origin');
-            const draftPatch = (await reviewPreview(card.review, await reviewEntry(card.review, 1))).text;
-            const secondPatch = (await reviewPreview(card.review, await reviewEntry(card.review, 2))).text;
+            const draftPatch = await reviewPatch(card.review, 0);
+            const secondPatch = await reviewPatch(card.review, 1);
             assert.equal(draftPatch.includes(`-Plugin whole-file candidate reconnect-${width}\n`), true);
             assert.equal(draftPatch.includes(`+Plugin whole-file candidate ${mode}\n`), true);
             assert.equal(draftPatch.includes(`-Plugin distant candidate reconnect-${width}\n`), true);
@@ -1065,7 +1044,7 @@ test('original own Cancel keeps its live signal, builtin Ask session origin and 
       assert.equal(current.at(-1).authorization.decision, 'not-approved');
       for (const receipt of current) {
         assert.equal(receipt.operationId, suppliedCard.operationId);
-        assert.equal(receipt.card.review.id, suppliedCard.review.id);
+        assert.deepEqual(reviewProposal(receipt.card.review), reviewMetadata(suppliedCard.review));
         assert.equal(receipt.card.review.operationId, suppliedCard.operationId);
         assert.equal(receipt.authorization.revision, digest(origin));
         assert.equal(receipt.effectStarted, false);
@@ -1079,4 +1058,88 @@ test('original own Cancel keeps its live signal, builtin Ask session origin and 
   }
   if (errors.length === 1) throw errors[0];
   if (errors.length) throw new AggregateError(errors, 'Original own Cancel/native origin and settlement failed');
+});
+
+test("missing original candidate expires approval before files-preview can regenerate its tree", async () => {
+  const repo = fixture(); change(repo);
+  const before = git(repo, "rev-parse", "HEAD"), check = join(root, `missing-candidate-check-${n}`);
+  set(repo, { commitChecks: [{ name: "must not run", command: `touch '${check}'` }] });
+  let missing;
+  const result = await call(repo, commit(repo), { pluginCard: async (_id, card) => {
+    const captured = reviewMetadata(card.review).source.captured;
+    assert.equal(captured.comparison.before, before);
+    const oid = captured.comparison.after;
+    missing = join(repo, ".git/objects", oid.slice(0, 2), oid.slice(2));
+    assert.equal(existsSync(missing), true); rmSync(missing);
+    return "approve";
+  } });
+  failed(result, /captured repository or Git objects are unavailable/);
+  assert.equal(result.details.effectStarted, false); assert.equal(result.details.checksStarted, false);
+  assert.equal(existsSync(missing), false, "old candidate must NOT be silently recreated under old approval");
+  assert.equal(existsSync(check), false); assert.equal(git(repo, "rev-parse", "HEAD"), before);
+});
+
+test("producer settlement captures verified commit/no-op/divergent/rebase comparisons, not summary prose", async () => {
+  const receipts = [], ui = { ...approved, operationReceipt: (_id, value) => receipts.push(structuredClone(value)) };
+  const repo = fixture(); change(repo);
+  success(await call(repo, commit(repo), ui));
+  let saved = reviewMetadata(receipts.at(-1).card.review), proposal = reviewMetadata(saved.proposal);
+  assert.equal(saved.kind, "settlement"); assert.equal(saved.relation, "same");
+  assert.equal(saved.result.commit, git(repo, "rev-parse", "HEAD"));
+  assert.equal(saved.result.captured.comparison.before, proposal.source.captured.comparison.before);
+  const path = feature(repo); change(path); writeFileSync(join(path, "a"), "feature delta\n"); git(path, "add", "a"); git(path, "commit", "-m", "Feature");
+  writeFileSync(join(repo, "b"), "independent target\n"); git(repo, "add", "b"); git(repo, "commit", "-m", "Target");
+  const target = git(repo, "rev-parse", "HEAD");
+  success(await call(repo, { action: "rebase", checkout: path, featureBranch: "feature" }, ui));
+  saved = reviewMetadata(receipts.at(-1).card.review);
+  assert.equal(saved.result.label, "Rebased feature changes");
+  assert.equal(saved.result.captured.comparison.before, target);
+  assert.equal(saved.result.captured.comparison.after, git(path, "rev-parse", "HEAD"));
+  success(await call(repo, { action: "merge", checkout: repo, featureBranch: "feature" }, ui));
+  saved = reviewMetadata(receipts.at(-1).card.review);
+  assert.equal(saved.result.captured.comparison.before, target);
+  assert.equal(saved.result.captured.comparison.after, git(repo, "rev-parse", "HEAD"));
+  assert.equal(saved.relation, "same", "independent unchanged target files do not make changed-file records different");
+  success(await call(repo, { action: "merge", checkout: repo, featureBranch: "feature" }, ui));
+  saved = reviewMetadata(receipts.at(-1).card.review);
+  assert.equal(saved.postflight.disposition, "no-op");
+  assert.equal(saved.result.captured.comparison.before, saved.result.captured.comparison.after, "no-op result is empty, never the proposal");
+  assert.equal(saved.relation, "same", "already-contained feature has an empty proposal as well as an empty result");
+  const divergent = fixture(), content = Array.from({ length: 100 }, (_, i) => `line ${i}`);
+  writeFileSync(join(divergent, "a"), content.join("\n") + "\n"); git(divergent, "add", "a"); git(divergent, "commit", "-m", "Shared lines");
+  const divergentFeature = feature(divergent);
+  const featureContent = [...content]; featureContent[2] = "feature line";
+  writeFileSync(join(divergentFeature, "a"), featureContent.join("\n") + "\n"); git(divergentFeature, "add", "a"); git(divergentFeature, "commit", "-m", "Feature lines");
+  const targetContent = [...content]; targetContent[80] = "target line";
+  writeFileSync(join(divergent, "a"), targetContent.join("\n") + "\n"); git(divergent, "add", "a"); git(divergent, "commit", "-m", "Target lines");
+  success(await call(divergent, { action: "merge", checkout: divergent, featureBranch: "feature" }, ui));
+  saved = reviewMetadata(receipts.at(-1).card.review);
+  assert.equal(saved.postflight.verification, "verified");
+  assert.equal(saved.relation, "different", "changed old blob versions differ in a legitimate divergent merge; this is not an authorization violation");
+  assert.equal(existsSync(join(root, "agent/brabbler/reviews")), false);
+});
+
+test("failed settlement save or final receipt never repeats a completed native mutation", async () => {
+  for (const fault of ["settlement", "receipt"]) {
+    const repo = fixture(); change(repo); const beforeCount = Number(git(repo, "rev-list", "--count", "HEAD"));
+    let settlements = 0, savedResult;
+    const result = await call(repo, commit(repo), { ...approved,
+      async saveOperationReview(...args) {
+        if (args[3].kind === "settlement") {
+          settlements++;
+          if (fault === "settlement") throw new Error("settlement save failed");
+          savedResult = args[3];
+        }
+        return saveOperationReview(...args);
+      },
+      operationReceipt(_id, receipt) { if (fault === "receipt" && receipt.phase === "succeeded") throw new Error("final receipt save failed"); },
+    });
+    failed(result, /Do not repeat/); assert.equal(result.details.completed, true);
+    assert.equal(settlements, 1, "no metadata-save retry after settlement failure");
+    assert.equal(Number(git(repo, "rev-list", "--count", "HEAD")), beforeCount + 1, "exactly one native commit");
+    if (fault === "receipt") {
+      assert.ok(savedResult.result, "a mapped/saved result is not proof of terminal receipt persistence");
+      assert.equal(result.details.receiptPersisted, false);
+    }
+  }
 });

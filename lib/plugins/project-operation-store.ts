@@ -5,8 +5,26 @@ import { validateOperationReceipt } from "../operation-receipts";
 import { isOperationId } from "./ui";
 import { validateSavedProjectAcknowledgment } from "./project-acknowledgment";
 import type { ProjectOperation } from "./project-operation-types";
+import { readOperationReview, type OperationReviewRecord } from "./review-metadata";
 
-export interface StoredProjectOperation extends ProjectOperation { inputDigest: string }
+export interface StoredProjectOperation extends ProjectOperation { inputDigest: string; reviewMetadata?: OperationReviewRecord[] }
+/** The existing operation JSON is the sole standalone metadata owner. */
+export function validateProjectReviewMetadata(record: StoredProjectOperation): void {
+  if (record.reviewMetadata === undefined) {
+    if (record.receipt?.card.review?.version === 2) throw new Error("Missing operation review metadata");
+    return;
+  }
+  if (!Array.isArray(record.reviewMetadata)) throw new Error("Invalid operation review metadata");
+  const ids = new Set<string>();
+  for (const value of record.reviewMetadata) {
+    const review = readOperationReview(value);
+    if (!review || ids.has(review.id) || review.pluginId !== record.pluginId
+      || record.receipt && review.operationId !== record.receipt.operationId) throw new Error("Invalid operation review metadata owner");
+    ids.add(review.id);
+  }
+  const ref = record.receipt?.card.review;
+  if (ref?.version === 2 && !record.reviewMetadata.some(item => item.id === ref.id && item.operationId === ref.operationId)) throw new Error("Missing operation review metadata");
+}
 /** Saves are synchronous: successful return is the authority/dispatch durability boundary. */
 export interface ProjectOperationStore {
   save(record: StoredProjectOperation): void;
@@ -31,6 +49,7 @@ export function createFileProjectOperationStore(root: () => string): ProjectOper
       if (value.version !== 1 || value.id !== id || value.requestId !== id || !/^[a-f0-9]{64}$/.test(value.inputDigest)
         || typeof value.project !== "string" || typeof value.anchor !== "string" || typeof value.cwd !== "string") throw new Error("Invalid operation record");
       if (value.receipt) validateOperationReceipt(value.receipt);
+      validateProjectReviewMetadata(value);
       validateSavedProjectAcknowledgment(value);
       return value;
     } finally { closeSync(fd); }

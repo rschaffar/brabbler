@@ -62,7 +62,7 @@ export function hostCapability(r) {
     store: { read: id => records.get(id) && structuredClone(records.get(id)), save: record => records.set(record.id, structuredClone(record)), ids: () => [...records.keys()] },
     capability(id) { assert.equal(id, 'git-workflow'); return { plugin, adapter }; }, enabled: () => true,
     admission: { async allowed(path) { assert.equal(path, ROOT); }, assertInvocation(path) { assert.equal(path, ROOT); }, admitRelated(paths) { assert.deepEqual(paths, []); } },
-    observers: async () => () => false, reserveDirectory: () => () => {}, prepareReview: () => assert.fail('no review builder in UI host bridge'),
+    observers: async () => () => false, reserveDirectory: () => () => {},
     scheduler: { now: () => Date.parse('2026-01-01T00:00:00.000Z'), setTimeout(callback, milliseconds) { assert.equal(milliseconds, 900000); const token = { callback, unref() {} }; timers.add(token); return token; }, clearTimeout(token) { timers.delete(token); } },
   });
   r.releaseOnClose(async () => {

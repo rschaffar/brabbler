@@ -1,10 +1,14 @@
 # Git-backed operation reviews
 
-**Status:** Implementation authorized; the initial P1 reader/metadata foundation is
-implemented, independently reviewed and core-verified. The feature is **not yet
-switched over**: active cards still use the old archive. Runtime host/producer/UI
-wiring, migration tooling and complete acceptance remain open. Live migration,
-service activation and old-state deletion still require separate authorization.
+**Status:** Implementation authorized. P1 reader/metadata foundation is independently
+reviewed and core-verified. P2 host/producer integration now saves metadata and v2
+references instead of new patch bundles; focused host/SDK/native/standalone checks
+pass. Two independent P2 reviews are closed after persistence, copy-barrier,
+nested-schema and started-wrapper containment repairs. The full viewer/API is
+**not yet wired**:
+attachments currently show explicit pending/unsupported placeholders, with shared
+viewer controls retained for P3. Migration tooling and complete acceptance remain
+open. Live migration, activation and old-state deletion require separate authorization.
 
 **Workspace:** `feat/git-backed-operation-reviews`, created from local `main`
 `fed9415359e3867a3c9bdd25801034d6e5c820ee`; reviewed planning commit `ee32fb3f`.
@@ -538,13 +542,23 @@ the implementation checkout.
 
 ### Next bounded slice
 
-P2 must connect the metadata save port to real session and standalone owners before
-any producer publishes v2 references. The inspected SDK can leave custom-only data
-unflushed, can retain failed appends in memory, and does not provide an fsync barrier.
-The host must define/enforce successful save-before-publication, reject references
-from failed saves, and repair the metadata-only `fork_branch` first-flush edge.
-Full payloads must stay out of standalone status/list responses. These are known
-host integration obligations, not a reason for another permanent store.
+P2 host/producer implementation now supplies that save port: detached proposal and
+linked settlement records, session initial-flush/fsync barriers, failed-append
+publication containment, metadata-only `fork_branch` repair and complete metadata
+inside existing standalone owners but outside status/list DTOs. New Git operations
+no longer write bundles; original captured objects are checked before preview can
+regenerate a missing candidate. Verified postflight supplies result endpoints, not
+human summaries or a latest-by-operation join. A saved result still does not prove
+terminal receipt persistence. Focused real host/SDK/standalone/native tests pass.
+Two independent reviewers closed their findings after real SDK append/barrier faults, clone durability,
+nested resource validation and started-wrapper deferred-event repairs. Complete
+acceptance remains open.
+
+The [exported schema/API map](../git-operation-review-metadata.md) includes explicit
+unavailable legacy comparisons, offline-admitted provenance and lossless once-only
+legacy presentation details. P3 must connect those exact owned records to the
+retained full viewer/API. P4 owns converter/legacy codec relocation and package
+retirement. No live state has been converted, activated or deleted.
 
 ## Implementation packages
 
@@ -556,9 +570,11 @@ new permission.
 
 ### P1 — Freeze the contract and prove the smallest slice
 
-- [ ] Inventory actual producers, owners and consumers in the files above, including
-  standalone records, interaction receipts, paused snapshots, forks/branches and
-  migration/export packaging; record a bounded source/test map in this plan.
+- [x] Inventory actual producers, owners and consumers in the source/test maps above
+  and the maintained metadata API guide. Git was the only legacy bundle producer; session
+  operation/interaction receipts and existing standalone JSON are reference owners.
+  Paused waiting strings are inert. The converter needs the classified bridge and
+  narrow export/fileset admission described below; those edits remain P3/P4.
 - [x] Add [ADR 0039](../adr/0039-git-backed-operation-reviews.md) and link it from
   the owning guide, explicitly distinguishing the initial foundation from the
   unchanged running archive. The remaining cutover must implement that decision.
@@ -567,9 +583,10 @@ new permission.
   local missing-object failure, SHA-256, fallback admission and context closure.
   Full core, including existing native-operation guard tests, passes. No active
   producer/card cutover is claimed by these fixtures.
-- [ ] Finish target entry/schema validation through real host fixtures before
-  rollout. SDK-only large-metadata/copy/compaction/hiddenness tests pass; the
-  save/first-flush/failure/durability port and v2 publication integration remain open.
+- [x] Validate target metadata/schema through real host/SDK/native fixtures: first
+  flush, save-before-publication, failed-append quarantine, copied review ancestry,
+  final clone barrier and complete nested resources pass. Independent re-review
+  closed the concrete findings. This does not certify the pending viewer or rollout.
 - [ ] Pin down repository replacement/removal and copied-session identity behavior;
   test known surviving worktree fallback and unavailable whole-repository moves.
   Preserve standalone owner-anchor admission and distinct owner/receipt IDs; account
@@ -581,24 +598,23 @@ large-patch admission limits. Return for a bounded design decision if these fail
 
 ### P2 — New metadata source, producer and reader
 
-- [ ] Implement versioned review metadata and small references in generic host,
+- [x] Implement versioned review metadata and small references in generic host,
   receipt validation/persistence and standalone record owner; prove durable ordering,
   copied/branched access, immutable proposal/result linkage and unsupported fallback.
-- [ ] Replace Git bundle preparation with structured proposal metadata based on the
+- [x] Replace Git bundle preparation with structured proposal metadata based on the
   existing private candidate tree; preserve exact-state/check/cancellation behavior.
-  Implement host initial-flush/save-barrier and failed-append containment before
-  returning references; fix the custom-only `fork_branch` flush edge with real
-  host fixtures. A pure result comparison does not certify terminal persistence.
-  Check original object availability before preview can recreate it, with a native
-  missing-candidate-between-publication-and-approval refusal fixture.
-- [ ] Capture structured trustworthy result endpoints at settlement from postflight,
+  Real host fixtures verify first-flush/save barriers, failed-append containment and
+  custom-only `fork_branch`; native fixtures refuse a missing original candidate
+  before preview can recreate it. A saved result does not certify terminal persistence.
+- [x] Capture structured trustworthy result endpoints at settlement from postflight,
   outside bounded human summary strings; distinguish observed/verified/unknown and
   final persistence failure without repeating native effects.
 - [ ] Implement local-only Git provider inventory, selected-file/raw-preview,
   streaming download and context reads; exercise literal names, mode changes,
   binary/symlink/gitlink cases and vanished objects with real repositories.
-- [ ] Implement the simple `same`/`different`/`unknown` rule through the real data
-  owner and verify its native composition; no permanent content caches or Git refs.
+- [x] Implement the simple `same`/`different`/`unknown` rule through the real data
+  owner and verify native commit, rebase, no-op and divergent merge composition;
+  no permanent content caches or Git refs.
 
 ### P3 — Preserve the viewer and retire the running archive code
 

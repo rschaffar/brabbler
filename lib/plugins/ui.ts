@@ -1,15 +1,13 @@
 import type { PluginCard, PluginCardField, PluginReviewReference } from "./types";
+import { isOperationId, isOperationReviewReference } from "./review-reference";
+export { isOperationId } from "./review-reference";
 
 export function validReviewReference(value: unknown): value is PluginReviewReference {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const ref = value as PluginReviewReference;
-  return ref.version === 1 && isOperationId(ref.id) && isOperationId(ref.operationId)
-    && typeof ref.sha256 === "string" && /^[a-f0-9]{64}$/.test(ref.sha256)
-    && Number.isSafeInteger(ref.entries) && ref.entries >= 0 && Number.isSafeInteger(ref.bytes) && ref.bytes >= 0;
-}
-
-export function isOperationId(value: unknown): value is string {
-  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  if (!isOperationId(ref.id) || !isOperationId(ref.operationId)) return false;
+  // Legacy is identity-only and explicitly unsupported, not silently read as v2.
+  return ref.version === 1 || isOperationReviewReference(ref);
 }
 
 function text(value: unknown, max: number, optional = true): boolean {

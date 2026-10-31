@@ -1,9 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { isOperationId } from "./ui";
+import { isOperationId, isOperationReviewReference, OPERATION_REVIEW_TYPE, type OperationReviewReference } from "./review-reference";
+export { isOperationReviewReference, OPERATION_REVIEW_TYPE, type OperationReviewReference } from "./review-reference";
 
-export const OPERATION_REVIEW_TYPE = "brabbler:operation-review";
 export type ReviewMetadataValue = null | boolean | number | string | ReviewMetadataValue[] | { [key: string]: ReviewMetadataValue };
-export interface OperationReviewReference { version: 2; id: string; operationId: string }
 /** Hidden host-owned metadata, not a card, model message or execution capability.
  * Plugin format validators decide its content; raw source/patch bodies do not belong
  * in a Git review payload. Stage receipts repeat only the small reference. */
@@ -46,9 +45,6 @@ function digest(record: Omit<OperationReviewRecord, "sha256">) {
 }
 export function operationReviewReference(record: OperationReviewRecord): OperationReviewReference {
   return { version: 2, id: record.id, operationId: record.operationId };
-}
-export function isOperationReviewReference(value: unknown): value is OperationReviewReference {
-  return object(value) && Object.keys(value).length === 3 && value.version === 2 && isOperationId(value.id) && isOperationId(value.operationId);
 }
 /** Construct and detach before any SDK append. The persistence host must not
  * publish this reference until append, initial flush and its save barrier succeed. */

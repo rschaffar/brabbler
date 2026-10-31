@@ -7,6 +7,7 @@ Implementation reference moved from `AGENTS.md`; repository-relative code paths 
 - Both RPC and extension-command Reload paths invalidate settings-listing generations before execution and in `finally`, including partial failures. This does not refresh/rebind a session's ModelRuntime; edited model definitions require explicit idle model reselection.
 - `globalThis` survives Next.js hot-reload; plain module-level Map does not
 - Idle timeout: 10 minutes by default (`BRABBLER_IDLE_TIMEOUT_MS`, `0` disables). Concurrent `startRpcSession()` calls share a single start Promise (`globalThis.__piStartLocks`)
+- Failed host operation-metadata/receipt append, first flush or save barrier quarantines that SDK manager: ordinary appends and live history/tree/context reads refuse. SDK memory can advance before a failed write; it cannot be presented as saved history or become a tool-result parent. Existing file bytes/history are preserved for inspection, not automatically repaired or replayed. A completed Git effect remains completed despite reporting failure; never repeat it to obtain a receipt. A fresh owner reads actual disk history only after the failed owner settles. Quarantined memory is omitted from runtime catalogue projection.
 
 ### Cooperative pause and explicit continuation
 
@@ -23,7 +24,7 @@ Selecting the current composer model again applies saved definitions only while 
 ### Per-message forks are non-destructive copies
 `send("fork")` (before a user message) and `send("fork_branch")` (through a saved response) copy persisted history using a **separate** `SessionManager`. They work while the source is running and must never replace, navigate, abort, or shut down its wrapper. The original keeps its session ID, active leaf, queued work, event listeners, and pending extension UI; none of that live work is copied to the child. Current provider accounts and model speed are copied explicitly even when their entries lie after the fork point.
 
-Do not call a replacement/fork API on the source's own manager or runtime: `createBranchedSession()` changes the manager's identity in-place. Clone retains its separate idle-only replacement lifecycle; in-session navigation still changes the original conversation.
+Do not call a replacement/fork API on the source's own manager or runtime: `createBranchedSession()` changes the manager's identity in-place. Clone retains its separate idle-only replacement lifecycle; its copied-owner save barrier follows the final copied-preference append and precedes child-ID publication/source shutdown. A failed barrier leaves the source alive and unchanged. In-session navigation still changes the original conversation.
 
 ### Two kinds of branching — don't confuse them
 - **Fork** ("New session" on user message): creates a new independent `.jsonl` file. Shown as a child in the sidebar tree via `parentSession` header field.

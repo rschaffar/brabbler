@@ -7,7 +7,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { MarkdownBody } from "../MarkdownBody";
 import { BlockingCard } from "../BlockingCard";
 import { SuppliedPatchStack } from "../GitPatchStack";
-import { ReviewAttachment } from "./ReviewAttachment";
+import { ReviewAttachment } from "./OperationReviewAttachment";
 
 type Request = Extract<ExtensionUiRequest, { method: "plugin_card" }>;
 function Fields({ fields }: { fields: PluginCardField[] }) {

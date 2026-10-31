@@ -2,7 +2,7 @@ import type { Agent, AgentMessage as SdkAgentMessage, ThinkingLevel } from "@ear
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
-import { existsSync, realpathSync, writeFileSync } from "fs";
+import { existsSync, realpathSync } from "fs";
 import { recordRunStart, recordRunSettlement } from "./session-run-recovery";
 import { readActivityReview, recordActivityCompletion } from "./activity-review-server";
 import { resolve } from "path";
@@ -76,7 +76,9 @@ import { createBrabblerSourceExtension } from "./brabbler-source-extension";
 import { createLocalFileLinkGuidanceExtension } from "./local-file-link-guidance";
 import { bundledPluginExtensions } from "./plugins/registry";
 import { validatePluginCard } from "./plugins/ui";
-import { preparePluginReview } from "./plugins/review-store";
+import { findOperationReview, OPERATION_REVIEW_TYPE, operationReviewReference, snapshotOperationReview } from "./plugins/review-metadata";
+import type { PluginCard } from "./plugins/types";
+import { flushSessionEntries, isSessionSaveQuarantined, quarantineSessionAfterSaveFailure, sessionSaveBarrier } from "./session-save";
 import type { PluginUiContext } from "./plugins/types";
 import { OPERATION_RECEIPT_TYPE, nextOperationReceiptSequence, snapshotOperationReceipt } from "./operation-receipts";
 import { hasActiveTerminalWithin } from "./terminal-manager";
@@ -343,6 +345,9 @@ export class AgentSessionWrapper {
   private resumeRequestError?: Error;
   private pendingResume?: { message: string; resolve: () => void; reject: (error: unknown) => void; error?: Error; observed?: boolean };
   private readonly releaseModelRuntime: () => void;
+  // SDK appends update memory before disk. A failed write/barrier poisons this
+  // wrapper's publication channel, even if the entry remains visible in memory.
+  private operationSaveFailed = false;
 
   constructor(
     public readonly inner: AgentSessionLike,
@@ -474,6 +479,10 @@ export class AgentSessionWrapper {
     if (childSettled) this.subagentSettlementComplete = true;
     childSettled ||= this.subagentSettlementComplete;
     if (!this.isPauseRequested() || this.pause?.state === "paused" || this.pauseFailure || this.pause?.error) return;
+    if (isSessionSaveQuarantined(this.inner.sessionManager)) {
+      this.pauseFailed(new Error("Session persistence is uncertain; Pause cannot be confirmed while history is quarantined"));
+      return;
+    }
     const inputBusy = this.pendingPromptCount > 0 || this.pendingCheckoutAdmissions > 0 || this.sdkPrompts > 0 || this.sdkQueueAdmissions > 0
       || this.parkedQueueSave !== undefined || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning
       || Boolean(this.inner.modelRuntime && modelRuntimeRefreshState(this.inner.modelRuntime).refreshing);
@@ -531,9 +540,14 @@ export class AgentSessionWrapper {
 
   private checkResumePersistence(): void {
     const attempt = this.pendingResume;
-    if (!attempt?.observed || attempt.error) return;
+    if (!attempt || attempt.error) return;
     const manager = this.inner.sessionManager;
-    if (this.sessionFile && readLatestSessionEntryId(this.sessionFile) === manager.getLeafId()) attempt.resolve();
+    if (isSessionSaveQuarantined(manager)) {
+      attempt.error = new Error("Session persistence is uncertain; Resume cannot be confirmed while history is quarantined");
+      attempt.reject(attempt.error);
+      return;
+    }
+    if (attempt.observed && this.sessionFile && readLatestSessionEntryId(this.sessionFile) === manager.getLeafId()) attempt.resolve();
   }
 
   /** Race host setup/binding against permanent owned refusal; observe late work. */
@@ -845,6 +859,8 @@ export class AgentSessionWrapper {
         const details = message?.details;
         if (message?.role === "custom" && message.customType === "brabbler:paused-subsession-context" && details?.pauseId && details.handoffId) {
           queueMicrotask(() => {
+            // A failed owner cannot acknowledge a saved child handoff from SDK memory.
+            if (!this.isAlive() || isSessionSaveQuarantined(this.inner.sessionManager)) return;
             if (this.pendingChildHandoffs.get(details.pauseId!)?.id !== details.handoffId) return;
             const saved = this.inner.sessionManager.getEntries().some((entry) => entry.type === "custom_message" && entry.customType === message.customType
               && (entry.details as { handoffId?: unknown } | undefined)?.handoffId === details.handoffId);
@@ -872,6 +888,12 @@ export class AgentSessionWrapper {
         // Bind by object identity, never by text or a possibly unrelated leaf.
         queueMicrotask(() => {
           if (!this.isAlive()) return;
+          if (isSessionSaveQuarantined(this.inner.sessionManager)) {
+            this.checkResumePersistence();
+            // Keep truthful live results, but do not claim a persisted entry binding.
+            this.emit(event);
+            return;
+          }
           if (message.role === "user" && this.pendingResume) {
             const content = (event.message as { content?: unknown }).content;
             const text = typeof content === "string" ? content : Array.isArray(content) ? content.filter((part) => part?.type === "text").map((part) => part.text).join("\n") : "";
@@ -901,6 +923,8 @@ export class AgentSessionWrapper {
       this.finishPause();
       return;
     }
+    // SDK settlement after a refused write is not a normally saved completion.
+    if (isSessionSaveQuarantined(this.inner.sessionManager)) return;
     if (!this.agentRunNeedsCompletion || this.isRunning()) return;
     this.agentRunNeedsCompletion = false;
     recordRpcSessionCompletion(this.sessionId);
@@ -1060,22 +1084,9 @@ export class AgentSessionWrapper {
 
   private persistSessionWithoutAssistant(): void {
     const manager = this.inner.sessionManager;
-    const sessionFile = manager.getSessionFile();
-    if (!sessionFile || existsSync(sessionFile)) return;
-
-    const header = manager.getHeader();
-    if (!header) return;
-
-    const content = [header, ...manager.getEntries()]
-      .map((entry) => JSON.stringify(entry))
-      .join("\n") + "\n";
-    writeFileSync(sessionFile, content, { encoding: "utf8", flag: "wx" });
-
-    // Pi normally delays the first flush until an assistant message exists.
-    // A leading shell command or completed extension dialog has no assistant
-    // message, so mark this SDK manager as flushed after writing its own entries.
-    (manager as unknown as { flushed: boolean }).flushed = true;
-    cacheSessionPath(this.inner.sessionId, sessionFile);
+    flushSessionEntries(manager);
+    const file = manager.getSessionFile();
+    if (file) cacheSessionPath(this.inner.sessionId, file);
   }
 
   onEvent(listener: EventListener): () => void {
@@ -1440,14 +1451,8 @@ export class AgentSessionWrapper {
           newSessionFile = forkedPath;
         }
 
-        if (!existsSync(newSessionFile)) {
-          const header = forkedManager.getHeader();
-          if (!header) throw new Error("Forked session is missing a session header");
-          const content = [header, ...forkedManager.getEntries()]
-            .map((forkedEntry) => JSON.stringify(forkedEntry))
-            .join("\n") + "\n";
-          writeFileSync(newSessionFile, content, { encoding: "utf8", flag: "wx" });
-        }
+        flushSessionEntries(forkedManager);
+        sessionSaveBarrier(forkedManager);
 
         const sourceEntries = sessionManager.getEntries() as unknown as SessionEntry[];
         const accountSelection = readSessionAccounts(sourceEntries);
@@ -1474,6 +1479,10 @@ export class AgentSessionWrapper {
         const forkedPath = sourceManager.createBranchedSession(entryId);
         if (!forkedPath) throw new Error("Failed to create forked session");
 
+        // A receipt/custom-only branch has no SDK first flush. Save the copied
+        // manager BEFORE reopen, or open() silently creates a different empty ID.
+        flushSessionEntries(sourceManager);
+        sessionSaveBarrier(sourceManager);
         const forkedManager = SessionManager.open(forkedPath, sessionDir);
         const sourceEntries = sessionManager.getEntries() as unknown as SessionEntry[];
         const accountSelection = readSessionAccounts(sourceEntries);
@@ -1512,6 +1521,10 @@ export class AgentSessionWrapper {
           if (accountSelection) appendSessionAccounts(clonedManager, accountSelection);
           appendSessionModelSpeed(clonedManager, readSessionModelSpeed(sourceEntries));
           appendNativeResourceSelection(clonedManager, readNativeResourceSelection(sourceEntries));
+          // A copied owner needs its own barrier, including the final preference
+          // append, before publication or retiring the still-valid source.
+          flushSessionEntries(clonedManager);
+          sessionSaveBarrier(clonedManager);
           const newSessionId = clonedManager.getSessionId();
           cacheSessionPath(newSessionId, clonedPath);
           invalidateSessionListCache();
@@ -2291,8 +2304,9 @@ export class AgentSessionWrapper {
             ...(response ? { response } : {}),
           };
           const manager = this.inner.sessionManager;
-          const entryId = manager.appendCustomEntry(INTERACTION_RECEIPT_TYPE, receipt);
-          this.persistSessionWithoutAssistant();
+          if (fullRequest.method === "plugin_card") this.assertReviewPublication(fullRequest.pluginId, fullRequest);
+          const entryId = manager.isPersisted() ? this.saveOperationEntry(INTERACTION_RECEIPT_TYPE, receipt)
+            : manager.appendCustomEntry(INTERACTION_RECEIPT_TYPE, receipt);
           invalidateSessionListCache();
           this.emit({ type: "interaction_receipt", entry: manager.getEntry(entryId) });
           if (stopSignal.aborted) reject(stopSignal.reason);
@@ -2328,30 +2342,57 @@ export class AgentSessionWrapper {
     });
   }
 
+  private assertReviewPublication(pluginId: string, card: Pick<PluginCard, "review">): void {
+    if (card.review?.version !== 2) return;
+    const manager = this.inner.sessionManager, leaf = manager.getLeafId();
+    if (this.operationSaveFailed || !leaf || !findOperationReview(manager.getEntries(), pluginId, card.review, leaf)) {
+      throw new Error("Review metadata is not saved on the referring ancestry for this owner");
+    }
+  }
+
+  private saveOperationEntry(customType: string, data: unknown): string {
+    const manager = this.inner.sessionManager;
+    if (this.operationSaveFailed) throw new Error("Session operation persistence previously failed; publication refused");
+    if (!manager.isPersisted() || !manager.getSessionFile() || !manager.getHeader()) throw new Error("Operation metadata/receipts require a persistent session");
+    try {
+      const id = manager.appendCustomEntry(customType, data);
+      this.persistSessionWithoutAssistant();
+      sessionSaveBarrier(manager);
+      return id;
+    } catch (error) {
+      this.operationSaveFailed = true;
+      quarantineSessionAfterSaveFailure(manager);
+      throw error;
+    }
+  }
+
   private createExtensionUiContext(): ExtensionUiContextLike & AskUserUiContext & PluginUiContext {
     return {
       sessionLaunchHost,
       isDirectoryInUse: (directory) => hasBusyRpcSessionWithin(directory) || hasActiveTerminalWithin(directory),
       reserveDirectory: (directory) => acquireDirectoryReservation(directory,
         (physical) => hasBusyRpcSessionWithin(physical) || hasActiveTerminalWithin(physical)),
-      prepareReview: async (pluginId, operationId, build) => {
-        const manager = this.inner.sessionManager;
-        if (!manager.isPersisted() || !manager.getSessionFile() || !manager.getHeader()) throw new Error("Review attachments require a persistent session");
-        return preparePluginReview(pluginId, operationId, build);
+      saveOperationReview: async (pluginId, operationId, format, payload) => {
+        const snapshot = snapshotOperationReview(pluginId, operationId, format, payload);
+        this.saveOperationEntry(OPERATION_REVIEW_TYPE, snapshot);
+        // Hidden metadata emits neither SSE nor model context.
+        invalidateSessionListCache();
+        return operationReviewReference(snapshot);
       },
       operationReceipt: (pluginId, receipt) => {
         const manager = this.inner.sessionManager;
         // In-memory/non-persisting sessions cannot authorize durable operations.
         if (!manager.isPersisted() || !manager.getSessionFile() || !manager.getHeader()) throw new Error("Operation receipts require a persistent session");
         const snapshot = snapshotOperationReceipt(pluginId, receipt, nextOperationReceiptSequence(manager.getEntries()));
-        const entryId = manager.appendCustomEntry(OPERATION_RECEIPT_TYPE, snapshot);
-        this.persistSessionWithoutAssistant();
+        this.assertReviewPublication(pluginId, snapshot.card);
+        const entryId = this.saveOperationEntry(OPERATION_RECEIPT_TYPE, snapshot);
         invalidateSessionListCache();
         // No abort check here: effects that already started must record their outcome.
         this.emit({ type: "operation_receipt", entry: manager.getEntry(entryId) });
       },
       pluginCardWithDetails: (pluginId, card, signal) => {
         validatePluginCard(card);
+        this.assertReviewPublication(pluginId, card);
         return this.requestExtensionUi(
           { method: "plugin_card", pluginId, ...card }, null,
           (response) => "action" in response ? { action: response.action, ...(response.details !== undefined ? { details: response.details } : {}) } : null,
@@ -2360,6 +2401,7 @@ export class AgentSessionWrapper {
       },
       pluginCard: (pluginId, card, signal) => {
         validatePluginCard(card);
+        this.assertReviewPublication(pluginId, card);
         return this.requestExtensionUi(
           { method: "plugin_card", pluginId, ...card }, null,
           (response) => "action" in response ? response.action : null,
@@ -2898,7 +2940,9 @@ export function getRpcSessionInfos(options: { includeTransient?: boolean } = {})
     if (typeof session.isAlive !== "function" || !session.isAlive()) continue;
 
     const manager = session.inner?.sessionManager;
-    if (!manager) continue;
+    // Do not let one unsafe live owner poison unrelated catalogue/history reads.
+    // Its disk owner remains separate; rejected SDK memory supplies no list data.
+    if (!manager || isSessionSaveQuarantined(manager)) continue;
     const header = manager.getHeader();
     const entries = manager.getEntries() as unknown as Array<
       { type: string; timestamp: string } | SessionMessageEntry

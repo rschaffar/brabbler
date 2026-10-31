@@ -5,7 +5,6 @@ import { ReviewFileBrowser } from "../ReviewFileBrowser";
 import { CommittedPatchDiff } from "../CommittedPatchDiff";
 import { createDiffReview, type DiffReviewModel } from "@/lib/git-diff-review";
 import type { GitDiffPreferences } from "@/lib/git-diff-preferences";
-import type { PluginReviewReference } from "@/lib/plugins/types";
 import { SuppliedPatchStack } from "../GitPatchStack";
 
 interface Entry { id: number; label: string; kind: "text" | "patch"; bytes: number; sha256: string }
@@ -69,9 +68,11 @@ function EntryRow(props: { entry: Entry; url: string; before: string; after: str
     {expanded && <EntryContent {...props} />}
   </details>;
 }
-/** Small bounded pages; review failures never replace a live card's action footer. */
+/** Retained supplied-page viewer for P3 composition. This summary is a display
+ * resource, NOT a saved review-reference decoder. Runtime operation cards use
+ * OperationReviewAttachment until their Git provider is wired. */
 export function ReviewAttachment({ review, sessionId, before = "Before", after = "After", contextHandle, pluginId, reviewBaseUrl, onReadWork }: {
-  review: PluginReviewReference; sessionId?: string; before?: string; after?: string; contextHandle?: string; pluginId?: string;
+  review: { id: string; entries: number; bytes: number }; sessionId?: string; before?: string; after?: string; contextHandle?: string; pluginId?: string;
   /** Host-authorized operation review endpoint, never an arbitrary resource URL. */
   reviewBaseUrl?: string;
   /** Includes JSON/text decoding and the publication/error continuation. */

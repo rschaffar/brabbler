@@ -16,7 +16,7 @@
     {
       "path": "plugins/git-workflow/review-data.test.mjs",
       "lane": "F",
-      "reason": "Actual pure saved-comparison and settled-result production owners, imported through Jiti with filesystem caching disabled. Literal per-case data only; no runtime postflight imports, filesystem writes, timers, transport, SDK or native work. Covers failed/late postflight guards, exact endpoints and no-op/divergent/rebase result semantics."
+      "reason": "Actual pure saved-comparison/result and deep resource/check schema owners, imported through Jiti with filesystem caching disabled. Complete synthetic resource fixtures and 5000-item/2 MiB round-trips have no runtime postflight imports, filesystem writes, timers, transport, SDK or native work. Covers malformed members/extra bodies, precision, exact endpoints and no-op/divergent/rebase result semantics without count/text caps."
     },
     {
       "path": "plugins/git-workflow/review-reader.test.mjs",
@@ -1859,7 +1859,7 @@
     {
       "path": "lib/rpc-manager-operation-receipts.test.mjs",
       "lane": "N",
-      "reason": "Receipt persistence and symlink/directory observations use mkdtemp-owned agent/session directories; SDK managers perform synchronous file persistence, wrapper disposal is a synchronous stub with no shutdown emitter, and hooks synchronously remove fixtures.",
+      "reason": "P2 real SDK metadata append/initial-flush/fsync, failed-owner quarantine and fork/clone copies use private mkdtemp agent/session roots. Clone file/directory barrier faults and v2 recovery preserve the source; native fs export mocks and environment/global maps are process-local, restored after awaited saves/copies and stub wrapper disposal. No model, transport, fixed port, native child or source-relative write. Copies/reads settle before root removal.",
       "estimatedMs": 3000
     },
     {
@@ -2444,14 +2444,14 @@
     {
       "path": "plugins/git-workflow/review-presentation.test.mjs",
       "lane": "F",
-      "reason": "Real card compaction and metadata serialization with synthetic cards and a joined in-memory writer. No comparison is supplied, so native patch/context methods are not invoked; imported context/process modules only define functions and allocate process-local maps/AsyncLocalStorage. No repository, settings, filesystem fixture, child, timer or shared-source writes.",
+      "reason": "Real card compaction and structured metadata composition over synthetic resource data. No Git comparison is supplied, so native reader methods are not invoked; imports only define functions and process-local state. No repository, settings, filesystem fixture, child, timer, transport or shared-source writes.",
       "estimatedMs": 1000
     },
     {
       "path": "plugins/git-workflow/runtime.test.mjs",
       "lane": "N",
       "estimatedMs": 10000,
-      "reason": "Reviewed native Git/SDK lifecycle and cross-repository cases: private fixture repositories, worktree containers and agent services; faux model responses, offline construction and awaited shutdown/disposal. No shared-source writes, fixed ports or unscoped peer signals found. Keep nested cases serial; priority is historical, not a deadline or wider-worker proof."
+      "reason": "Native Git/SDK lifecycle and real model tool-result continuation use private repositories/JSONL/agent roots. One-shot actual appendFileSync/fsync faults occur after SDK memory mutation; real live history/context routes must refuse quarantine and no orphan is written after fault clears. Faux/offline model construction, joined prompt outcomes and wrapper shutdown precede mock/global restoration and root removal. No source writes, fixed ports or peer signals; nested cases stay serial. Priority is historical, not a deadline."
     },
     {
       "path": "plugins/git-workflow/server.test.mjs",
@@ -2471,6 +2471,7 @@
     }
   ],
   "holds": {
+    "components/OperationReviewAttachment.test.mjs": "P2 real BlockingRequestCard/default operation attachment mount with denied external transports, private DOM realm and joined existing fixture disposal. Checks v2 pending/legacy unsupported placeholders and retained action footer, never native layout/Git or P3 materialization. Conservative E pending independent broad-import/fixture-closure review; no pool promotion claimed.",
     "lib/guided-review-browser-contract.test.mjs": "Actual installed-bridge agent-command observation/assertion helper over literal request capabilities, exact get_tools/bodyless same-session lease tuples and adversarial prompt/new-session/extra-key/other-session/query/body/method matrices. Conservative E hold pending independent live isolation review; no browser transport, model execution or native closure claim.",
     "components/ChatInput.review-handoff.test.mjs": "Actual composer plus current-destination handoff policy through the existing guarded composer fixture; exact retained text, cursor-selection replacement refusal, same attachment node and no Send callback. Conservative E pending independent changed-input/closure review; no full AppShell or browser image decoding claim.",
     "app/api/review-data/route.test.mjs": "Actual native route/store in private temporary roots with process-local allowed-root cache and an original async request-body identity-swap gate. Conservative E pending independent import/global-cache/teardown review; no host service or power-loss claim.",
@@ -2519,8 +2520,8 @@
     "lib/native-resource-runtime.test.mjs": "SDK 1.4 additions re-reviewed: real RPC/QuickJS queue and navigation fixtures use private roots, named gates, caller/owner aborts and separately joined observed Worker exits. Worker constructor observation and default-capacity env are process-local and restored; cases stay serial. Retain E for the baseline native nested/failure-closure and 2-second MCP deadline admission concerns; no pooled-safety or universal worker-exit claim is made.",
     "lib/brabbler-source-extension.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Unique native source-tree fixtures are cleaned synchronously, but npm pack --dry-run runs in shared writable source cwd and the npm/SDK import effect boundary was not fully verified; hold packaging subprocess.",
     "lib/plugin-card-details.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Plugin feedback/receipt checks use synthetic objects, but interaction-receipts imports operation-receipts/ask-user/question-set whose runtime effects were not fully inspected.",
-    "lib/plugins/project-operations.test.mjs": "Changed host/store tests now release gates and join fullySettled before private-root removal with a controlled scheduler. Retain E pending complete runtime-import/default-composition isolation review; the old 20ms teardown finding is historical, not a demand to retain that implementation.",
-    "lib/plugins/review-store.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Review storage is private and most streams are fully consumed, but patch-download response is checked for status only and left neither drained nor cancelled; its generator can continue opening descriptor-backed entry streams across teardown.",
+    "lib/plugins/project-operations.test.mjs": "P2 adds real existing-record metadata saves, 2 MiB/5000-selection DTO exclusion, unequal host/native/review IDs, immutable linked settlement and historical-consent preservation. Private-root host/store tests release gates and join fullySettled before root removal with a controlled scheduler. Retain E pending complete runtime-import/default-composition isolation review; the old 20ms teardown concern is historical, not a required implementation.",
+    "lib/plugins/review-store.test.mjs": "P2 isolates the legacy codec for the future offline converter. Old runtime HTTP success assertions are explicitly replaced with unsupported placeholders; native codec pagination/integrity/stream-byte and descriptor-close assertions remain. Every opened legacy stream is drained/destroyed and its close joined before private-root removal. Retain E pending independent full import/teardown review; no runtime archive support or pool promotion claimed.",
     "lib/project-acceptance-fixture.test.mjs": "Unresolved isolation review for lib/project-acceptance-fixture.test.mjs: transitive import effects and fixture-owned completion/teardown have not been established for pooled scheduling; retain exclusive inclusion without a safety claim.",
     "lib/project-command-env.test.mjs": "Unresolved live isolation review; prior concern retained pending re-review: Hold: real Bash/local operations execute with shared process.cwd and loader agentDir points at source-relative .test-agent; private HOME/TMP does not privatize the source cwd.",
     "lib/project-privacy-fixture.test.mjs": "Unresolved isolation review for lib/project-privacy-fixture.test.mjs: transitive import effects and fixture-owned completion/teardown have not been established for pooled scheduling; retain exclusive inclusion without a safety claim.",

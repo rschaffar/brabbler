@@ -3,7 +3,8 @@ import { constants } from "node:fs";
 import { mkdir, open, rename, rm, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import type { PluginReviewReference, PluginReviewWriter } from "./types";
+// Legacy archive codec retained for the offline converter; no runtime host imports.
+import type { LegacyPluginReviewReference as PluginReviewReference, PluginReviewWriter } from "./types";
 import { isOperationId } from "./ui";
 
 export const REVIEW_PAGE_SIZE = 40;

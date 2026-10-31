@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { setImmediate as afterMessageEndMicrotasks } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,7 +13,8 @@ import { fauxProvider, fauxAssistantMessage, fauxToolCall } from "@earendil-work
 const jiti = createJiti(import.meta.url);
 const { gitWorkflowPlugin } = await jiti.import("./index.ts");
 const { bundledPluginExtensions } = await jiti.import("../../lib/plugins/registry.ts");
-const { preparePluginReview } = await jiti.import("../../lib/plugins/review-store.ts");
+const { AgentSessionWrapper } = await jiti.import("../../lib/rpc-manager.ts");
+const { findOperationReview } = await jiti.import("../../lib/plugins/review-metadata.ts");
 const { updatePluginSettings } = await jiti.import("../../lib/plugins/settings.ts");
 async function disposeSession(session) {
   // Mirror Brabbler shutdown: dispose alone invalidates the SDK runner without
@@ -82,13 +85,23 @@ test("real model-issued Git tools select repositories independently of Git and n
       settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false }, cacheWarming: "off" }),
       resourceLoaderOptions: { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
         extensionFactories: [(pi) => { pi.registerProvider(faux.provider); }, ...bundledPluginExtensions(callerCwd)] } });
-    const sessionManager = SessionManager.inMemory(callerCwd);
+    const sessionManager = SessionManager.create(callerCwd, join(root, `sessions-${kind}`));
     const { session } = await createAgentSessionFromServices({ services, model: faux.getModel(), thinkingLevel: "off", sessionManager });
-    st.after(() => disposeSession(session));
+    const wrapper = new AgentSessionWrapper(session);
+    st.after(() => wrapper.shutdown());
+    const hostUi = wrapper.createExtensionUiContext(), events = [];
+    wrapper.onEvent(event => events.push(event));
     let expectedCheckout; let approvals = 0; let calls = 0;
-    await session.bindExtensions({ mode: "rpc", uiContext: { notify() {}, prepareReview: preparePluginReview, operationReceipt(_pluginId, receipt) { sessionManager.appendCustomEntry("brabbler:operation-receipt", receipt); }, pluginCard: async (id, card) => {
+    await session.bindExtensions({ mode: "rpc", uiContext: { ...hostUi, pluginCard: async (id, card, signal) => {
       assert.equal(id, "git-workflow"); assert.equal(card.fields.find((field) => field.label === "Checkout").value, expectedCheckout);
-      approvals++; return "approve";
+      const saved = SessionManager.open(sessionManager.getSessionFile());
+      assert.ok(findOperationReview(saved.getEntries(), id, card.review, saved.getLeafId()), "metadata is durable before live card publication");
+      approvals++;
+      const waiting = hostUi.pluginCard(id, card, signal);
+      const request = events.findLast(event => event.type === "extension_ui_request" && event.method === "plugin_card");
+      assert.ok(request);
+      await wrapper.send({ type: "extension_ui_response", id: request.id, action: "approve" });
+      return waiting;
     } } });
     const toolNames = ["git_commit", "git_rebase", "git_merge", "git_worktree"];
     assert.ok(toolNames.every((name) => session.getActiveToolNames().includes(name)));
@@ -158,5 +171,134 @@ test("real model-issued Git tools select repositories independently of Git and n
     assert.equal(approvals, 3);
     if (kind === "git") { assert.equal(git(callerCwd, "rev-parse", "HEAD"), callerHead); assert.equal(git(callerCwd, "status", "--porcelain"), ""); }
     else assert.equal(existsSync(join(callerCwd, ".git")), false);
+  });
+});
+
+test("real SDK continuation and live history quarantine a failed terminal tail after memory mutation", async t => {
+  for (const fault of ["append", "barrier"]) await t.test(fault, async st => {
+    const root = mkdtempSync(join(tmpdir(), "pi-git-host-reporting-")), agentDir = join(root, "agent"), cwd = join(root, "repo");
+    mkdirSync(cwd);
+    const previous = process.env.PI_CODING_AGENT_DIR, registry = globalThis.__piSessions;
+    process.env.PI_CODING_AGENT_DIR = agentDir; globalThis.__piSessions = new Map();
+    let wrapper, manager, promptWork, injected = false, rejectedId, originalPrefix, toolResult, attempts = 0;
+    const restore = [];
+    st.after(async () => {
+      try {
+        await Promise.allSettled([promptWork]);
+        // Join the already-scheduled synchronous message_end microtasks before
+        // teardown can hide them behind the wrapper's not-alive guard.
+        await afterMessageEndMicrotasks();
+        await wrapper?.shutdown();
+      } finally {
+        for (const undo of restore.reverse()) undo(); syncBuiltinESMExports();
+        globalThis.__piSessions = registry;
+        if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous;
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+    const append = fs.appendFileSync, fsync = fs.fsyncSync;
+    const witness = () => {
+      const entry = manager.getEntries().at(-1);
+      assert.equal(entry.customType, "brabbler:operation-receipt"); assert.equal(entry.data.phase, "succeeded");
+      assert.equal(manager.getLeafId(), entry.id, "real SDK memory advanced before filesystem fault");
+      rejectedId = entry.id; injected = true;
+    };
+    const appendMock = st.mock.method(fs, "appendFileSync", (path, data, ...args) => {
+      if (manager && path === manager.getSessionFile()) {
+        const entry = JSON.parse(String(data));
+        if (entry.customType === "brabbler:operation-receipt" && entry.data.phase === "succeeded" && !injected) {
+          originalPrefix = readFileSync(path);
+          if (fault === "append") { witness(); throw Object.assign(new Error("terminal disk append EIO"), { code: "EIO" }); }
+        }
+      }
+      return append(path, data, ...args);
+    });
+    const fsyncMock = st.mock.method(fs, "fsyncSync", fd => {
+      if (fault === "barrier" && originalPrefix && !injected && fs.fstatSync(fd).ino === statSync(manager.getSessionFile()).ino) {
+        witness(); throw Object.assign(new Error("terminal save barrier EIO"), { code: "EIO" });
+      }
+      return fsync(fd);
+    });
+    restore.push(() => appendMock.mock.restore(), () => fsyncMock.mock.restore()); syncBuiltinESMExports();
+    // Bind the real host to the faulted native export, not a pre-append UI double.
+    const loader = createJiti(import.meta.url, { tsconfigPaths: true, fsCache: false, moduleCache: false });
+    const { AgentSessionWrapper: Wrapper, getRpcSessionInfos } = await loader.import("../../lib/rpc-manager.ts");
+    const { gitWorkflowPlugin: plugin } = await loader.import("./index.ts");
+    const { updatePluginSettings: set } = await loader.import("../../lib/plugins/settings.ts");
+    const history = await loader.import("../../app/api/sessions/[id]/route.ts");
+    const context = await loader.import("../../app/api/sessions/[id]/context/route.ts");
+    const git = (...args) => execFileSync("git", ["-C", cwd, "-c", "commit.gpgSign=false", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    git("init", "-qb", "main"); git("config", "user.name", "Test"); git("config", "user.email", "test@example.invalid");
+    writeFileSync(join(cwd, "source"), "base\n"); git("add", "source"); git("commit", "-qm", "Base");
+    writeFileSync(join(cwd, "source"), "candidate\n");
+    set(plugin.manifest, "global", cwd, { enabled: true, commit: "allow", commitChecks: [] }, []);
+    const faux = fauxProvider({ provider: `git-failed-tail-${fault}`, api: `git-failed-tail-${fault}` });
+    const modelRuntime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, allowModelNetwork: false });
+    const services = await createAgentSessionServices({ cwd, agentDir, modelRuntime,
+      settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false }, cacheWarming: "off" }),
+      resourceLoaderOptions: { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+        extensionFactories: [pi => pi.registerProvider(faux.provider), plugin.extension(cwd)] } });
+    manager = SessionManager.create(cwd, join(root, "sessions"));
+    manager.appendMessage({ role: "user", content: "Unrelated retained history", timestamp: Date.now() });
+    manager.appendMessage(fauxAssistantMessage("Retained earlier response."));
+    const { session } = await createAgentSessionFromServices({ services, model: faux.getModel(), thinkingLevel: "off", sessionManager: manager });
+    const priorIds = manager.getEntries().map(entry => entry.id), prefix = readFileSync(manager.getSessionFile());
+    wrapper = new Wrapper(session); globalThis.__piSessions.set(session.sessionId, wrapper);
+    const ui = wrapper.createExtensionUiContext(), receipt = ui.operationReceipt, events = [];
+    let completedNotifications = 0;
+    wrapper.onAgentRunComplete = () => { completedNotifications++; };
+    wrapper.onEvent(event => events.push(event));
+    wrapper.start(); // Actual production SDK subscription, including deferred readers.
+    let observedContinuation = false;
+    await session.bindExtensions({ mode: "rpc", uiContext: { ...ui, operationReceipt(...args) {
+      try { return receipt(...args); }
+      finally {
+        if (injected && !observedContinuation) {
+          observedContinuation = true;
+          const containedAppend = manager.appendMessage.bind(manager);
+          manager.appendMessage = message => {
+            if (message.role === "toolResult") { attempts++; toolResult = message; }
+            return containedAppend(message);
+          };
+        }
+      }
+    } } });
+    faux.setResponses([fauxAssistantMessage([fauxToolCall("git_commit", { checkout: cwd, mode: "files", files: ["source"], message: "Once only" }, { id: `fault-${fault}` })], { stopReason: "toolUse" }),
+      () => assert.fail("Unexpected provider continuation after unsafe storage failure")]);
+    promptWork = session.prompt("Execute the selected commit once.");
+    await assert.rejects(promptWork, /quarantined/);
+    // SDK message_end deferred readers have now had their event turn. This is
+    // not a universal I/O idle assertion or an uncaught-exception suppressor.
+    await afterMessageEndMicrotasks();
+    assert.equal(injected, true); assert.equal(attempts, 1, "real SDK attempts tool-result continuation after one-shot filesystem fault clears");
+    assert.equal(toolResult.isError, true); assert.equal(toolResult.details.completed, true); assert.equal(toolResult.details.receiptPersisted, false);
+    assert.equal(toolResult.details.postflight.verification, "verified"); assert.match(toolResult.content[0].text, /Do not repeat/);
+    const liveToolResult = events.find(event => event.type === "message_end" && event.message === toolResult);
+    assert.ok(liveToolResult, "started wrapper forwards the actual completed/reporting-error result");
+    assert.equal(Object.hasOwn(liveToolResult, "entryId"), false, "refused SDK append has no saved entry binding");
+    assert.equal(completedNotifications, 0, "uncertain persistence does not emit normal completion");
+    assert.equal(git("rev-list", "--count", "HEAD"), "2", "one native commit, never retried");
+    for (const route of [history, context]) {
+      const response = await route.GET(new Request(`http://localhost/api/sessions/${session.sessionId}`), { params: Promise.resolve({ id: session.sessionId }) });
+      const body = await response.json(); assert.equal(response.status, 500); assert.match(body.error, /quarantined/);
+      assert.equal(Object.hasOwn(body, "context"), false, "live history cannot publish rejected SDK memory as saved context");
+    }
+    assert.throws(() => manager.getEntries(), /quarantined/);
+    assert.deepEqual(getRpcSessionInfos(), [], "rejected memory supplies no live catalogue data and cannot poison other history reads");
+    assert.equal(events.some(event => event.type === "operation_receipt" && event.entry.data.phase === "succeeded"), false);
+    const bytes = readFileSync(manager.getSessionFile()); assert.equal(bytes.subarray(0, prefix.length).equals(prefix), true, "unrelated saved history is never discarded");
+    if (fault === "append") assert.equal(bytes.equals(originalPrefix), true, "containment refuses before an orphaning SDK append");
+    const reopened = SessionManager.open(manager.getSessionFile()), entries = reopened.getEntries(), ids = new Set(entries.map(entry => entry.id));
+    for (const entry of entries) assert.equal(entry.parentId === null || ids.has(entry.parentId), true, "reopened parent chain is sound");
+    for (const id of priorIds) assert.equal(ids.has(id), true);
+    assert.equal(entries.some(entry => entry.type === "message" && entry.message.role === "toolResult"), false, "refused continuation never writes an orphan");
+    const reviews = entries.filter(entry => entry.customType === "brabbler:operation-review");
+    assert.deepEqual(reviews.map(entry => entry.data.payload.kind), ["proposal", "settlement"]);
+    assert.equal(reviews[1].data.payload.result.commit, git("rev-parse", "HEAD"));
+    if (fault === "append") {
+      assert.equal(ids.has(rejectedId), false);
+      const latest = entries.findLast(entry => entry.customType === "brabbler:operation-receipt");
+      assert.equal(latest.data.phase, "executing"); assert.equal(latest.data.card.review.id, reviews[0].data.id);
+    } else assert.equal(ids.has(rejectedId), true, "a failed barrier can leave bytes; their presence must NOT override host refusal/reporting evidence");
   });
 });

@@ -321,7 +321,11 @@ export async function packet(t, { git = false, review = false, readDomain, setup
   } });
   const style = new URL('./cards-git-style.fixture.mjs', import.meta.url).pathname;
   const jiti = createJiti(import.meta.url, { fsCache: false, jsx: { runtime: 'automatic' }, tsconfigPaths: true,
-    alias: { './ChatMinimap.module.css': style, [new URL('./ChatMinimap.module.css', import.meta.url).pathname]: style,
+    // Archive transport assertions now exercise the retained supplied-page viewer
+    // as an explicit external display adapter, not runtime v1 history support.
+    // P3 replaces this adapter with the Git provider connection.
+    alias: { ...(review ? { './OperationReviewAttachment': fileURLToPath(new URL('./plugin-ui/ReviewAttachment.tsx', import.meta.url)) } : {}),
+      './ChatMinimap.module.css': style, [new URL('./ChatMinimap.module.css', import.meta.url).pathname]: style,
       './ScratchpadPanel.css': style, [new URL('./ScratchpadPanel.css', import.meta.url).pathname]: style,
       // Resolve both public import-only exports through native ESM. The explicit
       // /react alias must not become a child of the optional root adapter file.

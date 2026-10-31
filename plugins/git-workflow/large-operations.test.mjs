@@ -11,7 +11,7 @@ process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 after(() => { if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous; rmSync(root, { recursive: true, force: true }); });
 const jiti = createJiti(import.meta.url);
 const { executeGitOperation } = await jiti.import("./server.ts");
-const { preparePluginReview, reviewPage, reviewStream, reviewManifest } = await jiti.import("../../lib/plugins/review-store.ts");
+import { saveOperationReview, reviewMetadata, reviewProposal, reviewFiles, reviewPatch } from "./review-host.fixture.mjs";
 const { snapshotOperationReceipt } = await jiti.import("../../lib/operation-receipts.ts");
 const { validatePluginCard } = await jiti.import("../../lib/plugins/ui.ts");
 const { gitWorkflowManifest } = await jiti.import("./manifest.ts");
@@ -26,7 +26,7 @@ function fixture(mode) {
   writeFileSync(join(repo, "base"), "base\n"); git(repo, "add", "."); git(repo, "commit", "-qm", "base");
   updatePluginSettings(gitWorkflowManifest, "global", repo, { enabled: true, targetBranch: "main", merge: mode, commit: mode, mergeChecks: [], commitChecks: [] }, []);
   const receipts = [], cards = [];
-  const ui = { prepareReview: preparePluginReview,
+  const ui = { saveOperationReview,
     operationReceipt(id, receipt) { receipts.push(snapshotOperationReceipt(id, receipt, receipts.length + 1)); },
     async pluginCard(id, card) { validatePluginCard(card); cards.push(structuredClone(card)); return "approve"; },
   };
@@ -43,12 +43,16 @@ for (const mode of ["ask", "allow"]) for (const size of [1_476_834, 3 * 1024 * 1
     assert.equal(f.cards.length, mode === "ask" ? 1 : 0);
     assert.equal(f.receipts.at(-1).phase, "succeeded");
     const ref = f.receipts[0].card.review;
-    await reviewManifest(ref, "git-workflow");
-    assert.ok(ref.bytes > size); assert.ok(f.receipts.every((r) => !r.card.patch && r.card.review.id === ref.id));
+    assert.equal(ref.version, 2);
+    assert.ok(f.receipts.every((r) => !r.card.patch && reviewProposal(r.card.review).fingerprint === reviewMetadata(ref).fingerprint));
     assert.ok(JSON.stringify(f.receipts).length < 50000, "receipts must not repeat the large patch");
-    const page = await reviewPage(ref, 0); assert.equal(page.entries.length, 2);
-    let raw = ""; for await (const chunk of await reviewStream(ref, page.entries[1])) raw += chunk.toString();
-    assert.ok(raw.includes("+" + "x".repeat(size)), "all exact bytes retained, including giant lines");
+    const page = await reviewFiles(ref); assert.equal(page.total, 1);
+    const raw = await reviewPatch(ref, page.files[0].id);
+    assert.ok(raw.includes("+" + "x".repeat(size)), "all immutable Git bytes stream on demand, including giant lines");
+    const settlement = reviewMetadata(f.receipts.at(-1).card.review);
+    assert.deepEqual(settlement.proposal, ref); assert.equal(settlement.outcome.completed, true);
+    assert.equal(settlement.result.captured.comparison.after, git(f.repo, "rev-parse", "HEAD"));
+    assert.equal(existsSync(join(root, "agent/brabbler/reviews")), false);
     assert.equal(git(f.repo, "rev-list", "--parents", "-n", "1", "HEAD").split(" ").length, 3);
   });
 }
@@ -63,7 +67,12 @@ test("257 whole files and a long message preserve unrelated staging; many checks
   assert.equal(git(f.repo, "diff", "--cached", "--name-only"), "unrelated");
   assert.equal(git(f.repo, "show", "-s", "--format=%B"), message);
   assert.equal(f.receipts.at(-1).checks[0].status, "passed");
-  assert.ok(f.receipts[0].card.review.entries > 257);
+  assert.equal((await reviewFiles(f.receipts[0].card.review)).total, 257);
+  const metadata = reviewMetadata(f.receipts[0].card.review);
+  assert.deepEqual(metadata.operation.files, files);
+  assert.equal(metadata.operation.message, message);
+  assert.equal(metadata.checks[0].name, "noisy");
+  assert.equal(existsSync(join(root, "agent/brabbler/reviews")), false);
 });
 test("check deadlines terminate noisy processes, while ordinary successful output is only display-limited", async () => {
   const command = `${JSON.stringify(process.execPath)} -e 'process.stdout.write("x".repeat(3*1024*1024))'`;
