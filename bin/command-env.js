@@ -1,7 +1,8 @@
 "use strict";
 
 /** Child-command hygiene, not a sandbox for trusted in-process extensions.
- * Preserve account bindings, explicit isolation and the public SSH_AUTH_SOCK.
+ * Preserve account bindings, explicit isolation and inherited SSH_AUTH_SOCK.
+ * The retired private runtime locator is still stripped defensively.
  * The supervised Next worker is a trusted server, not a command consumer.
  */
 function commandEnvironment(inherited = process.env, platform = process.platform) {

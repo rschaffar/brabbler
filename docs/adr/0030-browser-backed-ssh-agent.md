@@ -1,5 +1,7 @@
 # 0030 — Browser-backed SSH signing without global agent replacement
 
+Superseded by [ADR 0039](0039-remove-browser-ssh.md): browser SSH signing and managed routing are removed. The decisions below are historical, not current behavior.
+
 Date: 2026-10-21
 
 Superseded in part by [ADR 0033](0033-process-wide-ssh-agent.md): process-wide routing, central public registration and per-key verification policies replace the conflicting decisions below. This document preserves the historical rationale; implementation progress belongs in the active plan.

@@ -267,7 +267,6 @@ export async function handleApiRequest(
 ): Promise<Response> {
   const request = new MockRequest(url, method, body, signal);
   // No fabricated SSH status, challenge, credential, capability or mutation.
-  if (request.segments[1] === "ssh-agent") return error(demoOnlyMessage(), 501);
   setRealFetch(realFetch);
   try {
     await ensureSessions();

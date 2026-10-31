@@ -47,8 +47,8 @@ function registry(): Map<string, TerminalRecord> {
 function shellEnvironment(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    // Server login/control metadata is not command authority. Keep only the
-    // public managed SSH_AUTH_SOCK in the inheriting shell environment.
+    // Keep the inherited native/forwarded SSH socket, not server login secrets
+    // or a retired private control locator.
     const comparableKey = process.platform === "win32" ? key.toUpperCase() : key;
     if (value !== undefined && comparableKey !== "BRABBLER_PASSWORD" && comparableKey !== "BRABBLER_SSH_RUNTIME") env[key] = value;
   }

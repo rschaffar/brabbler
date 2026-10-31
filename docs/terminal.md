@@ -30,30 +30,28 @@ File splitting never duplicates or starts a terminal.
 - Explicit termination and expiry signal the shell, escalating to SIGKILL after
   two seconds if it ignores SIGHUP. Server shutdown force-kills shells immediately.
 
-## Process-wide SSH agent
+## SSH and agent forwarding
 
-Supported launchers install one stable private `SSH_AUTH_SOCK` before children
-start, initially **No agent / SSH setup needed**. **Settings → SSH → Use agent**
-explicitly selects the Browser agent, startup system agent, discovered/named
-socket, or No agent. Existing inheriting PTYs retain the same pathname through
-switches; Brabbler does not change the host's selector. Explicit shell/profile
-exports and SSH `IdentityAgent` remain deliberate overrides. No agent is not a
-prohibition on private-key files or other authentication methods.
+SSH is ordinary shell functionality, not a browser feature. Brabbler does not
+create an SSH agent, select a signing browser, enroll keys or display signing
+requests. Launchers, session commands and PTYs preserve the inherited
+`SSH_AUTH_SOCK`; native agents and conventional SSH agent forwarding keep their
+normal key, approval and lifetime semantics. Explicit command environments,
+shell/profile exports and SSH `IdentityAgent` remain deliberate overrides.
+Native MCP retains its separate environment allowlist.
 
-Browser credentials are centrally registered public metadata, not session
-bindings. Connect an explicitly selected key/device after fresh verification;
-signature requests appear in global nonmodal Review/Approve cards without opening
-Settings or taking terminal focus. Closing Settings does not disconnect the signer.
-Strict verification is default; optional application unlock is fixed at 30 minutes
-and every signature still requires presence. A locked Unlock and approve uses a
-fresh UV unlock challenge followed by the separate SSH signing ceremony.
+Start Brabbler with the intended native/forwarded socket available. A long-running
+service does not inherit a socket from a later unrelated SSH login: configure its
+startup environment or an externally maintained stable agent path deliberately.
+Brabbler does not maintain that path or reconnect forwarding. A disappeared agent
+can make new authentication fail; disconnecting forwarding does not close already
+authenticated SSH connections. Forward agents only to trusted hosts/processes.
 
-PTYs retain the public socket but omit `BRABBLER_PASSWORD` and the private
-`BRABBLER_SSH_RUNTIME` control locator. Legacy session-binding markers are ignored
-by managed commands and retained as migration evidence, never routing authority.
-See [browser SSH](browser-ssh-agent.md) for security/compatibility boundaries and
-the [completed implementation record](plans/archived/2026-10-22_process-wide-ssh-agent-plan.md) for
-acceptance evidence.
+Commands and PTYs still omit the server login password and the retired private
+runtime locator. Saved browser-key metadata, credentials, legacy binding markers
+and destination authorizations are not deleted or restored as authority. Removal
+of the feature is not remote key revocation; any such cleanup is a separate
+operator action. See [ADR 0039](adr/0039-remove-browser-ssh.md).
 
 ## Appearance and touch keys
 

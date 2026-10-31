@@ -407,7 +407,7 @@ async function loginAuth(base) {
   });
 }
 async function configureAuth(base, plan) {
-  for (const path of ['/api/sessions', '/api/web-auth', '/api/ssh-agent']) {
+  for (const path of ['/api/sessions', '/api/web-auth', '/api/terminal']) {
     await ownedRequest(base, path, { expectedStatus: 503 }, (response, finish) => {
       assert.equal(response.headers['cache-control'], 'no-store');
       response.once('end', () => finish(null, true));

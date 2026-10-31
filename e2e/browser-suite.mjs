@@ -59,9 +59,9 @@ import { seedReadmeScreenshot, captureReadmeScreenshot } from "./readme-screensh
 const group = selectGroup(process.env);
 const stage = createDiagnosticStages(group);
 
-if (group === "ssh-agent") {
-  const { runBrowserSshSuite } = await import("./browser-ssh-suite.mjs");
-  await runBrowserSshSuite();
+if (group === "auth") {
+  const { runAuthSuite } = await import("./auth-suite.mjs");
+  await runAuthSuite();
 } else {
 // Package acceptance runs only in the disposable NixOS guest. The service
 // independently receives its private environment and real module UMask.

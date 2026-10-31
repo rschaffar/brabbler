@@ -17,8 +17,6 @@ settings without installing anything.
 - **Models**: a signed-in ChatGPT Plus/Pro (Codex) account, a DeepSeek API key
   and a custom "Claude Gateway" provider from `models.json`, with Codex, Claude
   and DeepSeek models in the picker.
-- **SSH**: global Settings navigation with an explicitly unavailable illustration;
-  every action is disabled, without example credentials, signers or requests.
 - **Interaction**: sending a message streams a canned reply (with a real `read`
   or `ls` tool call when it fits), and `!command`, the terminal panel, forks,
   branches, renames and titles all work in memory. Anything that needs a real
@@ -51,20 +49,9 @@ differ from their originals:
 To pick up UI changes from the main project, copy the updated files over and
 re-apply the changes above (search for `demo` / `@/mock` in those files).
 
-## SSH illustration boundary
-
-Do not copy/mount the production SSH controller, client, registry, agents, API
-handlers or signing cards into this static demo. Its AppShell adds navigation
-only; SettingsPanel renders disabled, handler-free controls. Shared SSH English
-messages are display copy. No WebAuthn ceremonies, discovery, management or SSH
-notifications run. The password-disabled web-auth mock is unchanged; every
-`/api/ssh-agent` method/action returns a demo-only 501 before session/body work,
-never fabricated signing authority. Fetch interception alone is not protection
-against native credential calls.
-
 There is no UI-regeneration command: checked-in UI copies are maintained manually.
 `prepare-demo-files.mjs` refreshes only ignored file-browser assets, not executable
-UI modules. Application Nix acceptance excludes this separate demo; this SSH
+UI modules. Application Nix acceptance excludes this separate demo; UI
 synchronization is source-reviewed, not a demo browser/build pass. Its local verification is separate from application acceptance. There is no
 automatic demo build or deployment workflow.
 

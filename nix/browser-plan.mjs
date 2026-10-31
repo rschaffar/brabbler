@@ -12,7 +12,8 @@ import { assertEvidenceTree } from './vm-evidence.mjs';
 // four/four pilot. Shared unchanged bodies use ceil(max(B,C)); the three reduced
 // bodies use ceil(the corresponding body's observed duration), in BOTH references.
 // Other fields retain the 2026-10-22 four-sandbox baseline / expanded SSH provenance.
-// This candidate uses the reviewed shorter Git/Questions/SSH bodies.
+// This candidate uses the reviewed shorter Git/Questions bodies. Auth replaces
+// the retired SSH group; its 12-second hint is a provisional estimate, not a measurement.
 // Hints for existing LPT packing only: never deadlines, admission or coverage authority.
 export const weights = Object.freeze({
   state: 8, history: 45, 'extension-dialogs': 22, 'mobile-sidebar': 15,
@@ -20,7 +21,7 @@ export const weights = Object.freeze({
   trust: 9, 'git-plugin': 60, appearance: 60, timestamps: 7,
   'diff-context': 21, markdown: 179, 'file-edit': 47, archive: 4, privacy: 38,
   activity: 130, accounts: 17, questions: 39, 'session-links': 6, bulk: 8,
-  move: 34, 'ssh-agent': 52, terminal: 33, 'native-tools': 16,
+  move: 34, auth: 12, terminal: 33, 'native-tools': 16,
 });
 
 const store = /^\/nix\/store\/[a-z0-9]{32}-[^/]+$/;

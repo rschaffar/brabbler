@@ -8,9 +8,9 @@ const { requestGuardPath } = require("./brabbler-node-args");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 require(requestGuardPath);
 process.execArgv.push("--require", requestGuardPath);
-// Keep ownership outside Next's replaceable workers, as in the installed launcher.
+// Share authentication checks and process supervision with the installed launcher.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { launchManagedNext } = require("./ssh-agent-launch");
+const { launchManagedNext } = require("./next-launch");
 const inputArgs = process.argv.slice(2);
 const environment = { ...process.env };
 if (inputArgs.includes("--no-auth")) environment.BRABBLER_NO_AUTH = "1";

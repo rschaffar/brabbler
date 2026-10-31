@@ -16,7 +16,7 @@ export function getWebAuthState(): WebAuthState {
   const policy = getWebAuthPolicy();
   if (policy === "invalid") return { mode: "locked" };
   // A deliberate startup bypass neither reads nor changes saved credentials.
-  // It provides no signing key and therefore cannot authorize browser SSH.
+  // It does not mint authenticated session cookies.
   if (policy === "disabled") return { mode: "disabled" };
   try {
     const credentials = readCredentials();

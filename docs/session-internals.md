@@ -56,9 +56,9 @@ The default-off bundled Acceptance plugin uses one global user-owned switch. Ord
 
 ### Command environment ownership
 
-Normal host Bash is a hidden, inactive-by-default replacement that sanitizes command environments while retaining explicit tool selection and user-extension ownership priority. Fresh and cold-reopened non-chat-only subagents install the same host fallback even when profile extension loading is disabled; this does not activate Bash in read-only/chat-only profiles. The managed SSH socket is inherited unchanged, while server login/control fields and host-only command variables are removed. Explicit environment isolation/overrides remain explicit; native MCP keeps its own allowlist and `inheritEnv: false`.
+Normal host Bash is a hidden, inactive-by-default replacement that sanitizes command environments while retaining explicit tool selection and user-extension ownership priority. Fresh and cold-reopened non-chat-only subagents install the same host fallback even when profile extension loading is disabled; this does not activate Bash in read-only/chat-only profiles. The native/forwarded SSH socket is inherited unchanged, while server login secrets, the retired private locator and host-only command variables are removed. Explicit environment isolation/overrides remain explicit; native MCP keeps its own allowlist and `inheritEnv: false`.
 
-`bin/command-env.js` owns the narrow private-field filter for application Git/check/npm/skill/browser-opener/discovery helpers; trusted Next workers are not command consumers and keep their server environment. The active SSH plan separately tracks the approved version-pinned SDK subprocess patch. Trusted arbitrary in-process extensions still access server memory/environment; this hygiene is not an OS sandbox.
+`bin/command-env.js` owns the narrow private-field filter for application Git/check/npm/skill/browser-opener helpers; trusted Next workers are not command consumers and keep their server environment. The approved version-pinned [SDK subprocess patch](sdk-command-environment.md) remains independent of the removed browser SSH feature. Trusted arbitrary in-process extensions still access server memory/environment; this hygiene is not an OS sandbox.
 
 ### Empty sessions and browser composer drafts
 

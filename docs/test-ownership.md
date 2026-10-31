@@ -114,7 +114,7 @@ Paths abbreviated in the Family column still name exact original files.
 | 27 | components/GitExplorerPanel.test.mjs | Cards/Git | Pending: replace fake React with actual focus/Tab/Escape/selection |
 | 28 | components/CommittedPatchDiff.test.mjs | Cards/Git | Pending: real binding/anchor effects; actual raw/binary/large SSR retained |
 | 29 | components/TerminalPanel.test.mjs | Terminal/SSH | Pending: actual React terminal lifetime; real writer/native/browser/service retained |
-| 30 | lib/ssh-agent-notifications.test.mjs | Terminal/SSH | Pending: actual local notification/preference/lifecycle, no signing authority change |
+| 30 | lib/ssh-agent-notifications.test.mjs | Retired feature | Obsolete: browser SSH removed by ADR 0039; no notification/signing owner remains |
 | 31 | hooks/useAudio.test.mjs | Composer | Pending: actual hook subscriptions/effects/cleanup |
 | 32 | hooks/useFontPreferences.test.mjs | Composer | Pending: actual consumers/subscriptions, real store matrices retained |
 | 33 | hooks/useViewportHeight.test.mjs | Composer | Pending mixed review: actual lifecycle, pure rules/native phone distinction retained |

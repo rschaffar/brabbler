@@ -978,7 +978,7 @@ test('actual SettingsPanel/PluginsConfig preserves inner Escape, matrix opt-in a
   let outerCloses = 0;
   await f.mount(h(SettingsPanel, { cwd, sessionId, initialSection: 'plugins', initialPluginScope: 'session', onClose() { outerCloses++; },
     onSessionReloaded() {}, trustStatus: null, onManageTrust() {}, quoteSelectionEnabled: false, onQuoteSelectionChange() {},
-    sessions: [], privacy: {}, sshController: {} }), { setup }); // Other sections are genuinely unmounted, not success doubles.
+    sessions: [], privacy: {} }), { setup }); // Other sections are genuinely unmounted, not success doubles.
   await f.click(f.button('Git Workflow'));
   assert.equal(f.view.container.querySelectorAll('[data-scope-heading]').length, 3);
   await f.click(matrixCell(f, 'commit', 'session'));
