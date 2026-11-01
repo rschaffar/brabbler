@@ -15,7 +15,9 @@ import { executeGitOperation } from ${JSON.stringify(join(root, "plugins/git-wor
 export default function (pi) {
   pi.registerCommand("e2e-git-plugin", { handler: async (mode, ctx) => {
     let operation;
-    if (mode.startsWith("large-")) {
+    if (mode.startsWith("result-merge-")) {
+      operation = { action: "merge", checkout: ctx.cwd + "-" + mode.replace("result-merge-again-", "result-merge-"), featureBranch: "review-feature", targetBranch: "main", mergeMethod: "non-ff" };
+    } else if (mode.startsWith("large-")) {
       const files = Array.from({ length: 45 }, (_, index) => "large-review-" + index + ".txt");
       for (const file of files) writeFileSync(join(ctx.cwd, file), "Text about GIT binary patch is not binary\\n" + ("Large browser review " + mode + "\\n").repeat(2000));
       operation = { action: "commit", checkout: ctx.cwd, mode: "files", files, message: "Large exact browser review " + mode };
@@ -245,7 +247,7 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
   const before = tip();
   // Hold the patch until the loading-state card has arrived. Its later growth
   // must reveal the footer without a Playwright action scrolling it for us.
-  const patchPattern = `**/api/sessions/${sessionId}/reviews/*?patch=1`;
+  const patchPattern = `**/api/sessions/${sessionId}/reviews/*?view=proposal&file=0&op=preview&offset=0`;
   let releasePatch;
   const patchGate = new Promise((resolve) => { releasePatch = resolve; });
   const holdPatch = async (route) => { await patchGate; await route.continue(); };
@@ -263,11 +265,12 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
   await card.getByRole("button", { name: "Reject", exact: true }).click();
   await finish("decline", "refused"); assert.equal(tip(), before);
 
-  const contextPath = "/api/plugins/bundled/git-workflow/patch-context";
+  const contextPath = `/api/sessions/${sessionId}/reviews/`;
+  const isContext = (url) => url.pathname.startsWith(contextPath) && url.searchParams.get("op") === "context";
   const contextReads = [], commands = [];
   const recordReviewRequest = (request) => {
     const address = new URL(request.url());
-    if (address.pathname === contextPath) contextReads.push(request);
+    if (isContext(address)) contextReads.push(request);
     if (address.pathname === `/api/agent/${sessionId}` && request.method() === "POST") commands.push(request.postDataJSON());
   };
   const decisions = () => commands.filter((request) => request.type === "extension_ui_response" || request.type === "abort");
@@ -323,7 +326,7 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     await file.getByRole("button", { name: "Go to line", exact: true }).click();
     await expectLine(file, name, number, text);
   };
-  const completeRaw = (group) => group.locator("details").filter({ has: page.getByText("Complete raw patch", { exact: true }) });
+  const fullPatchLink = (group) => group.getByRole("link", { name: "Download complete original proposal patch", exact: true });
   const draftPath = join(repo, "draft.txt");
   // Parent seeds this tracked file before the root commit; subsequent viewport
   // runs may have a previous plugin candidate at the two changed lines.
@@ -365,21 +368,23 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     const reviewedPatch = await first.getByRole("region", { name: "Raw patch", exact: true }).textContent();
     assert.equal(reviewedPatch.match(/^@@ /gm)?.length, 2, "The original partial patch contains both distant changes");
     assert.equal(reviewedPatch.includes("Plugin context 2500"), false, "Unchanged full-file text is not part of the supplied patch");
-    await completeRaw(card).locator("summary").click();
-    const reviewedCompletePatch = await completeRaw(card).locator("pre").textContent();
+    const completePatchUrl = new URL(await fullPatchLink(card).getAttribute("href"), base).href;
+    const completeResponse = await page.request.get(completePatchUrl);
+    const reviewedCompletePatch = await completeResponse.text();
+    assert.equal(completeResponse.status(), 200);
     assert.ok(reviewedCompletePatch.startsWith(reviewedPatch));
     assert.ok(reviewedCompletePatch.includes(`Second plugin candidate reconnect-${width}`));
     assert.equal(contextReads.length, 0, "Reconnect, patch rendering and change navigation never eagerly load full files");
 
     await card.getByRole("button", { name: "Side by side", exact: true }).click();
-    const loaded = page.waitForResponse((response) => new URL(response.url()).pathname === contextPath);
+    const loaded = page.waitForResponse((response) => isContext(new URL(response.url())));
     await first.getByRole("button", { name: "Show full file", exact: true }).click();
     const liveContext = await loaded;
     assert.equal(liveContext.status(), 200);
     assert.equal(liveContext.request().method(), "GET");
     const contextUrl = liveContext.url(), query = new URL(contextUrl).searchParams;
-    assert.deepEqual([...query.keys()].sort(), ["file", "handle"], "Context transport has no checkout, path or revision authority");
-    assert.match(query.get("handle"), /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/);
+    assert.deepEqual([...query.keys()].sort(), ["file", "op", "view"], "Context transport has no checkout, path or revision authority");
+    assert.equal(query.get("view"), "proposal"); assert.equal(query.get("op"), "context");
     assert.equal(query.get("file"), "0");
     const snapshot = await liveContext.json();
     const proposedDraft = readFileSync(draftPath, "utf8");
@@ -426,16 +431,23 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
       await card.getByRole("button", { name: "Collapse", exact: true }).click();
       await page.getByRole("button", { name: /Awaiting response.*Git commit/ }).click();
       await first.getByRole("region", { name: "Unified diff", exact: true }).waitFor();
-      assert.equal(contextReads.length, 1, "View/version switches, file selection and card collapse reuse only the requested snapshot");
+      assert.equal(contextReads.length, 3, "Reselection reloads only the selected immutable context; collapse retains its mounted reader");
     } else if (width <= 600) {
       // Preserve both original inline drawer filter/selection/close ceremonies
       // on THIS native session/review, not Large's similar-text file selector.
       await openFile(card, "second-draft.txt");
       assert.equal(await first.locator(".git-diff-code-view").count(), 0, "Unselected file renderers unmount");
+      const previousContext = page.waitForResponse(contextUrl);
       await card.getByRole("button", { name: "Previous file", exact: true }).click();
+      const previousRead = await previousContext;
+      assert.equal(previousRead.status(), 200); assert.deepEqual(await previousRead.json(), snapshot);
       await card.getByRole("button", { name: "Next file", exact: true }).click();
+      const drawerContext = page.waitForResponse(contextUrl);
       await openFile(card, "draft.txt");
-      assert.equal(contextReads.length, 1, "Inline drawer selection retains the original requested snapshot");
+      const drawerRead = await drawerContext;
+      assert.equal(drawerRead.status(), 200); assert.deepEqual(await drawerRead.json(), snapshot);
+      await first.getByRole("button", { name: "Diff context", exact: true }).waitFor();
+      assert.equal(contextReads.length, 3, "Inline drawer reselection reloads only the selected immutable context");
     }
 
     await card.getByRole("button", { name: "Side by side", exact: true }).click();
@@ -479,7 +491,9 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     await first.getByRole("button", { name: "Diff context", exact: true }).click();
     await card.getByRole("button", { name: "Raw patch", exact: true }).click();
     assert.equal(await first.getByRole("region", { name: "Raw patch", exact: true }).textContent(), reviewedPatch);
-    assert.equal(await completeRaw(card).locator("pre").textContent(), reviewedCompletePatch, "Reading context never rewrites the approved patch");
+    const afterContextDownload = await page.request.get(completePatchUrl);
+    assert.equal(await afterContextDownload.text(), reviewedCompletePatch, "Reading context never rewrites the approved patch");
+    const liveContextReads = contextReads.length;
     await card.getByRole("button", { name: "Approve commit", exact: true }).click();
     await finish("reconnect", "completed"); assert.notEqual(tip(), before);
     const receipt = page.locator("[data-interaction-receipt]").last();
@@ -496,17 +510,17 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
       const historical = page.locator(`[data-interaction-receipt="${receiptId}"]`);
       await historical.waitFor();
       assert.equal(await historical.count(), 1);
-      assert.equal(contextReads.length, 1, "Collapsed historical receipts never load context");
+      assert.equal(contextReads.length, liveContextReads, "Collapsed historical receipts never load context");
       const saved = await page.request.get(`${base}/api/sessions/${sessionId}?tail=1000&tree=summary`);
       assert.ok(saved.ok(), await saved.text());
       const receipts = (await saved.json()).context.messages.filter((message) => message.role === "custom"
         && message.customType === "brabbler:interaction-receipt" && message.details?.request?.id === receiptId);
       assert.equal(receipts.length, 1);
-      assert.equal(receipts[0].details.request.patchContext, query.get("handle"), "Saved receipt carries the original opaque snapshot handle");
+      assert.equal(receipts[0].details.request.patchContext, undefined, "Git history no longer depends on expiring context handles");
       assert.equal(receipts[0].details.request.patch, undefined, "Receipts reference immutable content instead of repeating it");
       const review = receipts[0].details.request.review;
-      assert.ok(review && review.entries === 3);
-      const exact = await page.request.get(`${base}/api/sessions/${sessionId}/reviews/${review.id}?patch=1&download=1`);
+      assert.equal(review.version, 2);
+      const exact = await page.request.get(`${base}/api/sessions/${sessionId}/reviews/${review.id}?op=patch&view=proposal`);
       assert.equal(await exact.text(), reviewedCompletePatch);
       await historical.getByRole("button", { name: /Answered.*Git commit/ }).click();
       const group = historical.getByRole("group", { name: "Git commit", exact: true });
@@ -519,7 +533,7 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
         // Use the actual historical host after current working bytes changed.
         const [download] = await Promise.all([
           page.waitForEvent("download"),
-          group.getByRole("link", { name: "Download complete exact patch", exact: true }).click(),
+          fullPatchLink(group).click(),
         ]);
         const stream = await download.createReadStream();
         assert.ok(stream, "the native historical download exposes its body");
@@ -532,14 +546,14 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
       // assuming receipt expansion resets the shared browser view preference.
       await group.getByRole("button", { name: "Side by side", exact: true }).click();
       await historicalFile.getByRole("region", { name: "Side-by-side diff", exact: true }).waitFor();
-      assert.equal(contextReads.length, 1, "Opening a receipt's patch still does not load full-file context");
+      assert.equal(contextReads.length, liveContextReads, "Opening a receipt's patch still does not load full-file context");
       const historicalLoaded = page.waitForResponse(contextUrl);
       await historicalFile.getByRole("button", { name: "Show full file", exact: true }).click();
       const historicalContext = await historicalLoaded;
       assert.equal(historicalContext.status(), 200);
       assert.deepEqual(await historicalContext.json(), snapshot, "Historical Before/After use the immutable reviewed trees, not current files or HEAD");
-      assert.equal(contextReads.length, 2);
-      assert.equal(contextReads[1].url(), contextUrl);
+      assert.equal(contextReads.length, liveContextReads + 1);
+      assert.equal(contextReads.at(-1).url(), contextUrl);
       await jumpTo(historicalFile, "Side-by-side diff", 2500, "Plugin context 2500");
       if (retainNativeMatrices) {
         await version(historicalFile, "Before").click();
@@ -565,7 +579,7 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
       await historical.getByRole("button", { name: /Answered.*Git commit/ }).click();
       await group.getByRole("button", { name: "Side by side", exact: true }).click();
       await historicalFile.getByRole("region", { name: "Side-by-side diff", exact: true }).waitFor();
-      assert.equal(contextReads.length, 2);
+      assert.equal(contextReads.length, liveContextReads + 1);
       const expiredBody = { error: "This context snapshot has expired or the server restarted; the saved patch remains available." };
       const refuseContext = (route) => route.fulfill({ status: 409, json: expiredBody });
       await page.route(contextUrl, refuseContext);
@@ -583,7 +597,7 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
           await group.getByRole("button", { name: "Raw patch", exact: true }).click();
           assert.equal(await historicalFile.getByRole("region", { name: "Raw patch", exact: true }).textContent(), reviewedPatch,
             "Unavailable context leaves the exact saved raw patch readable");
-          assert.equal(contextReads.length, 3, "Expired context is not retried automatically");
+          assert.equal(contextReads.length, liveContextReads + 2, "Unavailable context is not retried automatically");
           assert.equal(decisions().length, 1, "Read-only context controls never submit an approval or cancellation");
           assert.equal(tip(), committedTip);
           return refused;
@@ -616,7 +630,7 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     if (action === "rebase" || action === "merge") {
       await card.getByText("feature → target", { exact: true }).waitFor();
       await card.getByRole("region", { name: "Operation notes", exact: true }).getByText(/not a predicted rebase\/merge result/).waitFor();
-      await card.getByRole("region", { name: "Exact operation review" }).getByRole("link", { name: "Download complete exact patch", exact: true }).waitFor();
+      await fullPatchLink(card).waitFor();
       // Desktop's later large commit remains in the shared feature history for
       // mobile: its branch previews intentionally use paged review, not one DOM.
       if (width > 600) await card.getByRole("group", { name: "Patch view" }).waitFor();
@@ -707,6 +721,11 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
   const saved = page.locator(`[data-operation-receipt="${operationId}"]`);
   await saved.getByRole("button", { name: /Succeeded/ }).click();
   await saved.getByText("Policy authorized · allow · project", { exact: true }).waitFor();
+  await saved.getByText("Actual result", { exact: true }).waitFor();
+  const actualLink = saved.getByRole("link", { name: "Download complete actual result patch", exact: true });
+  await actualLink.waitFor();
+  const actualRead = await page.request.get(new URL(await actualLink.getAttribute("href"), base).href);
+  const actualPatch = await actualRead.text(); assert.equal(actualRead.status(), 200); assert.match(actualPatch, /Plugin whole-file candidate allow-/);
   await fullscreen(saved.getByRole("group", { name: "Git commit", exact: true }), "Git commit");
   await restore(saved);
   assert.equal(await saved.getByRole("button", { name: "Approve commit", exact: true }).count(), 0);
@@ -812,19 +831,19 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
   }
   card = await start("large");
   const exactReview = card.getByRole("region", { name: "Exact operation review" });
-  await exactReview.getByText(/Showing entries 1–40 of 46/).waitFor();
+  await exactReview.getByText(/Showing files 1–40 of 45/).waitFor();
   await card.getByRole("button", { name: "Approve commit", exact: true }).waitFor();
-  assert.ok(await exactReview.getByRole("link", { name: "Download complete exact patch", exact: true }).getAttribute("href"));
+  assert.ok(await fullPatchLink(exactReview).getAttribute("href"));
   await fullscreen(card, "Git commit");
   assert.equal(await exactReview.getByRole("group", { name: "Patch view", exact: true }).count(), 1);
-  await openFile(card, "a/large-review-0.txt b/large-review-0.txt");
+  await openFile(card, "large-review-0.txt");
   await card.getByRole("button", { name: "Side by side", exact: true }).click();
   await exactReview.getByRole("region", { name: width > 600 ? "Side-by-side diff" : "Raw patch", exact: true }).waitFor();
   assert.equal(await exactReview.getByText("Binary changes are summarized; file contents are not shown.", { exact: true }).count(), 0,
     "A binary-marker phrase inside ordinary added text remains an interactive text patch");
   if (retainNativeMatrices) {
     await exactReview.getByRole("button", { name: "Next files", exact: true }).click();
-    await exactReview.getByText(/Showing entries 41–46 of 46/).waitFor();
+    await exactReview.getByText(/Showing files 41–45 of 45/).waitFor();
   }
   // Only page switching moves lower. Native cold 46-entry review, original
   // file/body/fullscreen/approval and the real 45-file commit remain above/below.
@@ -832,5 +851,40 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
   await card.getByRole("button", { name: "Approve commit", exact: true }).click();
   await finish("large", "completed");
   assert.equal(execFileSync("git", ["-C", repo, "show", "--format=", "--name-only", "HEAD"], { encoding: "utf8" }).trim().split("\n").length, 45);
+  // Thin native settled-result/proposal connection in the SAME reader. Different
+  // old file versions are informational, not a verdict on legitimate integration.
+  const resultRepo = `${repo}-result-merge-${width}`, featurePath = `${resultRepo}-worktrees/feature`;
+  execFileSync("git", ["init", "-qb", "main", resultRepo]);
+  const resultGit = (...args) => execFileSync("git", ["-C", resultRepo, "-c", "commit.gpgsign=false", ...args], { encoding: "utf8" }).trim();
+  resultGit("config", "user.name", "Review"); resultGit("config", "user.email", "review@example.invalid");
+  const baseline = Array.from({ length: 100 }, (_, index) => `Line ${index + 1}\n`);
+  writeFileSync(join(resultRepo, "file.txt"), baseline.join("")); resultGit("add", "."); resultGit("commit", "-qm", "base");
+  resultGit("worktree", "add", "-b", "review-feature", featurePath);
+  const feature = [...baseline]; feature[4] = "feature change\n"; writeFileSync(join(featurePath, "file.txt"), feature.join(""));
+  execFileSync("git", ["-C", featurePath, "-c", "commit.gpgsign=false", "commit", "-am", "feature"]);
+  const target = [...baseline]; target[89] = "target change\n"; writeFileSync(join(resultRepo, "file.txt"), target.join("")); resultGit("commit", "-am", "target");
+  assert.ok((await page.request.post(`${base}/api/cwd/validate`, { data: { cwd: resultRepo } })).ok());
+  await patch({ merge: "allow", targetBranch: "main", mergeMethod: "non-ff" }, "project", [], resultRepo);
+  const runResultMerge = async (mode = "result-merge") => {
+    await page.locator("textarea").last().fill(`/e2e-git-plugin ${mode}-${width}`); await page.getByRole("button", { name: "Send", exact: true }).click();
+    await finish(mode, "completed");
+    const outcome = page.locator("[data-operation-receipt]").last(); await outcome.getByRole("button", { name: /Succeeded/ }).click(); return outcome;
+  };
+  const resultCard = await runResultMerge();
+  await resultCard.getByText("Actual result", { exact: true }).waitFor();
+  const actualDownload = await page.request.get(new URL(await resultCard.getByRole("link", { name: "Download complete actual result patch", exact: true }).getAttribute("href"), base).href);
+  const actual = await actualDownload.text(); assert.equal(actualDownload.status(), 200);
+  await resultCard.getByRole("button", { name: "View original proposal", exact: true }).click();
+  const proposalDownload = await page.request.get(new URL(await fullPatchLink(resultCard).getAttribute("href"), base).href);
+  const original = await proposalDownload.text(); assert.equal(proposalDownload.status(), 200); assert.notEqual(actual, original);
+  assert.match(actual, /feature change/); assert.match(original, /feature change/);
+  assert.equal(await resultCard.getByRole("button", { name: /Approve|Reject|Cancel/ }).count(), 0);
+  await resultCard.getByRole("button", { name: "Actual result", exact: true }).click();
+  await resultCard.getByRole("link", { name: "Download complete actual result patch", exact: true }).waitFor();
+  await resultCard.getByRole("button", { name: "Collapse", exact: true }).click();
+  const noOpCard = await runResultMerge("result-merge-again"); await noOpCard.getByText("No file changes in this comparison.", { exact: true }).waitFor();
+  await noOpCard.getByText("Actual result", { exact: true }).waitFor();
+  assert.equal(await noOpCard.getByRole("button", { name: "View original proposal", exact: true }).count(), 0);
+  await noOpCard.getByRole("button", { name: "Collapse", exact: true }).click();
   console.log(`PASS: ${width}px durable Ask/Allow outcomes; ${retainNativeMatrices ? "full preview and cleanup matrices" : "conditional partial native-review bridge with historical native download"}; Git approval layouts, ${retainNativeMatrices ? "live split/unified/Before/After search/navigation/collapse matrix" : "cold native snapshot/virtualization and mounted-owner live reader policy"}, wide Escape, ${retainNativeMatrices ? "exact read-only historical context and expired raw fallback" : "cold immutable historical context/raw bytes and mounted-owner historical/409 policy"}, cross-repository settings, installed enable/default, rejection, reconnect and native Stop`);
 }

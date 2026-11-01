@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { samePath } from "../paths";
 import { validateOperationReceipt } from "../operation-receipts";
 import { isOperationId, validatePluginCard } from "./ui";
+import { snapshotOperationReview, operationReviewReference, readOperationReview, isOperationReviewReference } from "./review-metadata";
+import type { PluginCard } from "./types";
 import { assertProjectAcknowledgment, parseProjectActionDecision, projectCardDigest } from "./project-acknowledgment";
 import type { ProjectAcknowledgmentAnswer, ProjectActionPrepare, ProjectOperation } from "./project-operation-types";
 import type { BundledPlugin, PluginUiContext } from "./types";
@@ -22,10 +24,9 @@ export interface ProjectOperationPorts {
   store: ProjectOperationStore;
   capability(pluginId: string): Capability;
   enabled(plugin: BundledPlugin, cwd: string): boolean;
-  admission: { allowed(cwd: string): Promise<void>; assertInvocation(cwd: string): void; admitRelated(paths: string[]): void };
+  admission: { allowed(cwd: string): Promise<void>; allowedHistory?(cwd: string): Promise<void>; assertInvocation(cwd: string): void; admitRelated(paths: string[]): void };
   observers(): Promise<(path: string) => boolean>;
   reserveDirectory(path: string, inUse: (path: string) => boolean): () => void;
-  prepareReview: PluginUiContext["prepareReview"];
   scheduler: ProjectOperationScheduler;
 }
 interface Completion {
@@ -61,8 +62,11 @@ export function createProjectOperationHost(ports: ProjectOperationPorts, live = 
   function publicRecord(record: Stored): ProjectOperation {
     const active = live.get(record.id);
     // Ownership reads await admission; the live card/descriptor may have changed meanwhile.
-    const { inputDigest: _digest, ...value } = structuredClone(active?.record ?? record);
-    void _digest;
+    // Exclude complete payloads BEFORE cloning; normal polling/listing must not
+    // repeatedly serialize or copy multi-megabyte operation metadata.
+    const { inputDigest: _digest, reviewMetadata: _metadata, ...compact } = active?.record ?? record;
+    void _digest; void _metadata;
+    const value: ProjectOperation = structuredClone(compact);
     if (!active && !terminal(value.state)) { value.state = "outcome-unknown"; value.error = "Server restarted; saved intent is not an observed outcome. Inspect actual resources. This operation cannot be replayed."; }
     if (value.receipt) value.receipt.card.actions = [];
     const review = value.receipt?.card.review;
@@ -74,10 +78,10 @@ export function createProjectOperationHost(ports: ProjectOperationPorts, live = 
     return value;
   }
   /** Saved project ownership authorizes history through a surviving anchor, not the removed worktree. */
-  async function owned(pluginId: string, id: string): Promise<Stored> {
+  async function owned(pluginId: string, id: string, history = false): Promise<Stored> {
     const record = live.get(id)?.record ?? read(id);
     if (!record || record.pluginId !== pluginId) throw new Error("Operation not found");
-    await allowed(record.anchor);
+    await (history ? admission.allowedHistory ?? allowed : allowed)(record.anchor);
     const { adapter } = capability(pluginId);
     if ((await adapter.resolveProject(record.anchor)).identity !== record.project) throw new Error("Project identity changed");
     return record;
@@ -155,19 +159,35 @@ export function createProjectOperationHost(ports: ProjectOperationPorts, live = 
     try {
       isInUse = await ports.observers();
       controller.signal.throwIfAborted();
+      const assertReview = (id: string, card: Pick<PluginCard, "review">) => {
+        const ref = card.review;
+        if (ref?.version !== 2) return;
+        const saved = operation.record.reviewMetadata?.find(item => item.id === ref.id);
+        if (!saved || !readOperationReview(saved) || saved.pluginId !== id || saved.operationId !== ref.operationId) throw new Error("Review metadata owner mismatch or not saved");
+      };
       const ui: PluginUiContext = {
         isDirectoryInUse: isInUse,
         reserveDirectory: (path) => { assertAdmission(); return ports.reserveDirectory(path, isInUse); },
-        prepareReview: (id, operationId, build) => { if (id !== plugin.manifest.id) throw new Error("Review owner mismatch"); return ports.prepareReview(id, operationId, build); },
+        saveOperationReview: async (id, operationId, format, payload) => {
+          if (id !== plugin.manifest.id) throw new Error("Review owner mismatch");
+          assertAdmission();
+          const snapshot = snapshotOperationReview(id, operationId, format, payload);
+          const saved = operation.record.reviewMetadata ?? [];
+          if (saved.some(item => item.operationId !== operationId)) throw new Error("Review operation changed");
+          update(operation, { reviewMetadata: [...saved, snapshot] });
+          return operationReviewReference(snapshot);
+        },
         operationReceipt: (id, receipt) => {
           if (id !== plugin.manifest.id) throw new Error("Receipt owner mismatch");
           assertAdmission(); validateOperationReceipt(receipt);
+          assertReview(id, receipt.card);
           if (operation.record.receipt && operation.record.receipt.operationId !== receipt.operationId) throw new Error("Receipt operation changed");
           update(operation, { receipt: structuredClone(receipt), ...(receipt.phase === "executing" ? { state: "dispatched" as const } : {}) });
         },
         pluginCard: async (id, card, signal) => {
           if (id !== plugin.manifest.id) throw new Error("Card owner mismatch");
           validatePluginCard(card, { allowRequiredAcknowledgment: true });
+          assertReview(id, card);
           if (controller.signal.aborted || signal?.aborted) return null;
           if (operation.claimed) throw new Error("Operation decision already claimed; prepare a new operation");
           // An unclaimed replacement revokes the old wait and gets a fresh host nonce.
@@ -267,15 +287,28 @@ export function createProjectOperationHost(ports: ProjectOperationPorts, live = 
     }
     return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50).map(publicRecord);
   }
-  async function projectOperationReview(pluginId: string, id: string, reviewId: string) {
-    const record = await owned(pluginId, id);
+  /** Internal P3 provider input, never a polling/list DTO. Resolve only exact
+   * linked identities in this admitted owner snapshot; no latest-by-operation join. */
+  async function resolveProjectOperationReview(pluginId: string, id: string, reviewId: string) {
+    const record = await owned(pluginId, id, true);
     const ref = record.receipt?.card.review;
     if (!ref || ref.id !== reviewId) throw new Error("Review is not owned by this operation");
-    return ref;
+    const resolveLinked = (reference: import("./review-metadata").OperationReviewReference) => {
+      if (!isOperationReviewReference(reference) || reference.operationId !== ref.operationId) return null;
+      const metadata = record.reviewMetadata?.find(item => item.id === reference.id);
+      const validated = metadata && readOperationReview(metadata);
+      return validated && validated.pluginId === pluginId && validated.operationId === reference.operationId ? validated : null;
+    };
+    const metadata = ref.version === 2 ? resolveLinked(ref) : undefined;
+    if (ref.version === 2 && !metadata) throw new Error("Review metadata owner mismatch or not saved");
+    return { ref, pluginId, metadata, resolveLinked, revalidate: async () => { await owned(pluginId, id, true); } };
+  }
+  async function projectOperationReview(pluginId: string, id: string, reviewId: string) {
+    return (await resolveProjectOperationReview(pluginId, id, reviewId)).ref;
   }
 
   return {
-    prepareProjectAction, getProjectOperation, decideProjectOperation, listProjectOperations, projectOperationReview,
+    prepareProjectAction, getProjectOperation, decideProjectOperation, listProjectOperations, projectOperationReview, resolveProjectOperationReview,
     /** Internal ownership handles, not HTTP capabilities. reviewReady means live
      * controls installed OR fully settled without review; read status afterward.
      * A terminal status alone is never a substitute for fullySettled. */

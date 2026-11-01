@@ -3,7 +3,10 @@ import { refuseFilters } from "./checkout-safety";
 import { capturePostflight, collectPostflight, postflightText, postflightReceiptSummary, unobservedPostflight, type ReportAction, type PostflightBaseline, type PostflightReport } from "./postflight";
 import { gitText as git, gitOutput, gitEnvironment, records, outputDigest, run, withPreparationSignal } from "./process";
 import { spawn } from "node:child_process";
-import { buildGitReview, compactGitCard, type GitCardPresentation } from "./review";
+import { gitReviewProposal, gitReviewSettlement, compactGitCard, type GitCardPresentation } from "./review";
+import { GIT_REVIEW_FORMAT, type GitReviewProposal, type GitReviewResources } from "./review-data";
+import { assertGitReviewAvailable } from "./review-reader";
+import type { OperationReviewReference } from "../../lib/plugins/review-metadata";
 import { createReadStream } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -30,7 +33,7 @@ export type GitOperation =
 /** Internal exact-review union; browser discard is deliberately absent from GitOperation. */
 export type ReviewedGitOperation = GitOperation | BrowserDiscardOperation;
 interface GitExecutionOptions { readonly browserConfirmation?: true; readonly presentation?: GitCardPresentation }
-interface Snapshot { fingerprint: string; card: PluginCard; checks: RequiredCheck[]; args: string[]; cwd: string; comparison?: { before: string; after: string }; cleanup?: CleanupSnapshot; postflight?: PostflightBaseline }
+interface Snapshot { fingerprint: string; card: PluginCard; checks: RequiredCheck[]; args: string[]; cwd: string; comparison?: { before: string; after: string }; cleanup?: CleanupSnapshot; postflight?: PostflightBaseline; resources?: GitReviewResources }
 async function branchTip(cwd: string, branch: string): Promise<string> {
   if (!branch || branch.startsWith("-") || branch === "HEAD") throw new Error("Select an explicit local branch");
   await git(cwd, ["check-ref-format", `refs/heads/${branch}`]);
@@ -103,7 +106,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
   if (op.action === "discardResources") {
     const cleanup = await captureBrowserDiscard(callerCwd, op, policy, cleanupAccess(ui, true), budget);
     return { fingerprint: digest([cleanup.fingerprint, op, cleanup.lossEvidence!, relevantPolicy(policy, op.action)]), cleanup,
-      cwd: cleanup.cwd, args: [], checks: [], card: browserDiscardCard(op, policy, cleanup) };
+      cwd: cleanup.cwd, args: [], checks: [], resources: { kind: "cleanup", snapshot: cleanup }, card: browserDiscardCard(op, policy, cleanup) };
   }
   if (op.action === "cleanupFeature") {
     if (!op.removeWorktree && !op.deleteBranch && !op.artifactRoots.length) throw new Error("Choose at least one cleanup resource");
@@ -113,7 +116,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
       cleanup: { featureTip: op.featureTip, integrationCommit: op.integrationCommit, path: cleanup.path, removeWorktree: op.removeWorktree,
         deleteBranch: op.deleteBranch, artifacts: cleanup.artifacts.map(item => item.path), ancestorIdentities: cleanup.artifactParentIdentities } });
     return { fingerprint: digest([cleanup.fingerprint, relevantPolicy(policy, op.action)]), cleanup, postflight,
-      cwd: cleanup.cwd, args: [], checks: [], card: cleanupCard(op, cleanup) };
+      cwd: cleanup.cwd, args: [], checks: [], resources: { kind: "cleanup", snapshot: cleanup }, card: cleanupCard(op, cleanup) };
   }
   const cwd = await checkout(op.checkout);
   const current = await head(cwd);
@@ -125,6 +128,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
   let args: string[] = [];
   let comparison: Snapshot["comparison"];
   let postflight: PostflightBaseline | undefined;
+  let resources: GitReviewResources | undefined;
   let checks: RequiredCheck[] = [];
   const registrations = await worktrees(cwd);
   // Merge approval binds only its two branch registrations. Other sessions may
@@ -225,6 +229,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
     if (op.action === "createWorktree" && exists) throw new Error("Create requires a new branch");
     if (op.action === "attachWorktree" && (op.baseBranch !== op.branch || !exists)) throw new Error("Attach requires the explicitly selected existing branch as base");
     state.push(base, destination);
+    resources = { kind: "worktree", checkout: cwd, head: current, registrations, base: { branch: op.baseBranch, tip: base } };
     fields.push({ label: "Base branch", value: op.baseBranch, code: true }, { label: "Worktree branch", value: op.branch, code: true },
       { label: "Destination", value: destination, code: true });
     rows.push(`Base: ${op.baseBranch} ${base}`, `Destination: ${destination}`);
@@ -239,6 +244,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
     const physical = await checkout(selected.path, cwd);
     if (await status(physical) || await outputDigest(gitOutput(physical, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"]))) throw new Error("Removal requires a clean worktree with no ignored files; force removal is not provided");
     state.push(physical, await head(physical));
+    resources = { kind: "worktree", checkout: cwd, head: current, registrations, selected };
     fields.push({ label: "Remove worktree", value: physical, code: true });
     notices.push("Only this worktree directory is removed. Branch and session history remain.");
     rows.push(`Remove only: ${physical}`, "Branch and session history remain. No automatic cleanup.");
@@ -257,7 +263,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
   sections.push({ title: "Technical details", text: rows.join("\n\n"), code: true, collapsible: true });
   // Bind only applicable settings, not unrelated action permissions.
   state.push(relevantPolicy(policy, op.action));
-  return { fingerprint: digest(state), cwd, args, checks, comparison, postflight,
+  return { fingerprint: digest(state), cwd, args, checks, comparison, postflight, resources,
     card: { title: { commit: "Git commit", rebase: "Git rebase", merge: "Git merge", createWorktree: "Create Git worktree", attachWorktree: "Attach Git worktree", removeWorktree: "Remove Git worktree" }[op.action],
       subtitle: "Approval required", fields, sections,
       scope: `Approves the entire ${op.action === "commit" ? "commit candidate" : "selected operation"}${checks.length ? " and the listed checks" : ""}${comparison ? ", not just an expanded file or displayed page" : ""}.`,
@@ -327,6 +333,8 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
   let postflight: PostflightReport | undefined;
   let checkCwd: string | undefined;
   let receipt: PluginOperationReceipt | undefined;
+  let proposal: GitReviewProposal | undefined, proposalReference: OperationReviewReference | undefined;
+  let settlementAttempted = false;
   const effects: string[] = [];
   let lastInventoryPolicyCheck = 0;
   const cleanupBudget = createCleanupBudget(() => {
@@ -350,6 +358,19 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
     receipt = { ...receipt, phase, effectStarted: started, completedEffects: [...effects], attemptedEffect, ...(summary ? { summary: postflight ? postflightReceiptSummary(summary, postflight) : summary.slice(0, 16000) } : {}) };
     ui.operationReceipt(gitWorkflowManifest.id, structuredClone(receipt));
   };
+  const saveSettlement = async (phase: "succeeded" | "failed" | "cancelled") => {
+    if (settlementAttempted || !receipt || !proposal || !proposalReference || !ui.saveOperationReview) return;
+    settlementAttempted = true; // Saving/reporting failure never retries a native effect or metadata append.
+    let resourceResult;
+    if (proposal.source.kind === "resources" && started) {
+      try { resourceResult = { head: await observedHead(proposal.cwd), registrations: await worktrees(proposal.cwd) }; }
+      catch { /* Recorded effects remain facts; missing observations stay absent. */ }
+    }
+    const payload = await gitReviewSettlement(proposal, proposalReference,
+      { phase, effectStarted: started, completed, checksStarted, effects: [...effects], ...(attemptedEffect ? { attemptedEffect } : {}) }, postflight, resourceResult);
+    const review = await ui.saveOperationReview(gitWorkflowManifest.id, receipt.operationId, GIT_REVIEW_FORMAT, payload);
+    receipt.card = { ...receipt.card, review };
+  };
   try {
     // Foreign repositories never inherit caller/session overrides. Deny still
     // precedes preview and checks. Identity is supplied by the host, not the model.
@@ -362,8 +383,9 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
     if (origin.effective[op.action] !== policy[op.action]) throw new Error("Policy changed during preparation");
     const operationId = randomUUID();
     snapshot.card.operationId = operationId;
-    if (!ui.prepareReview) throw new Error("Git operations require durable Brabbler review attachments");
-    const review = await ui.prepareReview(gitWorkflowManifest.id, operationId, (writer) => buildGitReview(writer, op, snapshot, signal, onProgress));
+    if (!ui.saveOperationReview) throw new Error("Git operations require durable Brabbler review metadata");
+    proposal = await gitReviewProposal(op, snapshot, signal);
+    const review = proposalReference = await ui.saveOperationReview(gitWorkflowManifest.id, operationId, GIT_REVIEW_FORMAT, proposal);
     snapshot.card = { ...compactGitCard(snapshot.card, options?.presentation), review };
     const artifactApproval = !!snapshot.cleanup?.unapprovedArtifacts.length;
     const { subtitle, ...authorization } = operationAuthorization(policy[op.action], origin.sources[op.action], artifactApproval, !!options?.browserConfirmation);
@@ -373,7 +395,7 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
       authorization: { ...authorization, revision: digest(origin) },
       checks: snapshot.checks.map((check) => ({ name: check.name.slice(0, 240), status: "pending" })) };
     record("prepared");
-    onProgress?.(`Exact review saved: ${review.entries} entries, ${review.bytes} bytes. Awaiting authorization/checks.`);
+    onProgress?.("Exact operation metadata saved. Awaiting authorization/checks; historical content depends on captured Git objects.");
     if (signal?.aborted) throw new Error("Cancelled before execution");
     if (mode === "ask") {
       if (!ui.pluginCard) throw new Error("Ask requires the live Brabbler browser UI");
@@ -396,6 +418,9 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
     const revalidate = async () => {
       if (signal?.aborted) throw new Error("Cancelled before native effect");
       const current = currentSettings();
+      // Check ORIGINAL objects before files-preview can recreate a missing tree
+      // with the same OID, concealing expiry under the old approval.
+      if (proposal?.source.kind === "git") await assertGitReviewAvailable(proposal.source.captured, { assertAllowed: async () => {} }, signal);
       if (current[op.action] === "deny" || (await withPreparationSignal(signal, () => preview(callerCwd, op, current, ui, cleanupBudget, options?.browserConfirmation))).fingerprint !== snapshot.fingerprint
         || digest(relevantPolicy(currentSettings(), op.action)) !== digest(relevantPolicy(policy, op.action))) throw new Error("Stale operation: relevant settings or repository state changed; invoke again");
     };
@@ -504,6 +529,7 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
     if (baseline) postflight = await collectPostflight(baseline, "completed", receipt.checks.map(check => ({ ...check, cwd: checkCwd ?? snapshot.cwd })));
     annotatePostflight();
     const result = postflight ? postflightText(postflight, output) : `${op.action} completed.\n${output.slice(0, 12000)}\nObserved HEAD: ${JSON.stringify(await observedHead(snapshot.cwd))}`;
+    await saveSettlement("succeeded");
     record("succeeded", result);
     return { ...(postflight && postflight.verification !== "verified" ? { isError: true } : {}), content: [{ type: "text" as const, text: result }],
       details: { action: op.action, completed: true, operationId, effects, ...(postflight ? { postflight, receiptPersisted: true } : {}) } };
@@ -528,7 +554,10 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
     let receiptPersisted = false;
     if (receipt) {
       const terminalPhase = completed ? "succeeded" : receipt.authorization.decision === "not-approved" || signal?.aborted && !started ? "cancelled" : "failed";
-      try { record(terminalPhase, text); receiptPersisted = true; }
+      try {
+        await saveSettlement(terminalPhase);
+        record(terminalPhase, text); receiptPersisted = true;
+      }
       catch {
         // A presentation bug must not be retried verbatim as the failure card.
         // This minimal record reports outcome only; it never grants authority.

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createJiti } from "jiti";
+import { cleanupReviewSnapshot } from "./review-resources.fixture.mjs";
 const jiti = createJiti(import.meta.url);
-const { compactGitCard, buildGitReview, DEFAULT_GIT_CARD_PRESENTATION } = await jiti.import("./review.ts");
+const { compactGitCard, gitReviewProposal, DEFAULT_GIT_CARD_PRESENTATION } = await jiti.import("./review.ts");
 
 // Supplied presentation data, not a copy of compaction or native capture logic.
 const cardWith = count => ({ title: "Git cleanup", fields: Array.from({ length: 5 }, (_, i) => ({ label: `Essential ${i}`, value: `Value ${i}` })),
@@ -43,22 +44,19 @@ test("invalid application budgets cannot enlarge or disable bounded presentation
   }
 });
 
-test("real metadata review serialization keeps all 25 operation and presentation entries", async () => {
+test("structured metadata preserves all 25 resource entries without repeating the full presentation", async () => {
   const roots = Array.from({ length: 25 }, (_, i) => `generated-${i}`);
   const operation = { action: "cleanupFeature", checkout: "/repo", featureBranch: "feature", featureTip: "a".repeat(40),
     integrationCommit: "b".repeat(40), worktreePath: "/feature", removeWorktree: true, deleteBranch: true, artifactRoots: roots };
-  const snapshot = { card: cardWith(25), fingerprint: "captured-state", cwd: "/repo", args: [], checks: [] };
-  const before = structuredClone(snapshot), chunks = [], entries = [];
-  // External memory writer only. No comparison means no patch/native context demand;
-  // durable default storage and executor ordering are exercised by cleanup.test.mjs.
-  const writer = { begin: async (title, kind) => { entries.push([title, kind]); }, write: async chunk => { chunks.push(Buffer.from(chunk)); }, end: async () => {} };
-  await buildGitReview(writer, operation, snapshot);
+  const snapshot = { card: cardWith(25), fingerprint: "a".repeat(64), cwd: "/repo", args: [], checks: [],
+    resources: { kind: "cleanup", snapshot: cleanupReviewSnapshot(roots) } };
+  const before = structuredClone(snapshot);
+  // Pure metadata composition; real host durability and native capture are separate owners.
+  const exact = await gitReviewProposal(operation, snapshot);
   const compact = compactGitCard(snapshot.card);
-  const exact = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  assert.deepEqual(entries, [["Exact operation, checks and captured state", "text"]]);
   assert.deepEqual(exact.operation, operation);
-  assert.deepEqual(exact.presentation, before.card);
-  assert.deepEqual(exact.presentation.sections[0].fields.map(field => field.label), roots);
+  assert.equal(Object.hasOwn(exact, "presentation"), false);
+  assert.deepEqual(exact.source.resources.snapshot.artifacts.map(item => item.path), roots);
   assert.equal(compact.sections[0].fields.length, 24);
   assert.deepEqual(snapshot, before);
 });

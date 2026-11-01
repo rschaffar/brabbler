@@ -71,7 +71,7 @@ source-derived inventory and fresh receipts; the historical baseline stays intac
 | `model-speed` | Native writes, canonical packaged disk reader, persistence and ambiguous acknowledgement reconciliation |
 | `native-tools` | Inert MCP catalogue, selected-session Code-mode/MCP apply, native stdio/QuickJS and read-only denial, parent nested-call progress/error-success/history, unrelated busy-session independence, stable-ID/draft preservation and lost-ack reconciliation; inert project-default save/reset, linked-worktree inheritance, explicit fresh-composer opt-out before connection and unchanged existing-session intent at desktop/mobile sizes |
 | `trust` | Worktree/project grants, revocation and restriction |
-| `git-plugin` | Bundled Git Workflow, approvals, immutable reviews, receipts, expiry/reconnect and cleanup |
+| `git-plugin` | Bundled Git Workflow, approvals, Git-backed immutable reviews, receipts/reconnect, native divergent actual-result/proposal toggle and empty no-op in the same viewer, historical browser download and cleanup |
 | `appearance` | Default/full/reading widths, numeric legacy preference and fresh preference inputs; all thirteen palette swatches plus System, native-radio arrows, reload/dark classification/contrast and constrained Settings geometry; font families/base weights, independent resets, cross-tab sync and draft remeasurement; Notes native modal/keyboard and Global/Project durable roundtrip, selected-folder-without-chat and linked-worktree sharing bridges, plus the separate short-touch geometry reader; conflict/recovery/currentness matrices stay in the mounted/native owners |
 | `timestamps` | Both en-US and legacy Chinese locale/preference variants |
 | `diff-context` | Loaded Workflow absence, Git Explorer immutable contexts/navigation/wrapping/Wide and integrated merge graph, in prerequisite order |
@@ -87,6 +87,16 @@ source-derived inventory and fresh receipts; the historical baseline stays intac
 | `move` | Full picker, plain/Git/worktree/Browse paths, superseded reads and proposal-only changes; independent stale-worktree filters, archive-inclusive recovery, missing-child subtrees and native-modal bulk Browse/Move |
 | `auth` | Installed CLI setup/mismatch/overwrite refusal, corrupt/missing state, shared throttling and password redaction, Basic/cookie access, rotation revocation, real browser login; removed SSH settings/sidebar/cards/API and no browser SSH requests, including a retired saved navigation value |
 | `terminal` | Real shell/PTY, retained Nerd/System families with shared mono base/bold weights, live palette/font-size changes without PTY/SSE replacement, coarse-touch portrait modifier/arrow input, reconnect/restart/exit, creation cancellation and workspace/Explorer coexistence |
+
+Git-backed review receipts use the v11 Git and v4/v3 worktree input IDs. The same
+native settings/approval/Stop, desktop/mobile file drawer/fullscreen/Wide/focus,
+immutable historical context and browser download bridges remain. Standalone
+history downloads full owned metadata after native resource removal, not a patch
+bundle. Selected context is released on file unmount; retained reselection steps
+join their actual context response/body before asserting exact counts. No timeout
+increase or aggregate archive fallback is used. The
+[temporary assertion ledger](../tools/migrations/git-operation-reviews/README.md)
+records the protocol-specific dispositions. Focused greens are not full acceptance.
 
 Keyboard simulations verify Chromium layout/focus and preserve the same filter node/value; they do not certify native iOS/Android keyboards, Safari or installed-PWA behavior. Physical keyboard/IME/device verification remains separately reported.
 

@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { lstatSync } from "node:fs";
-import { createHash } from "node:crypto";
-import { finished } from "node:stream/promises";
 import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { nativeCleanupAccess } from "./cleanup-access.fixture.mjs";
@@ -16,7 +14,7 @@ import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url);
 const { executeGitOperation } = await jiti.import("./server.ts");
 const { cleanupPathWithin, captureCleanup, performCleanup, createCleanupBudget } = await jiti.import("./cleanup.ts");
-const { preparePluginReview } = await jiti.import("../../lib/plugins/review-store.ts");
+import { saveOperationReview, reviewMetadata } from "./review-host.fixture.mjs";
 const { snapshotOperationReceipt } = await jiti.import("../../lib/operation-receipts.ts");
 const { validatePluginCard } = await jiti.import("../../lib/plugins/ui.ts");
 const { gitWorkflowManifest: manifest } = await jiti.import("./manifest.ts");
@@ -32,7 +30,7 @@ function fixture(t) {
   updatePluginSettings(manifest, "global", repo, { enabled: true }, []);
   set({ targetBranch: "main", targetSelection: "configured", cleanupFeature: "ask", approvedArtifactRoots: "node_modules, .codegraph, .next" });
   const receipts = [], cards = []; let approvals = 0;
-  const ui = { prepareReview: preparePluginReview, isDirectoryInUse: () => false, reserveDirectory: () => () => {}, operationReceipt: (id, value) => { snapshotOperationReceipt(id, value, receipts.length + 1); receipts.push(structuredClone(value)); }, pluginCard: async (_id, card) => { validatePluginCard(card); approvals++; cards.push(structuredClone(card)); return "approve"; } };
+  const ui = { saveOperationReview, isDirectoryInUse: () => false, reserveDirectory: () => () => {}, operationReceipt: (id, value) => { snapshotOperationReceipt(id, value, receipts.length + 1); receipts.push(structuredClone(value)); }, pluginCard: async (_id, card) => { validatePluginCard(card); approvals++; cards.push(structuredClone(card)); return "approve"; } };
   const op = { action: "cleanupFeature", checkout: repo, featureBranch: "feature", featureTip, integrationCommit, worktreePath: path, removeWorktree: true, deleteBranch: true, artifactRoots: [] };
   const artifact = (name, content = "generated") => { mkdirSync(join(path, name), { recursive: true }); writeFileSync(join(path, name, "cache"), content); };
   const call = (extra = {}, custom = {}, options) => executeGitOperation(repo, { ...op, ...extra }, { ...ui, ...custom }, undefined, undefined, "cleanup-call", undefined, options);
@@ -313,18 +311,8 @@ test("nested cleanup fails closed before approval without no-follow directory-ha
 });
 
 test("browser cleanup top and nested five-root tuples keep one-time consent, native identity and durable no-replay outcome", async (t) => {
-  const { reviewEntry, reviewPreview, reviewManifest, reviewStream } = await jiti.import("../../lib/plugins/review-store.ts");
-  // Native storage download API, not HTTP/browser historical-download proof.
-  const download = async (ref, entry) => {
-    const stream = await reviewStream(ref, entry);
-    if (!stream) return Buffer.alloc(0);
-    const closed = finished(stream, { cleanup: true }); void closed.catch(() => {});
-    const chunks = [];
-    try { for await (const chunk of stream) chunks.push(Buffer.from(chunk)); }
-    finally { stream.destroy(); await closed; }
-    assert.equal(stream.closed, true); assert.equal(stream.fd, null);
-    return Buffer.concat(chunks);
-  };
+  // Bundle hash/offset/descriptor obligations remain isolated with the legacy
+  // codec. These resource tuples now assert the complete structured capture.
   const { readOperationReceipt, collapseOperationReceipts } = await jiti.import("../../lib/operation-receipts.ts");
   const { acquireDirectoryReservation, assertDirectoryAdmissionAllowed } = await jiti.import("../../lib/directory-reservations.ts");
   for (const nested of [false, true]) await t.test(nested ? "nested" : "top", { skip: nested && process.platform !== "linux" }, async st => {
@@ -367,24 +355,18 @@ test("browser cleanup top and nested five-root tuples keep one-time consent, nat
         assert.match(field.value, /Needs one-time approval/); assert.match(field.value, /entries · \d+ bytes · SHA256 [a-f0-9]{64}$/);
         if (files.includes(field.label)) assert.match(field.value, /1 entries · /);
       }
-      // Bundle identity covers data, entry metadata AND offsets; validate that
-      // domain through the public API rather than hashing a text concatenation.
-      assert.deepEqual(await reviewManifest(card.review, "git-workflow"), {
-        version: 1, pluginId: "git-workflow", operationId: card.operationId,
-        entries: card.review.entries, bytes: card.review.bytes, sha256: card.review.sha256,
-      });
-      assert.equal(card.review.entries, 1, "field-only cleanup has one exact metadata entry");
-      const entry = await reviewEntry(card.review, 0), exact = await reviewPreview(card.review, entry);
-      assert.equal(exact.complete, true);
-      assert.equal(entry.kind, "text"); assert.equal(entry.start, 0);
-      const data = JSON.parse(exact.text); assert.deepEqual(data.operation, f.op);
-      assert.deepEqual(inventory(data.presentation), inventory(card));
-      // Entry SHA binds entry bytes. The reference SHA above binds the bundle.
-      const exactBytes = Buffer.from(exact.text);
-      assert.equal(exactBytes.length, entry.bytes); assert.equal(exactBytes.length, card.review.bytes);
-      assert.equal(createHash("sha256").update(exactBytes).digest("hex"), entry.sha256);
-      assert.deepEqual(await download(card.review, entry), exactBytes);
-      assert.deepEqual(await download(card.review), exactBytes, "complete native download retains exact cleanup review");
+      assert.equal(card.review.version, 2);
+      const data = reviewMetadata(card.review); assert.deepEqual(data.operation, f.op);
+      assert.equal(data.source.kind, "resources");
+      const captured = data.source.resources.snapshot;
+      assert.deepEqual(captured.artifacts.map(item => item.path).sort(), [...roots].sort());
+      for (const artifact of captured.artifacts) {
+        assert.match(artifact.digest, /^[a-f0-9]{64}$/);
+        assert.ok(artifact.entries > 0); assert.ok(artifact.bytes > 0);
+        assert.ok(inventory(card).some(field => field.label === artifact.path && field.value.includes(artifact.digest)));
+      }
+      assert.equal(Object.hasOwn(data, "presentation"), false, "no repeated unbounded card body");
+      assert.equal(existsSync(join(f.root, "agent/brabbler/reviews")), false);
     };
     const native = { operationReceipt: record,
       // This fixture has no sessions/terminals. Real reservation, not native-idle proof.
@@ -806,12 +788,9 @@ test("compact cleanup preview keeps the complete approved review and native effe
   assert.match(card.sections[0].text, /Showing 2 of 3 items/);
   assert.deepEqual(card.fields.map(field => field.label), ["Repository checkout", "Integrated feature", "Verified integration", "Worktree", "Local branch"], "essential operation fields are not list-budgeted");
   assert.ok(card.review);
-  const { reviewEntry, reviewPreview } = await jiti.import("../../lib/plugins/review-store.ts");
-  const saved = await reviewPreview(card.review, await reviewEntry(card.review, 0));
-  assert.equal(saved.complete, true);
-  const exact = JSON.parse(saved.text);
+  const exact = reviewMetadata(card.review);
   assert.deepEqual(exact.operation.artifactRoots, roots, "approval retains the complete selected operation");
-  assert.deepEqual(exact.presentation.sections[0].fields.map(field => field.label), roots, "exact review is saved before preview compaction");
+  assert.deepEqual(exact.source.resources.snapshot.artifacts.map(item => item.path), roots, "complete resource metadata is saved before preview compaction");
   assert.deepEqual(result.details.effects.filter(effect => effect.startsWith("Removed generated artifact:")), roots.map(root => `Removed generated artifact: ${root}`));
   assert.equal(existsSync(f.path), false);
   assert.equal(git(f.repo, "branch", "--list", "feature"), "");

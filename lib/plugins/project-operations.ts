@@ -6,7 +6,6 @@ import { allowFileRoot, getAllowedFileRoots, getKnownAllowedFileRoots, isExistin
 import { samePath } from "../paths";
 import { bundledPlugin } from "./registry";
 import { readPluginSettings } from "./settings";
-import { preparePluginReview } from "./review-store";
 import { createProjectOperationHost, projectOperationScheduler } from "./project-operation-host";
 import type { LiveProjectOperation } from "./project-operation-host";
 import { createFileProjectOperationStore } from "./project-operation-store";
@@ -28,6 +27,10 @@ function compose(store: ProjectOperationStore, operations?: Map<string, LiveProj
     },
     enabled: (plugin, cwd) => readPluginSettings(plugin.manifest, cwd).enabled,
     admission: {
+      async allowedHistory(cwd) {
+        const roots = getKnownAllowedFileRoots();
+        if (!isFilePathAllowed(cwd, roots) || !isExistingFilePathAllowed(cwd, roots) || !samePath(realpathSync(cwd), cwd)) throw new Error("Access denied: select an allowed physical directory");
+      },
       async allowed(cwd) {
         const roots = await getAllowedFileRoots();
         if (!isFilePathAllowed(cwd, roots) || !isExistingFilePathAllowed(cwd, roots) || !samePath(realpathSync(cwd), cwd)) throw new Error("Access denied: select an allowed physical directory");
@@ -48,7 +51,6 @@ function compose(store: ProjectOperationStore, operations?: Map<string, LiveProj
       return (path: string) => rpc.value.hasBusyRpcSessionWithin(path) || terminal.value.hasActiveTerminalWithin(path);
     },
     reserveDirectory: acquireDirectoryReservation,
-    prepareReview: preparePluginReview,
   }, operations);
 }
 
@@ -61,4 +63,4 @@ export function createProjectOperationService(store: ProjectOperationStore = cre
 
 /** Preserve the process-wide HMR owner and the existing route API. */
 export const projectOperationHost = compose(createFileProjectOperationStore(root), live);
-export const { prepareProjectAction, getProjectOperation, decideProjectOperation, listProjectOperations, projectOperationReview } = projectOperationHost;
+export const { prepareProjectAction, getProjectOperation, decideProjectOperation, listProjectOperations, projectOperationReview, resolveProjectOperationReview } = projectOperationHost;

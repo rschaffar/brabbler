@@ -448,7 +448,7 @@ let nativeToolsFixture;
   }
   async function runWorktreeManagerChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const [index, inputId] of ["en-desktop", "en-mobile-tall"].entries()) await coverage.run(`worktrees/${inputId === "en-desktop" ? "native-loss-bound-review-v3" : "modal-review-layout-v2"}@${inputId}`, async () => {
+    for (const [index, inputId] of ["en-desktop", "en-mobile-tall"].entries()) await coverage.run(`worktrees/${inputId === "en-desktop" ? "git-backed-loss-review-v4" : "git-backed-modal-review-v3"}@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage(); page.setDefaultTimeout(30_000);
@@ -491,7 +491,7 @@ let nativeToolsFixture;
     });
   } else if (group === "git-plugin") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/matrix-settings-v10@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/git-backed-review-v11@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage();

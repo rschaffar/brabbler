@@ -76,7 +76,7 @@ export async function* processOutput(command: string, args: string[], cwd: strin
   } finally {
     if (timer) clearTimeout(timer);
     options.signal?.removeEventListener("abort", stop);
-    if (!consumed) { stop(); await done; await termination; }
+    if (!consumed) { stop(); await done; await termination; await feed; }
   }
 }
 export function gitOutput(cwd: string, args: string[], options: Options = {}) {

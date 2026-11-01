@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,7 +10,7 @@ const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() } });
 const { gitProjectActions } = await jiti.import("./project-management.ts");
 const { gitWorkflowManifest } = await jiti.import("./manifest.ts");
 const { updatePluginSettings } = await jiti.import("../../lib/plugins/settings.ts");
-const { preparePluginReview, reviewManifest } = await jiti.import("../../lib/plugins/review-store.ts");
+import { saveOperationReview, reviewMetadata } from "./review-host.fixture.mjs";
 const { projectOperationHost, createProjectOperationService, getProjectOperation, decideProjectOperation, listProjectOperations, projectOperationReview } = await jiti.import("../../lib/plugins/project-operations.ts");
 const { createFileProjectOperationStore } = await jiti.import("../../lib/plugins/project-operation-store.ts");
 const { allowFileRoot } = await jiti.import("../../lib/file-access.ts");
@@ -77,7 +77,7 @@ test("browser revalidation refuses artifacts becoming unignored through info/exc
   writeFileSync(exclude, "once-ignored/\n"); mkdirSync(join(f.path, "once-ignored")); writeFileSync(join(f.path, "once-ignored/cache"), "keep");
   f.set({ approvedArtifactRoots: "once-ignored" });
   const result = await gitProjectActions.execute(f.cwd, "cleanup", f.payload, {
-    isDirectoryInUse: () => false, reserveDirectory: () => () => {}, prepareReview: preparePluginReview,
+    isDirectoryInUse: () => false, reserveDirectory: () => () => {}, saveOperationReview,
     operationReceipt: () => {}, pluginCard: async () => { writeFileSync(exclude, ""); return "approve"; },
   }, new AbortController().signal, () => {});
   assert.equal(result.isError, true); assert.equal(result.details.effectStarted, false);
@@ -85,7 +85,7 @@ test("browser revalidation refuses artifacts becoming unignored through info/exc
   // The trusted browser restriction must not remove tool explicit-root support.
   const { executeGitOperation } = await jiti.import("./server.ts");
   const tool = await executeGitOperation(f.cwd, { ...f.payload, action: "cleanupFeature", checkout: f.cwd, artifactRoots: ["once-ignored"] }, {
-    isDirectoryInUse: () => false, reserveDirectory: () => () => {}, prepareReview: preparePluginReview,
+    isDirectoryInUse: () => false, reserveDirectory: () => () => {}, saveOperationReview,
     operationReceipt: () => {}, pluginCard: () => assert.fail("Permitted Allow tool cleanup remains policy-authorized"),
   });
   assert.notEqual(tool.isError, true, tool.content[0].text); assert.equal(existsSync(f.path), false);
@@ -95,7 +95,7 @@ test("transient terminal receipt failure retains exact review and cancelled/fail
     const f = fixture(st); const receipts = []; let failed = false, ref;
     const controller = new AbortController();
     const result = await gitProjectActions.execute(f.cwd, "cleanup", f.payload, {
-      isDirectoryInUse: () => false, reserveDirectory: () => () => {}, prepareReview: preparePluginReview,
+      isDirectoryInUse: () => false, reserveDirectory: () => () => {}, saveOperationReview,
       operationReceipt: (_id, receipt) => {
         if (["cancelled", "failed"].includes(receipt.phase) && !failed) { failed = true; throw new Error("fixture transient terminal failure"); }
         receipts.push(structuredClone(receipt));
@@ -109,7 +109,8 @@ test("transient terminal receipt failure retains exact review and cancelled/fail
     }, controller.signal, () => {});
     assert.equal(result.isError, true); assert.equal(failed, true);
     assert.equal(receipts.at(-1).phase, decision === "stale" ? "failed" : "cancelled");
-    assert.deepEqual(receipts.at(-1).card.review, ref); await reviewManifest(ref, "git-workflow"); assert.ok(existsSync(f.path));
+    const settlement = reviewMetadata(receipts.at(-1).card.review);
+    assert.deepEqual(settlement.proposal, ref); assert.equal(settlement.outcome.phase, receipts.at(-1).phase); assert.ok(existsSync(f.path));
   });
 });
 test("Ask/Allow adapter preparation always has zero effects, including artifact-free and allowlisted cleanup", async (t) => {
@@ -117,7 +118,7 @@ test("Ask/Allow adapter preparation always has zero effects, including artifact-
     const f = fixture(st, mode, ignored), ready = deferred(), answer = deferred(); let card; const receipts = [];
     const controller = new AbortController(); f.releases.push(() => answer.resolve("reject"));
     const execution = f.own(gitProjectActions.execute(f.cwd, "cleanup", f.payload, {
-      isDirectoryInUse: () => false, reserveDirectory: () => () => {}, prepareReview: preparePluginReview,
+      isDirectoryInUse: () => false, reserveDirectory: () => () => {}, saveOperationReview,
       operationReceipt: (_id, receipt) => receipts.push(structuredClone(receipt)),
       pluginCard: async (_id, value) => { card = value; ready.resolve(); return answer.promise; },
     }, controller.signal, () => {}), controller);
@@ -145,7 +146,18 @@ test("idempotent prepare, single-use decisions, operation review and successful 
   updatePluginSettings(gitWorkflowManifest, "global", f.cwd, { enabled: false }, []);
   assert.equal((await getProjectOperation("git-workflow", first.id)).state, "succeeded");
   assert.equal((await listProjectOperations("git-workflow", f.cwd))[0].id, first.id);
-  const ref = await projectOperationReview("git-workflow", first.id, review.receipt.card.review.id); await reviewManifest(ref, "git-workflow");
+  const ref = await projectOperationReview("git-workflow", first.id, result.receipt.card.review.id);
+  assert.equal(ref.version, 2);
+  const record = JSON.parse(readFileSync(join(f.root, "agent/brabbler/project-operations", `${first.id}.json`), "utf8"));
+  assert.notEqual(record.id, record.receipt.operationId, "host/request and native receipt IDs are distinct");
+  assert.equal(record.reviewMetadata.length, 2);
+  const proposal = record.reviewMetadata.find(item => item.payload.kind === "proposal");
+  const settlement = record.reviewMetadata.find(item => item.id === ref.id);
+  assert.deepEqual(settlement.payload.proposal, review.receipt.card.review);
+  assert.equal(proposal.operationId, record.receipt.operationId);
+  assert.equal(Object.hasOwn(result, "reviewMetadata"), false);
+  assert.equal(Object.hasOwn((await listProjectOperations("git-workflow", f.cwd))[0], "reviewMetadata"), false);
+  assert.equal(existsSync(join(f.root, "agent/brabbler/reviews")), false, "new operations create no patch archive");
   assert.equal((await getProjectOperation("git-workflow", first.id)).card, undefined);
 });
 test("idle chats warn but do not block; managed starting/running sessions and terminals remain protected", async (t) => {

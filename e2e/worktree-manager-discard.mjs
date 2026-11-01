@@ -154,10 +154,10 @@ export async function checkManagerDiscard(page, { base, fixture, manager, open, 
   const nativeOperationId = saved.receipt.operationId;
   assert.match(nativeOperationId, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   assert.equal(saved.receipt.card.operationId, nativeOperationId, "native card and receipt share their own operation ID");
-  assert.equal(savedReview.version, 1); assert.equal(savedReview.operationId, nativeOperationId);
+  assert.equal(savedReview.version, 2); assert.equal(savedReview.operationId, nativeOperationId);
   assert.match(savedReview.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-  assert.equal(Number.isSafeInteger(savedReview.bytes) && savedReview.bytes > 0, true);
-  const expectedDownload = new URL(`${ACTIONS}/${fresh.id}/reviews/${savedReview.id}?download=1`, base);
+  assert.equal(Object.hasOwn(savedReview, "bytes"), false, "metadata reference carries no archive size");
+  const expectedDownload = new URL(`${ACTIONS}/${fresh.id}/reviews/${savedReview.id}?op=details&download=1`, base);
   assert.equal(existsSync(f.combined), false); assert.equal(branchTip(f.combinedBranch), "");
   assert.ok(!registrations().includes(`worktree ${f.combined}\n`));
   assert.equal(existsSync(join(dirty, "manual.txt")), true);
@@ -188,16 +188,19 @@ export async function checkManagerDiscard(page, { base, fixture, manager, open, 
   assert.deepEqual(historical.acknowledgment, saved.acknowledgment);
   assert.equal(historical.card, undefined); assert.equal(historical.receipt.card.requiredAcknowledgment, LOSS);
   assert.equal(historical.receipt.card.actions.length, 0);
-  const link = surface.getByRole("link", { name: "Download complete exact review", exact: true }); await link.waitFor();
+  await surface.getByText("Operation metadata and complete resource details", { exact: true }).click();
+  const link = surface.getByRole("link", { name: "Download complete operation metadata", exact: true }); await link.waitFor();
   const renderedDownload = new URL(await link.getAttribute("href"), base);
   assert.equal(renderedDownload.origin, expectedDownload.origin, "review link stays on the installed origin");
   assert.equal(renderedDownload.pathname, expectedDownload.pathname, "review link owns the approved operation AND saved review ID");
-  assert.equal(renderedDownload.search, "?download=1", "complete review, no duplicate/entry/patch query");
+  assert.equal(renderedDownload.search, "?op=details&download=1", "complete owned metadata, not a patch archive");
   assert.equal(renderedDownload.hash, ""); assert.equal(renderedDownload.username, ""); assert.equal(renderedDownload.password, "");
   // Identity is checked BEFORE consuming the real browser response. This is
   // complete text-body proof, not rendered Pierre or an OS download event.
   const complete = await readBrowserResponse(page, renderedDownload.href);
-  assert.equal(Buffer.byteLength(complete, "utf8"), savedReview.bytes, "complete owned native review byte length");
+  const metadata = JSON.parse(complete);
+  assert.equal(metadata.proposal.operation.action, "discardResources");
+  assert.equal(metadata.settlement.proposal.operationId, nativeOperationId, "metadata links the native operation, not the host/request ID");
   assert.ok(complete.includes(f.unmergedTip), "immutable exact review survives native ref/path deletion");
   await refreshActual();
 }

@@ -269,20 +269,20 @@ retire old tests or constitute full candidate acceptance.
   native body/finished/raw/e32/ACK/removal ownership; the inert agent reply remains
   controlled, not native SDK-write authority. Node body/ACK settlement is not the
   browser hook's hidden promise or a universal idle signal.
-- `PluginCard.preview-cleanup.test.mjs` drives the actual default card/attachment/
-  stack/Pierre chain for both original reader data tuples: retained per-file model,
-  real renderer destruction/recreation, version/query/position, collapse and lazy
-  serialized-parent remount/409/current response. Deliver the application's two
-  navigation frames and Pierre's admitted render frame; jsdom's scroll shim also
-  needs the actual post-render DOM scroll notification, not a copied anchor.
-  A held transport/loader-finally is not an already-admitted JSON body. Abort and
-  action ACKs can settle before that loader; observe an actual future JSON error
-  before its catch only if consumption really occurs. Both cold installed readers,
-  opaque/native subjects, mobile/history and physical Download remain distinct.
-  Mobile's controlled before-image is desktop's Allow1280 payload, not baseline
-  text; keep its actual shared native HEAD/tree and both original inline drawer
-  selection/close ceremonies. Shared Pierre is warm; content/state rows are not
-  viewport geometry or a new mobile exceptional-work execution.
+- `PluginCard.preview-cleanup.test.mjs` now drives the actual v2 card/attachment/
+  file-browser/Pierre composition, with no temporary attachment alias. Both original
+  reader tuples retain renderer destruction/recreation, version/query/position,
+  collapse, serialized remount/409/current responses and real historical parents.
+  Paged selection releases content/context; restored reading intent reloads only
+  that immutable selected file. Deliver the application's navigation frames and
+  Pierre's admitted render frame plus the actual scroll notification, not a copied
+  anchor. Original preload/read/body/error/action promises remain joined. Close
+  transport admission before unmount, but permit synchronous renderer teardown
+  frames until unmount completes; then cancel queued frames before realm restore.
+  Cold installed/native subjects, mobile/history and physical Download remain
+  distinct. Mobile's before-image is desktop Allow1280, not baseline text. P3's
+  [assertion dispositions](../tools/migrations/git-operation-reviews/README.md)
+  record obsolete aggregate/TTL-specific assertions and continuing replacements.
 - The opt-in default-chat/navigation composition reuses ONE guarded Jiti graph,
   DOM, transport and complete existing default owners. Pass the actual navigation
   binding and numeric key; never copy a creation/key policy or replay a supplied
@@ -290,12 +290,20 @@ retire old tests or constitute full candidate acceptance.
   release all domain peers before joins, and keep unknown failures fatal. Check
   actual callback adoption before success-dependent readiness; a stream that a
   broken callback cannot admit must not become an unbounded test waiter.
-- Large-review pagination uses the real public Card/review/picker with the
-  original 46-entry boundary and new-versus-modified content rows. Declare only
-  required page/entry capabilities; join the actual selected-entry continuation.
-  Retiring page switching does not retire native cold bodies, fullscreen,
-  approvals or 45-file effects. Keep Allow reloads as native persisted-default-UI
-  evidence rather than constructing another migration merely to remove them.
+- `PluginCard.supplied-context.test.mjs` separately preserves the continuing real
+  non-Git supplied-patch Card/Stack/Pierre/default context queue. Its optional exact
+  opaque HTTP capability can hold an already-entered JSON body across abort. A
+  passive wrapper around the real factory independently tracks the SAME complete
+  worker/finally; parent forwarding remains separately asserted. Public Abort and
+  action settlement do not certify worker/body settlement. Native preload and
+  queue originals join before realm restoration, including failed assertions.
+  V2's direct reader does not replace this generic composition contract.
+- Large-review pagination uses the real public v2 Card/review/picker with the
+  same 45-file new-versus-modified content rows and page-40 boundary; metadata is
+  no longer a 46th file. Declare only required page/file capabilities and join the
+  actual selected-file continuation. Native cold bodies, fullscreen, approvals
+  and 45-file effects remain. Keep Allow reloads as native persisted-default-UI
+  evidence, not another migration.
 - Historical Decision and Operation outcome wrappers forward the existing passive
   `onReadWork` observer unchanged to their actual child. Absent adds no handlers,
   requests, timers or policy. Test the real wrapper, its lazy/serialized source,

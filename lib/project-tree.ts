@@ -9,6 +9,8 @@ type ProjectableEntry = {
   id: string;
   type: string;
   message?: unknown;
+  customType?: string;
+  data?: unknown;
 };
 
 /** Wire format for `tree=summary`: navigation structure without any body. */
@@ -164,10 +166,14 @@ export function projectTreeForResponse<T extends ProjectableTreeNode<T>>(
   }
 
   const cloneNode = (node: T, compressedEntryIds?: string[], branchPreview?: BranchPreview): T => {
-    const message = node.entry.type === "message" ? withoutMessageSignatures(node.entry.message) : node.entry.message;
+    // Navigation keeps every needed identity/edge, never the private review body.
+    // Do not mutate the SDK tree: copying and authorized review reads still need it.
+    const entry = node.entry.type === "custom" && node.entry.customType === "brabbler:operation-review"
+      ? { ...node.entry, data: undefined } : node.entry;
+    const message = entry.type === "message" ? withoutMessageSignatures(entry.message) : entry.message;
     return {
       ...node,
-      entry: message === node.entry.message ? node.entry : { ...node.entry, message },
+      entry: message === entry.message ? entry : { ...entry, message },
       children: [],
       ...(compressedEntryIds?.length ? { compressedEntryIds } : {}),
       ...(branchPreview ? { branchPreview } : {}),

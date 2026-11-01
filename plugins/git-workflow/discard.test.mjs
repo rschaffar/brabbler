@@ -13,7 +13,7 @@ const { captureBrowserDiscard, performBrowserDiscard, createCleanupBudget } = aw
 const { browserDiscardOperation } = await jiti.import("./discard.ts");
 const { gitWorkflowManifest: manifest } = await jiti.import("./manifest.ts");
 const { updatePluginSettings, readPluginSettings } = await jiti.import("../../lib/plugins/settings.ts");
-const { preparePluginReview } = await jiti.import("../../lib/plugins/review-store.ts");
+import { saveOperationReview } from "./review-host.fixture.mjs";
 const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, "-c", "commit.gpgSign=false", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 function fixture(t, kind = "not-integrated") {
   const root = mkdtempSync(join(tmpdir(), "pi-browser-discard-test-"));
@@ -37,7 +37,7 @@ function fixture(t, kind = "not-integrated") {
   const payload = { subject: kind === "detached" ? { kind: "detached", head: tip } : { kind: "branch", branch: "feature", tip },
     worktreePath: path, removeWorktree: true, deleteBranch: kind !== "detached", comparisonTarget: { branch: "main", tip: mainTip } };
   const cards = [], receipts = []; let releases = 0;
-  const ui = { prepareReview: preparePluginReview, isDirectoryInUse: () => false, reserveDirectory: () => () => { releases++; },
+  const ui = { saveOperationReview, isDirectoryInUse: () => false, reserveDirectory: () => () => { releases++; },
     operationReceipt: (_id, receipt) => receipts.push(structuredClone(receipt)),
     // A trusted host mock supplies final confirmation. Actual affirmative checkbox
     // binding/persistence is tested by the generic project-host tests, not by JSON.

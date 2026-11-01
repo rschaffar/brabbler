@@ -82,7 +82,7 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
     if (!loadContext) return Promise.reject(new Error("Full-file context is unavailable for this supplied patch."));
     const request = new AbortController(); controller.current = request;
     setLoading(true); setContextError(null);
-    const promise = Promise.resolve().then(() => loadContext(request.signal)).then((context) => {
+    const promise = Promise.resolve().then(() => { request.signal.throwIfAborted(); return loadContext(request.signal); }).then((context) => {
       if (request.signal.aborted) throw new DOMException("Aborted", "AbortError");
       validateReviewContext(model, context);
       model.context = context;
@@ -99,6 +99,15 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
     observeRead(promise);
     return promise;
   }, [loadContext, model, refresh, observeRead]);
+  // A paged reader may restore only lightweight position/version state after
+  // releasing content. Reload context for THIS selected file's prior intent;
+  // never borrow a different file/view's contents or eagerly read other files.
+  const restoreContext = !model.context && (model.full || model.reading !== "diff");
+  useEffect(() => {
+    if (!restoreContext || !loadContext) return;
+    const work = ensureContext().catch(() => {}); // Existing context error UI owns failure.
+    observeRead(work);
+  }, [restoreContext, loadContext, ensureContext, observeRead]);
   const loader = useCallback<FileDiffContentsLoader>(async () => {
     const context = await ensureContext();
     if (file?.type === "rename-pure" && context.newFile) return { oldFile: null, newFile: context.newFile };
@@ -187,7 +196,10 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
   [file, diffVersion, model.reading, contextFile]);
   const canContext = !hasBinaryChanges && Boolean(file && (loadContext || model.context));
   const interactive = Boolean(file?.hunks.length && !fallback && !hasBinaryChanges);
-  const visibleView = model.reading !== "diff" ? model.reading : interactive && ready ? view : "raw";
+  const awaitingCleanContext = model.reading !== "diff" && !model.context;
+  // Restored clean-version intent is not evidence of an absent side. Keep the
+  // exact patch accessible until matching context succeeds (including retry).
+  const visibleView = awaitingCleanContext ? "raw" : model.reading !== "diff" ? model.reading : interactive && ready ? view : "raw";
   const searchFile = model.reading === "before" || model.reading === "diff" && searchSide === "deletions"
     ? model.context?.oldFile : model.context?.newFile;
   const matches = matchingLines(searchFile?.contents ?? "", model.query);
@@ -279,7 +291,10 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
         <button type="button" className="git-diff-control" disabled={!line || loading || visibleView === "raw"} onClick={() => observeRead(jump())}>Go to line</button>
       </form>}
     </div>
-    {loading && <p role="status" className="px-3 py-2 text-xs text-text-muted">Loading matching full-file context…</p>}
+    {(loading || awaitingCleanContext && loadContext && !contextError) && <p role="status" className="px-3 py-2 text-xs text-text-muted">Loading matching full-file context…</p>}
+    {awaitingCleanContext && <p role="status" className="px-3 py-2 text-xs text-text-muted">
+      {contextError || !loadContext ? "Full-file context unavailable" : "Restoring file version"}; showing the unchanged patch until the {model.reading} version is available.
+    </p>}
     {contextError && <p role="alert" className="px-3 py-2 text-xs text-text-muted">{contextError} <button type="button" className="text-accent underline" onClick={() => observeRead(ensureContext().catch(() => {}))}>Retry context</button>
       {onRefresh && <button type="button" className="ml-2 text-accent underline" onClick={onRefresh}>Refresh diff</button>}</p>}
     {navigationError && <p role="status" className="px-3 py-2 text-xs text-text-muted">{navigationError}</p>}
@@ -294,7 +309,7 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
             : <span>{model.reading === "before" ? `Before · ${before}` : model.reading === "after" ? `After · ${after}` : `${before} → ${after}`}</span>}
         </div>
         {model.reading === "diff" && file?.hunks[0]?.hunkSpecs && <div aria-label="Patch hunk" className="px-2 py-1 font-mono text-xs text-text-muted">{file.hunks[0].hunkSpecs.trim()}</div>}
-        {model.reading !== "diff" && !contextFile ? <p className="p-3 text-xs text-text-muted">This file does not exist in the {model.reading} version.</p>
+        {model.reading !== "diff" && contextFile === null ? <p className="p-3 text-xs text-text-muted">This file does not exist in the {model.reading} version.</p>
           : model.reading !== "diff" && contextFile?.contents === "" ? <p className="p-3 text-xs text-text-muted">Empty file.</p>
             : <CodeView key={model.reading} ref={viewer} containerRef={viewport} items={items} options={options} onScroll={rememberPosition}
               className={`git-diff-code-view${model.reading === "diff" && view === "split" ? " is-split" : ""}`} style={{ height: wide ? "65vh" : Math.min(420, Math.max(100, readingRows * 22 + 32)) }} />}
