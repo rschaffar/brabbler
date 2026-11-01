@@ -1,10 +1,13 @@
 # Offline Git operation review conversion
 
 The temporary tool is `tools/migrations/git-operation-reviews/cli.mjs`. It is not
-shipped with Brabbler, loaded by the application, or run by a review GET. Retain
-this source revision and its lockfile through operational verification. Record the
-actual tested tool-containing revision before retiring the tool; no live cutover
-or retirement is claimed here.
+shipped with Brabbler, loaded by the application, or run by a review GET. The tested
+tool-containing revision is `61f1f60d7befd8cff60dfc0a597d0b863f50bd60`; retain it and
+its lockfile through operational verification. Its actual tool/helper identity
+`bfcd74fc8dc85c4adf7f19aee9d9b0b249eda1420e8cc451ec5582939c618d10`
+(Node 24.21.0 / SDK 1.4.0) matches the independently reviewed all-mode private-copy
+rehearsal. Complete application acceptance also passed at that revision. No live
+cutover or tool retirement is claimed here.
 
 ## Supported boundary
 

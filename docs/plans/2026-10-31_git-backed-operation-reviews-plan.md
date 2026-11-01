@@ -12,13 +12,15 @@ bounded-state and generic supplied-context lifecycle repairs. Legacy codec/tests
 are isolated outside application inputs. P4 implements the isolated converter;
 130 focused native/SDK/filesystem tests and a fresh source-bound, all-mode private-copy
 rehearsal pass. Both independent P4 re-reviews close the adapter, durability,
-physical-alias, code-identity and failure-reporting findings. Complete settled-candidate
-acceptance remains open. Live migration, activation and old-state deletion require
-separate authorization.
+physical-alias, code-identity and failure-reporting findings. Complete acceptance
+passes at `61f1f60d`: core/static/plugin, all browser/terminal groups and genuine
+Home Manager deployment VM. Local integration is pending exact-state approval;
+live migration, activation and old-state deletion require separate authorization.
 
 **Workspace:** `feat/git-backed-operation-reviews`, created from local `main`
 `fed9415359e3867a3c9bdd25801034d6e5c820ee`; reviewed planning commit `ee32fb3f`.
-Retain this linked worktree while the implementation packages are incomplete.
+Retain this linked worktree through converter operational verification; integration
+and eventual feature-resource cleanup remain separate exact-state decisions.
 
 ## Executive summary
 
@@ -710,10 +712,36 @@ failures stay in private evidence, not repository data. This unquiesced copy is 
 a live-consistency proof. No original state, saved real checkout, credential store,
 reserved archive, service or foreign repository was accessed by the converter.
 
+Complete fresh acceptance passed on committed candidate
+`61f1f60d7befd8cff60dfc0a597d0b863f50bd60` with
+`nix run .#test -- all --workers 2 --jobs 4` on x86_64 Linux / Node 24.21.0.
+The 32-CPU host had about 14 GiB available, below the four-browser 18 GiB minimum;
+requested/effective core width was **4/4**, browser **2/2**, and levels serialized.
+All **523 core files / 4,373 tests / 14 suites**, **26 browser/terminal groups /
+58 coverage markers**, and **5 genuine deployment checks** passed. Core had zero
+failures, cancellations or skips. Declared-input cached typegen/typecheck/lint
+passed with seven nonfatal lint warnings; exporter contracts passed 33 cases.
+Browser and VM used the same installed package, which excludes the temporary tool,
+legacy runtime store and old Git-only context while retaining generic context.
+
+End-to-end command wall was **964.277 s**, including in-run realization. Core was
+379.782 s (2.788 s before-first-file envelope; 376.576 s test-file window).
+Browser was 466.470 s, including 84.428 s support preparation and 4.679 s manifest
+preparation; its capsule window was 376.897 s including startup/fixtures/settlement.
+Deployment was 107.657 s including an 18.341 s guest acceptance interval; its report
+does not expose a separate realization interval. Model/review time is excluded;
+these are not warm-prerequisite benchmark comparisons. The exact outer source
+identity is `aa361d6684792da2ffe9adcb5a060badb020c1b7e40b7aeab9c6bec1aeb93100`,
+inner core identity `b47bef68e95d0b514004183abb48a60c672ea0bebb8a7ad0cbbc385834bb3a78`.
+Immutable reports and source-bound timing/settlement evidence remain private.
+Subsequent evidence-only documentation edits do not claim a new full-matrix run.
+
 [Migration/recovery instructions](../git-operation-review-migration.md) own the CLI,
 permissions, unknown/unavailable semantics and limits. Record the actual tested
-tool-containing Git revision before retirement. Independent source/safety re-review
-is closed; full acceptance, operational cutover and retirement remain open.
+tool-containing Git revision before retirement. The committed tool/helper identity
+matches the reviewed all-mode rehearsal. Independent source/safety re-review and
+complete acceptance are closed; integration, operational cutover and retirement
+remain open.
 
 ## Implementation packages
 
@@ -804,8 +832,9 @@ large-patch admission limits. Return for a bounded design decision if these fail
   authorized private copy and report classifications without tracking private data.
 - [x] Complete independent source/safety review; both re-reviews close the concrete
   adapter and I/O/durability/code-identity/reporting findings on the frozen repairs.
-- [ ] Complete the required acceptance matrix below on the settled candidate.
-  Preserve failures and exact input identities.
+- [x] Complete the required acceptance matrix on `61f1f60d`: fresh complete core,
+  all browser/terminal groups and genuine deployment VM pass as recorded above.
+  Preserve earlier failures separately and retain exact input/settlement identities.
 
 ### P5 — Separately authorized operational handoff and retirement
 
@@ -959,7 +988,8 @@ permission was added. Both reviewers approved the revised plan on a second pass,
 with no remaining material plan blockers in their scopes. Final checks cover local
 Markdown target existence, whitespace and public-safety inspection; links were not
 browser-tested. Only the executive summary and planning-status text were polished
-after that approval. Implementation and operational checks remain unchecked.
+after that approval. At that planning handoff, implementation and operational
+acceptance were not yet claimed; the current package/checklist states are below.
 
 ## Completion checklist
 
@@ -975,15 +1005,18 @@ after that approval. Implementation and operational checks remain unchecked.
   passed; retain the branch/worktree for the planning handoff. These are source
   checks, not browser or application acceptance.
 
-### Implementation / operational completion (not claimed by this planning task)
+### Implementation / operational completion
 
-- [ ] New ADR and maintained guides accurately describe object-backed history,
+Checked implementation items certify the settled source, not activation of the
+running service; operational gates remain open below.
+
+- [x] New ADR and maintained guides accurately describe object-backed history,
   unavailable states, actual-result/proposal UI and backup/retention expectations.
-- [ ] New session/standalone records, readers and existing file viewer work without
+- [x] New session/standalone records, readers and existing file viewer work without
   permanent patch content; exact-state and authorization protections remain intact.
-- [ ] Retired production store paths have no remaining runtime dependencies; all
+- [x] Retired production store paths have no remaining runtime dependencies; all
   continuing test obligations have explicit passing replacements.
-- [ ] Converter passes native synthetic faults/rehearsal; complete application
+- [x] Converter passes native synthetic faults/rehearsal; complete application
   acceptance and independent source review pass on the resulting candidate.
 - [ ] Separately authorized real conversion/activation and representative history
   verification are accepted, or operational handoff remains explicitly open.
