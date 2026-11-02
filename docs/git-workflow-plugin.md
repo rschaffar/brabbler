@@ -198,6 +198,15 @@ registration and captured physical identity/state are rechecked before effects.
   Removal never deletes a branch and refuses main/caller/source checkouts
   (including a caller cwd below that checkout's root), dirty/untracked or ignored
   content. This tool has no force removal or implicit post-merge cleanup.
+  Its provider-facing parameters use a single object root: Copilot's Argon
+  endpoint rejects the former root union. `branch` and `baseBranch` are optional
+  in that declaration but required strings for create/attach at execution, before
+  Git dispatch, approval or operation-receipt admission. Removal ignores string
+  branch/base extras and forwards only its own action, checkout and path. The SDK
+  still validates declared field types and normalizes optional nulls; unlike the
+  former removal alternative's unchecked extras, non-coercible branch/base extras
+  are now rejected. This compatibility shape does not relax native Git checks or
+  selected-repository permissions, and is not a claim about every Gemini endpoint.
 - `git_cleanup`: explicit `checkout`, `featureBranch`, full `featureTip` and
   `integrationCommit`, optional invocation `targetBranch` and `worktreePath`,
   explicit `removeWorktree` / `deleteBranch` booleans and `artifactRoots` array of

@@ -8,9 +8,10 @@ import { join } from "node:path";
 import test from "node:test";
 import { createJiti } from "jiti";
 import { createAgentSessionServices, createAgentSessionFromServices, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { getCurrentTools, InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import { getCurrentTools, InMemoryCredentialStore, normalizeContext } from "@earendil-works/pi-ai";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
 import { fauxProvider, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-const jiti = createJiti(import.meta.url);
+const jiti = createJiti(import.meta.url, { fsCache: false });
 const { gitWorkflowPlugin } = await jiti.import("./index.ts");
 const { bundledPluginExtensions } = await jiti.import("../../lib/plugins/registry.ts");
 const { AgentSessionWrapper } = await jiti.import("../../lib/rpc-manager.ts");
@@ -160,6 +161,10 @@ test("real model-issued Git tools select repositories independently of Git and n
     assert.equal(existsSync(linked), false); assert.equal(git(selected, "rev-parse", "refs/heads/feature"), featureTip);
     await invoke("git_worktree", { action: "attachWorktree", checkout: selected, branch: "feature", baseBranch: "feature", path: linked });
     assert.equal(git(linked, "rev-parse", "HEAD"), featureTip);
+    await invoke("git_worktree", { action: "removeWorktree", checkout: selected, path: linked, branch: "irrelevant", baseBranch: "not-a-base" });
+    assert.equal(existsSync(linked), false);
+    assert.equal(existsSync(join(`${selected}-worktrees`, "irrelevant")), false);
+    assert.equal(git(selected, "rev-parse", "refs/heads/feature"), featureTip);
     updatePluginSettings(gitWorkflowPlugin.manifest, "global", undefined, { enabled: false }, []);
     assert.equal(session.getActiveToolNames().some((name) => name.startsWith("git_")), false);
     updatePluginSettings(gitWorkflowPlugin.manifest, "global", undefined, { enabled: true }, []);
@@ -172,6 +177,119 @@ test("real model-issued Git tools select repositories independently of Git and n
     if (kind === "git") { assert.equal(git(callerCwd, "rev-parse", "HEAD"), callerHead); assert.equal(git(callerCwd, "status", "--porcelain"), ""); }
     else assert.equal(existsSync(join(callerCwd, ".git")), false);
   });
+});
+
+test("registered worktree schema is Copilot-compatible and incomplete actions stop before Git admission", async t => {
+  // Same private native/settings ownership as this file's other serial cases.
+  // Payload capture proves the pinned adapter's output, not remote acceptance.
+  const root = mkdtempSync(join(tmpdir(), "pi-worktree-schema-")), agentDir = join(root, "agent");
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  let session, promptWork, fetchCalls = 0;
+  const unexpected = [], approvals = [], receipts = [];
+  t.after(async () => {
+    const failures = [];
+    try { await promptWork; } catch (error) { failures.push(error); }
+    let settled = false;
+    try { if (session) await disposeSession(session); settled = true; } catch (error) { failures.push(error); }
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous;
+    if (settled) rmSync(root, { recursive: true, force: true });
+    try {
+      assert.deepEqual(unexpected, [], "fixture failures must not become expected tool errors");
+      assert.equal(fetchCalls, 0, "no provider transport was admitted");
+      assert.equal(approvals.length, 0, "invalid requests must not reach approval");
+      assert.equal(receipts.length, 0, "invalid requests must not admit operation receipts");
+    } catch (error) { failures.push(error); }
+    if (failures.length) throw new AggregateError(failures, "Worktree schema fixture cleanup/failures");
+  });
+  const git = (...args) => execFileSync("git", ["-C", root, "-c", "commit.gpgSign=false", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  git("init", "-qb", "main"); git("config", "user.name", "Test"); git("config", "user.email", "test@example.invalid");
+  writeFileSync(join(root, "source"), "base\n"); git("add", "source"); git("commit", "-qm", "Base");
+  // An existing attach target makes a missing-field test independent of a
+  // downstream "unknown branch" failure. No worktree effects are authorized.
+  git("branch", "existing");
+  updatePluginSettings(gitWorkflowPlugin.manifest, "global", root, {
+    enabled: true, createWorktree: "ask", attachWorktree: "ask", removeWorktree: "ask",
+  }, []);
+  const faux = fauxProvider({ provider: "worktree-schema-fixture", api: "worktree-schema-fixture" });
+  const modelRuntime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, allowModelNetwork: false });
+  const services = await createAgentSessionServices({ cwd: root, agentDir, modelRuntime,
+    settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false }, cacheWarming: "off" }),
+    resourceLoaderOptions: { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+      extensionFactories: [(pi) => pi.registerProvider(faux.provider), gitWorkflowPlugin.extension(root)] } });
+  const manager = SessionManager.inMemory(root);
+  ({ session } = await createAgentSessionFromServices({ services, model: faux.getModel(), thinkingLevel: "off", sessionManager: manager }));
+  session.subscribe(event => {
+    if (event.type === "message_end" && event.message.role === "assistant" && event.message.stopReason === "error") unexpected.push(event.message.errorMessage);
+  });
+  await session.bindExtensions({ mode: "rpc", uiContext: {
+    notify() {},
+    pluginCard: async () => { approvals.push(true); return "cancel"; },
+    operationReceipt: (_pluginId, receipt) => { receipts.push(receipt); },
+  } });
+  let declarations;
+  faux.setResponses([(context) => {
+    declarations = getCurrentTools(context.messages);
+    return fauxAssistantMessage("Ready.");
+  }]);
+  promptWork = session.prompt("Declare the available tools without calling them.");
+  await promptWork;
+  const gitTools = declarations.filter(tool => tool.name.startsWith("git_"));
+  assert.deepEqual(gitTools.map(tool => tool.name).sort(), ["git_cleanup", "git_commit", "git_merge", "git_policy", "git_rebase", "git_worktree"]);
+
+  await t.test("actual Copilot OpenAI-completions payload has an object-root worktree schema", async () => {
+    const model = modelRuntime.getModel("github-copilot", "gemini-4-argon");
+    assert.ok(model);
+    let payload;
+    const result = await openAICompletionsApi().streamSimple(model, normalizeContext({
+      messages: [{ role: "user", content: "Reply with OK only.", timestamp: 1 }], tools: gitTools,
+    }), {
+      apiKey: "synthetic-not-a-real-key", env: {}, reasoning: "high", maxTokens: 32, maxRetries: 0,
+      fetch: async () => { fetchCalls++; throw new Error("Unexpected provider transport"); },
+      onPayload(body) { payload = structuredClone(body); throw new Error("fixture-stop-before-http"); },
+    }).result();
+    assert.equal(result.stopReason, "error"); assert.equal(result.errorMessage, "fixture-stop-before-http");
+    assert.equal(fetchCalls, 0);
+    assert.ok(payload);
+    assert.deepEqual(payload.tools.map(tool => tool.function.name).sort(), gitTools.map(tool => tool.name).sort());
+    const schema = payload.tools.find(tool => tool.function.name === "git_worktree").function.parameters;
+    assert.equal(schema.type, "object", "worktree parameters must have an object root");
+    for (const keyword of ["anyOf", "oneOf", "allOf"]) assert.equal(Object.hasOwn(schema, keyword), false, `no root ${keyword}`);
+    assert.deepEqual([...schema.required].sort(), ["action", "checkout", "path"]);
+    assert.deepEqual(schema.properties.action.anyOf.map(option => option.const).sort(), ["attachWorktree", "createWorktree", "removeWorktree"]);
+    for (const field of ["checkout", "path", "branch", "baseBranch"]) assert.equal(schema.properties[field].type, "string");
+  });
+
+  const before = { refs: git("show-ref"), worktrees: git("worktree", "list", "--porcelain") };
+  let calls = 0;
+  const invalid = async (label, args, expected) => t.test(label, async () => {
+    const id = `invalid-worktree-${++calls}`;
+    faux.setResponses([fauxAssistantMessage([fauxToolCall("git_worktree", args, { id })], { stopReason: "toolUse" }), fauxAssistantMessage("Done.")]);
+    promptWork = session.prompt("Check the supplied worktree request.");
+    await promptWork;
+    const result = session.messages.find(message => message.role === "toolResult" && message.toolCallId === id);
+    assert.ok(result, "SDK returns a tool result for the invalid request");
+    assert.equal(result.isError, true);
+    assert.match(result.content.filter(block => block.type === "text").map(block => block.text).join("\n"), expected, "plugin-owned validation must reject before downstream Git preflight");
+    assert.deepEqual(approvals, []); assert.deepEqual(receipts, []);
+    assert.equal(manager.getEntries().some(entry => entry.customType === "brabbler:operation-receipt"), false);
+    assert.equal(git("show-ref"), before.refs); assert.equal(git("worktree", "list", "--porcelain"), before.worktrees);
+    assert.equal(existsSync(`${root}-worktrees`), false, "invalid requests cannot create a destination parent");
+  });
+  for (const action of ["createWorktree", "attachWorktree"]) {
+    const args = { action, checkout: root, path: join(`${root}-worktrees`, "candidate"), branch: "existing", baseBranch: "existing" };
+    for (const field of ["branch", "baseBranch"]) {
+      const omitted = { ...args }; delete omitted[field];
+      const expected = new RegExp(`${action} requires a string ${field}`);
+      await invalid(`${action}: omitted ${field}`, omitted, expected);
+      await invalid(`${action}: null ${field}`, { ...args, [field]: null }, expected);
+    }
+  }
+  const removal = { action: "removeWorktree", checkout: root, path: join(`${root}-worktrees`, "candidate") };
+  for (const [field, value] of [["action", "discard"], ["checkout", {}], ["path", []], ["branch", {}], ["baseBranch", []]]) {
+    await invalid(`SDK rejects non-coercible/invalid ${field}`, { ...removal, [field]: value }, /Validation failed for tool/);
+  }
+  assert.equal(faux.state.callCount, 1 + calls * 2, "every faux turn is accounted for");
 });
 
 test("real SDK continuation and live history quarantine a failed terminal tail after memory mutation", async t => {

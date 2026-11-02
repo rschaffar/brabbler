@@ -3,7 +3,7 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { createPluginExtension } from "../../lib/plugins/runtime";
 import type { BundledPlugin, PluginUiContext } from "../../lib/plugins/types";
 import { gitWorkflowManifest } from "./manifest";
-import { executeGitOperation } from "./server";
+import { executeGitOperation, type GitOperation } from "./server";
 import { gitReviewProvider } from "./review-provider";
 import { gitPolicy, gitPolicyGuidance } from "./policy";
 import { gitProjectActions } from "./project-management";
@@ -43,11 +43,27 @@ export const gitWorkflowPlugin: BundledPlugin = {
     const worktree = defineTool({
       name: "git_worktree", label: "Git worktree", executionMode: "sequential",
       description: "Explicitly create, attach or remove a worktree in the selected checkout's repository, independently of the session cwd. Create/attach require a local base branch; attach uses that same existing branch. Destination is directly under <main-checkout>-worktrees. Removal refuses dirty/ignored content, keeps the branch and never removes main/caller checkout. Current per-action settings and stronger instructions apply.",
-      parameters: Type.Union([
-        Type.Object({ action: Type.Union([Type.Literal("createWorktree"), Type.Literal("attachWorktree")]), checkout, branch: Type.String(), baseBranch: Type.String(), path: Type.String() }),
-        Type.Object({ action: Type.Literal("removeWorktree"), checkout, path: Type.String() }),
-      ]),
-      execute: (id, params, signal, _update, ctx) => executeGitOperation(cwd, params, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id, progress(params.action, _update)),
+      // Copilot Gemini rejects a root union. Conditional requirements remain
+      // mandatory at execution, before Git policy, approval or receipt admission.
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal("createWorktree"), Type.Literal("attachWorktree"), Type.Literal("removeWorktree")]),
+        checkout, path: Type.String(),
+        branch: Type.Optional(Type.String({ description: "Required for createWorktree and attachWorktree; ignored for removeWorktree" })),
+        baseBranch: Type.Optional(Type.String({ description: "Required local base branch for createWorktree and attachWorktree; ignored for removeWorktree" })),
+      }),
+      execute: (id, params, signal, _update, ctx) => {
+        const { action, checkout, path } = params;
+        let operation: GitOperation;
+        if (action === "removeWorktree") {
+          operation = { action, checkout, path };
+        } else {
+          const branch = params.branch, baseBranch = params.baseBranch;
+          if (typeof branch !== "string") throw new Error(`${action} requires a string branch`);
+          if (typeof baseBranch !== "string") throw new Error(`${action} requires a string baseBranch`);
+          operation = { action, checkout, path, branch, baseBranch };
+        }
+        return executeGitOperation(cwd, operation, ctx.ui as unknown as PluginUiContext, signal, { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, id, progress(action, _update));
+      },
     });
     const cleanup = defineTool({
       name: "git_cleanup", label: "Git feature cleanup", executionMode: "sequential",
