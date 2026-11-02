@@ -9,8 +9,9 @@ three actions, selected-repository authority and existing Git safeguards.
 
 **Status / authority:** Implementation authorized after the independent plan
 reviews and local-main rebase. The plugin-local schema, validation and regression
-tests passed focused verification and independent implementation review; complete
-acceptance remains pending. Keep the same feature branch and
+tests passed focused verification, independent implementation review and complete
+Nix acceptance. The receiving candidate is ready for exact-state local integration
+approval; no installed-service activation or remote publication has occurred. Keep the same feature branch and
 linked worktree for implementation and integration preparation; local `main`
 remains the eventual non-fast-forward merge target, with exact-state approval and
 cleanup separately gated. Live-provider probes, activation and publication are
@@ -149,7 +150,7 @@ or the SDK adapter about Git actions.
   failure collectors. An SDK-caught fixture exception must not count as the
   expected malformed-argument error. Resolve material findings before exporting
   the settled source for complete acceptance.
-- [ ] Run complete acceptance per [Testing](../testing.md): normally
+- [x] Run complete acceptance per [Testing](../testing.md): normally
   `nix run .#test -- all --workers 4 --jobs 12` after coordinating resource
   admission. If insufficient headroom would serialize that profile, use the
   documented four/four profile and record the concrete reason and requested /
@@ -200,8 +201,9 @@ index entries, all preserved. Focused command on the implementation:
 nix run .#test -- core --file plugins/git-workflow/runtime.test.mjs --file plugins/git-workflow/server.test.mjs --jobs 2
 ```
 
-Native x86_64 Linux Nix sandboxes passed **94/94 tests** in two files, with static
-checks; end-to-end command time **133 seconds**, including in-run realization.
+Native x86_64 Linux Nix sandboxes on a host exposing 32 CPUs and approximately
+94 GiB RAM passed **94/94 tests** in two files, with static checks; end-to-end
+command time **133 seconds**, including in-run realization.
 The owned inner execution envelope was **128.769 seconds**, not a separate test-only
 interval. Existing unrelated lint warnings remain nonfatal; no new runtime-file
 warning was reported. This is not complete application acceptance.
@@ -217,6 +219,35 @@ implementation review found no actionable safety findings. Exact reports, input
 manifests and first-failure logs are retained in private task evidence; no live
 provider request or installed-service interaction was used.
 
+### Complete acceptance
+
+Candidate `2f3b73427597d4d5a94ffeea0e12b4d922331844` passed
+`nix run .#test -- all --workers 4 --jobs 12` on 2026-11-02. The verified outer
+source content/mode digest was
+`84a5db2469c866ad8685720689a3d8b3ac9e42cbf0b8191aab13da2763e19e16`.
+Admission observed 32 CPUs and about 45.9 GiB available memory; requested/effective
+widths were 12 core workers and four browser sandboxes, with overlap admitted.
+
+- **523 core files / 4,409 tests / 14 suites**, static checks included, passed.
+- All **26 browser/terminal groups** passed in ordinary Nix sandboxes.
+- The genuine Home Manager deployment VM passed, including durable restart, PTY
+  and service/cgroup shutdown; the installed host service was not used.
+- End-to-end command: **484 seconds**, including in-run realization. Earlier
+  focused/counterexample prerequisites were warm; no separate application build
+  was prewarmed. Browser support realization was **130.734 seconds**, definition
+  publication **5.457 seconds**, and the group client envelope **250.386 seconds**
+  (including group realization). The core inner envelope was **369.602 seconds**
+  including realization/checks. The deployment inner envelope was **90.526 seconds**;
+  its VM test script took **21.32 seconds**. These overlapping/mixed phase envelopes
+  are not additive, CPU-only timings, or a cold-versus-warm benchmark.
+
+Exact runner reports, source/admission manifests and the command log are retained
+in private task evidence. Subsequent plan/index status edits are documentation
+only: reuse this tested application state, run proportional documentation checks,
+and do not relabel the full run as execution on a later evidence-only commit.
+Local integration remains owned by the exact-state Git gate and its execution
+receipt; publication, activation and backup-resource deletion remain separate.
+
 ## Completion Checklist
 
 - [x] Two independent plan reviews are complete; material findings are resolved
@@ -224,7 +255,7 @@ provider request or installed-service interaction was used.
 - [x] Implementation authorization obtained before runtime/test edits.
 - [x] The emitted tool schema has the compatible object root and all three
   actions; action-specific requirements remain fail closed with negative tests.
-- [ ] Focused regression controls, independent implementation review and complete
+- [x] Focused regression controls, independent implementation review and complete
   Nix acceptance pass for the receiving candidate; evidence scope is explicit.
 - [x] Maintained Git plugin guidance contains the durable compatibility contract;
   no private sessions, hosts, credentials or personal paths enter tracked files.
