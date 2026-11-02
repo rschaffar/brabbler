@@ -39,6 +39,8 @@ interface Failure {
 }
 
 export interface EnabledModelsController {
+  /** null is unresolved; an explicit empty snapshot selects Pi default. */
+  accounts?: Readonly<Record<string, string>> | null;
   view: EnabledModelsView | null;
   loading: boolean;
   /** Control currently waiting on the server, or null when idle. */
@@ -48,8 +50,10 @@ export interface EnabledModelsController {
   setProvider: (providerId: string, enabled: boolean) => void;
   clearScope: () => void;
   pruneStale: () => void;
-  /** Re-read after models.json changed under the panel. */
+  /** Re-read the current view after shared models.json changed under the panel. */
   refresh: () => void;
+  /** Re-read only if this completed catalog pass still matches the inspected account. */
+  catalogRefreshCompleted: () => void;
   /** Re-verify the stored patterns after models.json was saved. */
   resync: (
     renames: { from: string; to: string }[],
@@ -74,7 +78,7 @@ const FAILURE_KEYS: Record<string, string> = {
   "project-scope": "models.enabledProjectScope",
 };
 
-export function useEnabledModels(cwd?: string | null): EnabledModelsController {
+export function useEnabledModels(cwd?: string | null, accounts?: Readonly<Record<string, string>> | null): EnabledModelsController {
   const observe = useSettingsWork();
   const task = useSettingsTask();
   const [view, setView] = useState<EnabledModelsView | null>(null);
@@ -82,69 +86,92 @@ export function useEnabledModels(cwd?: string | null): EnabledModelsController {
   const [pending, setPending] = useState<string | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
   const pendingRef = useRef<string | null>(null);
-  const queuedRef = useRef<{ key: string; body: MutationBody } | null>(null);
-  const mutateRef = useRef<((key: string, body: MutationBody) => void) | null>(null);
+  type Mutation = { key: string; body: MutationBody; cwd?: string | null; accounts?: Readonly<Record<string, string>>; generation: number };
+  const queuedRef = useRef<Mutation | null>(null);
+  const identity = JSON.stringify([cwd, accounts]);
+  const context = useRef({ identity, generation: 0 });
+  if (context.current.identity !== identity) context.current = { identity, generation: context.current.generation + 1 };
+  const generation = context.current.generation;
+  const mounted = useRef(false);
+  const requestVersion = useRef(0);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
+    const version = ++requestVersion.current;
+    const generation = context.current.generation;
+    const current = () => mounted.current && !controller.signal.aborted
+      && version === requestVersion.current && generation === context.current.generation;
+    setView(null);
+    setFailure(null);
     setLoading(true);
-    const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
-    void observe("enabled.read", fetch(`/api/models/enabled${query}`, { signal: controller.signal })
+    if (accounts === null) return () => controller.abort();
+    const query = new URLSearchParams({ ...(cwd ? { cwd } : {}),
+      ...(accounts === undefined ? {} : { accounts: JSON.stringify(accounts) }) });
+    void observe("enabled.read", fetch(`/api/models/enabled${query.size ? `?${query}` : ""}`, { signal: controller.signal })
       .then(async (res) => {
         const data = await res.json() as EnabledModelsView & { error?: string };
         if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+        if (!current()) return;
         setView(data);
         setFailure(null);
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
+        if (!current()) return;
         setFailure({ message: error instanceof Error ? error.message : String(error) });
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (current()) setLoading(false);
       }));
     return () => controller.abort();
-  }, [cwd, reloadKey, observe]);
+  }, [accounts, cwd, identity, reloadKey, observe]);
 
-  const mutate = useCallback((key: string, body: MutationBody) => {
-    // A save can land while a switch is still in flight; queue it rather than
-    // dropping it, or the panel keeps describing the previous models.json.
-    if (pendingRef.current) {
-      queuedRef.current = { key, body };
-      return;
-    }
+  const runMutation = useCallback(function run(request: Mutation) {
+    const { key, body, cwd, accounts, generation } = request;
+    const current = () => mounted.current && generation === context.current.generation;
     pendingRef.current = key;
-    setPending(key);
-    setFailure(null);
+    ++requestVersion.current; // an older read cannot undo this write's readback
+    if (mounted.current) { setPending(key); setFailure(null); }
     void task("enabled.mutate", async () => {
       try {
         const res = await fetch("/api/models/enabled", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...body, ...(cwd ? { cwd } : {}) }),
+          body: JSON.stringify({ ...body, ...(cwd ? { cwd } : {}), ...(accounts === undefined ? {} : { accounts }) }),
         });
         const data = await res.json() as EnabledModelsView & { error?: string; reason?: string };
         if (!res.ok || data.error) {
           const messageKey = data.reason ? FAILURE_KEYS[data.reason] : undefined;
-          setFailure(messageKey ? { messageKey } : { message: data.error ?? `HTTP ${res.status}` });
+          if (current()) setFailure(messageKey ? { messageKey } : { message: data.error ?? `HTTP ${res.status}` });
           return;
         }
-        setView(data);
+        if (current()) { setView(data); setLoading(false); }
       } catch (error) {
-        setFailure({ message: error instanceof Error ? error.message : String(error) });
+        if (current()) setFailure({ message: error instanceof Error ? error.message : String(error) });
       } finally {
         pendingRef.current = null;
-        setPending(null);
+        if (mounted.current) {
+          setPending(null);
+          if (current()) setLoading(false);
+          else setReloadKey((key) => key + 1);
+        }
         const queued = queuedRef.current;
         queuedRef.current = null;
-        if (queued) mutateRef.current?.(queued.key, queued.body);
+        if (queued) run(queued);
       }
     })();
-  }, [cwd, task]);
+  }, [task]);
 
-  mutateRef.current = mutate;
+  const mutate = useCallback((key: string, body: MutationBody) => {
+    if (accounts === null) return;
+    const request = { key, body, cwd, accounts: accounts === undefined ? undefined : Object.freeze({ ...accounts }), generation };
+    // Keep the original destination even if account navigation occurs before
+    // this one-slot save-resync continuation runs. Never replay invalidations.
+    if (pendingRef.current) queuedRef.current = request;
+    else runMutation(request);
+  }, [cwd, accounts, generation, runMutation]);
 
   const setModels = useCallback((key: string, refs: string[], enabled: boolean) => {
     mutate(key, { op: "models", refs, enabled });
@@ -156,7 +183,12 @@ export function useEnabledModels(cwd?: string | null): EnabledModelsController {
 
   const clearScope = useCallback(() => mutate("clear", { op: "clear" }), [mutate]);
   const pruneStale = useCallback(() => mutate("prune", { op: "prune" }), [mutate]);
-  const refresh = useCallback(() => setReloadKey((key) => key + 1), []);
+  const refresh = useCallback(() => {
+    if (mounted.current) setReloadKey((key) => key + 1);
+  }, []);
+  const catalogRefreshCompleted = useCallback(() => {
+    if (context.current.identity === identity) refresh();
+  }, [identity, refresh]);
   // Resync writes and returns the fresh view, so it doubles as the reload
   // models.json needs after a save. The providers that are fully enabled right
   // now are the intent to preserve across whatever the save changed.
@@ -171,6 +203,7 @@ export function useEnabledModels(cwd?: string | null): EnabledModelsController {
   }, [mutate, view]);
 
   return {
+    accounts,
     view,
     loading,
     pending,
@@ -180,6 +213,7 @@ export function useEnabledModels(cwd?: string | null): EnabledModelsController {
     clearScope,
     pruneStale,
     refresh,
+    catalogRefreshCompleted,
     resync,
   };
 }
@@ -294,15 +328,23 @@ export function EnabledModelsProviderSwitch({
  * catalog overlay has been fetched — see `lib/model-catalog-refresh.ts` (#914).
  * The button is the whole feature: nothing refreshes catalogs on its own.
  */
-function useCatalogRefresh(providerId: string, onChanged: () => void) {
+function useCatalogRefresh(providerId: string, accounts: EnabledModelsController["accounts"], onChanged: () => void) {
   const task = useSettingsTask();
   const [refreshing, setRefreshing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
-  // A note describes the provider it was produced for, never the next one.
-  useEffect(() => setNote(null), [providerId]);
+  const identity = JSON.stringify([providerId, accounts]);
+  const generation = useRef(0);
+  const identityRef = useRef(identity);
+  if (identityRef.current !== identity) { identityRef.current = identity; generation.current++; }
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; generation.current++; return () => { mounted.current = false; }; }, []);
+  useEffect(() => { setNote(null); setRefreshing(false); }, [identity]);
 
   const refresh = useCallback(() => {
+    if (accounts === null) return;
+    const version = ++generation.current;
+    const current = () => mounted.current && version === generation.current;
     setRefreshing(true);
     setNote(null);
     void task("enabled.catalog", async () => {
@@ -310,23 +352,24 @@ function useCatalogRefresh(providerId: string, onChanged: () => void) {
         const res = await fetch("/api/models/refresh", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider: providerId }),
+          body: JSON.stringify({ provider: providerId, accounts: accounts ?? {} }),
         });
         const data = await res.json() as CatalogRefreshResponse;
         if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+        // The Settings controller survives detail remounts and checks its own
+        // current account context. Only this detail's feedback needs its mount.
+        if (!data.reason) onChanged();
+        if (!current()) return;
         if (data.reason === "offline") setNote("models.catalogOffline");
         else if (!data.completed) setNote("models.catalogUnreachable");
         else setNote(data.changed ? "models.catalogUpdated" : "models.catalogUnchanged");
-        // Reload even when nothing moved for this provider: the pass may have
-        // updated another one, and a stale panel is worse than a second read.
-        if (data.changed) onChanged();
       } catch {
-        setNote("models.catalogUnreachable");
+        if (current()) setNote("models.catalogUnreachable");
       } finally {
-        setRefreshing(false);
+        if (current()) setRefreshing(false);
       }
     })();
-  }, [providerId, onChanged, task]);
+  }, [providerId, accounts, identity, onChanged, task]);
 
   return { refreshing, note, refresh };
 }
@@ -345,7 +388,7 @@ export function EnabledModelsSection({
   const [query, setQuery] = useState("");
   const { view, loading, pending, failure } = controller;
   const provider = findProviderView(view, providerId);
-  const catalog = useCatalogRefresh(providerId, controller.refresh);
+  const catalog = useCatalogRefresh(providerId, controller.accounts, controller.catalogRefreshCompleted);
 
   useEffect(() => setQuery(""), [providerId]);
 
@@ -353,9 +396,10 @@ export function EnabledModelsSection({
     return <div className="enabled-models-empty">{t("agents.modelsLoading")}</div>;
   }
   if (!provider) {
-    return failure?.message
-      ? <div className="enabled-models-error">{failure.message}</div>
-      : <div className="enabled-models-empty">{t("models.enabledUnavailable")}</div>;
+    return failure ? <div>
+      <div role="alert" className="enabled-models-error">{failure.messageKey ? t(failure.messageKey) : failure.message}</div>
+      <ConfigButton size="small" onClick={controller.refresh}>{t("models.enabledRetry")}</ConfigButton>
+    </div> : <div className="enabled-models-empty">{t("models.enabledUnavailable")}</div>;
   }
 
   const shown = filterEnabledModels(provider.models, query);

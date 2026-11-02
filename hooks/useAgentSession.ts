@@ -191,6 +191,7 @@ export interface UseAgentSessionOptions {
   onSessionCreated?: (session: SessionInfo, sourceDraftKey: string) => void;
   onSessionForked?: (newSessionId: string) => void;
   modelsRefreshKey?: number;
+  onAccountSelectionChange?: (accounts: Readonly<Record<string, string>>) => void;
   /** Instance-owned elapsed-policy capability; default remains native time. */
   policyClock?: AgentSessionPolicyClock;
   /** Passive grace-only native handle observation; observer must not throw.
@@ -339,7 +340,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }));
   const {
     session, newSessionCwd, newSessionDraftKey, onAgentEnd, onRecoveryDismissed, onAttentionNeeded, onSessionCreated, onSessionForked,
-    modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
+    modelsRefreshKey, onAccountSelectionChange, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
   } = opts;
 
   const isNew = session === null && newSessionCwd !== null;
@@ -2032,7 +2033,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
     if (!sessionHookMountedRef.current) throw new Error("Session selection changed");
     if (!sid) {
-      newSessionAccountsRef.current = { ...selection };
+      newSessionAccountsRef.current = Object.freeze({ ...selection });
+      onAccountSelectionChange?.(newSessionAccountsRef.current);
       return;
     }
     const response = await fetch("/api/auth/accounts/selection", {
@@ -2041,9 +2043,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     });
     const result = await response.json() as { sessionId?: string; error?: string };
     if (!response.ok || !result.sessionId) throw new Error(result.error ?? "Could not switch account");
-    if (sessionIdRef.current === sid) sessionIdRef.current = result.sessionId;
-    newSessionAccountsRef.current = { ...selection };
-  }, []);
+    if (!sessionHookMountedRef.current || sessionIdRef.current !== sid) return;
+    sessionIdRef.current = result.sessionId;
+    newSessionAccountsRef.current = Object.freeze({ ...selection });
+    onAccountSelectionChange?.(newSessionAccountsRef.current);
+  }, [onAccountSelectionChange]);
 
   const handleModelChange = useCallback(async (provider: string, modelId: string) => {
     if (modelSwitchPendingRef.current) return;
@@ -2223,7 +2227,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       : null);
     thinkingLevelPinsRef.current = d.thinkingLevelPins ?? {};
     defaultThinkingLevelRef.current = asConcreteThinkingLevel(d.defaultThinkingLevel);
-    if (isNew && !sessionIdRef.current) {
+    if (isNew && !sessionIdRef.current && !newSessionModelOverrideRef.current) {
       // The first listed model is not necessarily the runtime's automatic choice.
       // An `enabledModels` pattern may pin a thinking level (`anthropic/*:high`).
       // Like pi, apply it to the model a new session starts with.

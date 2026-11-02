@@ -158,6 +158,14 @@ export function AppShell() {
   const [acceptanceOpen, setAcceptanceOpen] = useState(false);
   const [pluginSettingsSession, setPluginSettingsSession] = useState<{ id: string; cwd: string } | null>(null);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
+  const [composerContext, setComposerContext] = useState<{ key: number; accounts?: Readonly<Record<string, string>>; sessionId?: string | null } | null>(null);
+  const composerKeyRef = useRef(sessionKey);
+  composerKeyRef.current = sessionKey;
+  const handleNativeSessionIdChange = useCallback((sessionId: string | null) => {
+    if (composerKeyRef.current !== sessionKey) return;
+    setComposerContext((previous) => previous?.key === sessionKey && previous.sessionId === sessionId ? previous
+      : { ...(previous?.key === sessionKey ? previous : {}), key: sessionKey, sessionId });
+  }, [sessionKey]);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
   const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
   const [projectTrustBusy, setProjectTrustBusy] = useState(false);
@@ -436,6 +444,7 @@ export function AppShell() {
   }, []);
   const navigation = useSessionNavigation(navigationState, { router, isMobile, closeOverview, activeFileTabId, chatInputRef, branchLeafChangeFnRef, setChatHidden, setBranchTree, setBranchActiveLeafId, setSystemPrompt, setSystemTools, setSystemInfoLoading, setActiveTopPanel, setSidebarOpen, setRightPanelOpen, setActiveFileTabId, setOverviewMobileList });
   const { handleSelectSession, handleNewSession, handleSessionSettled, handleActivitySelectSession, handleOpenSession, handleSessionForked, handleSessionRestored, effectiveNewSessionCwd, showChat, initialSessionRestored } = navigation;
+  const currentComposerContext = !selectedSession && showChat && composerContext?.key === sessionKey ? composerContext : null;
 
   const chatBinding = useSessionNavigationChatBinding(navigationState, navigation, activityController);
 
@@ -1223,6 +1232,12 @@ export function AppShell() {
               onRecoveryDismissed={handleRecoveryDismissed}
               onAttentionNeeded={handleAttentionNeeded}
               modelsRefreshKey={modelsRefreshKey}
+              onNativeSessionIdChange={selectedSession ? undefined : handleNativeSessionIdChange}
+              onAccountSelectionChange={(accounts) => {
+                if (composerKeyRef.current === sessionKey) setComposerContext((previous) => ({
+                  ...(previous?.key === sessionKey ? previous : {}), key: sessionKey, accounts,
+                }));
+              }}
               chatInputRef={chatInputRef}
               onBranchDataChange={handleBranchDataChange}
               onSystemPromptChange={handleSystemPromptChange}
@@ -1424,7 +1439,8 @@ export function AppShell() {
     {settingsSection && (
       <SettingsPanel
         cwd={pluginSettingsSession?.cwd ?? projectTrustCwd}
-        sessionId={pluginSettingsSession?.id ?? selectedSession?.id ?? null}
+        sessionId={pluginSettingsSession?.id ?? selectedSession?.id ?? currentComposerContext?.sessionId ?? null}
+        catalogAccounts={!pluginSettingsSession && !currentComposerContext?.sessionId ? currentComposerContext?.accounts : undefined}
         initialSection={settingsSection}
         initialPluginScope={pluginSettingsSession ? "session" : undefined}
         sessions={sessionsWithSelection}

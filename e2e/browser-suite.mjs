@@ -448,7 +448,7 @@ let nativeToolsFixture;
   }
   async function runWorktreeManagerChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const [index, inputId] of ["en-desktop", "en-mobile-tall"].entries()) await coverage.run(`worktrees/${inputId === "en-desktop" ? "git-backed-loss-review-v4" : "git-backed-modal-review-v3"}@${inputId}`, async () => {
+    for (const [index, inputId] of ["en-desktop", "en-mobile-tall"].entries()) await coverage.run(`worktrees/${inputId === "en-desktop" ? "git-backed-loss-review-v5" : "git-backed-modal-review-v4"}@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage(); page.setDefaultTimeout(30_000);

@@ -1,5 +1,7 @@
 import { join } from "node:path";
 import { createAgentSessionServices, getAgentDir, SettingsManager, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { prepareAccountModelRuntime, type AccountModelRuntimeBinding } from "./account-model-runtime";
+import type { AccountSelection } from "./provider-accounts";
 
 interface ListingBuild {
   runtime: ModelRuntime;
@@ -19,7 +21,7 @@ interface ListingScope {
   activeMutations: number;
   /** A failed SDK update can leave sibling writers running. Never retain its snapshots. */
   reuseDisabled: boolean;
-  entry?: ListingEntry;
+  entries: Map<string, ListingEntry>;
 }
 
 declare global {
@@ -32,7 +34,7 @@ function scopeFor(agentDir: string): ListingScope {
   const scopes = globalThis.__piSettingsListingScopes ??= new Map();
   let scope = scopes.get(agentDir);
   if (!scope) {
-    scope = { generation: 0, activeMutations: 0, reuseDisabled: false };
+    scope = { generation: 0, activeMutations: 0, reuseDisabled: false, entries: new Map() };
     scopes.set(agentDir, scope);
   }
   return scope;
@@ -40,7 +42,7 @@ function scopeFor(agentDir: string): ListingScope {
 
 function invalidate(scope: ListingScope): void {
   scope.generation++;
-  scope.entry = undefined;
+  scope.entries.clear();
 }
 
 /** Structural changes only; credentials/config/catalogs are reread on every call. */
@@ -68,15 +70,13 @@ export function beginSettingsListingMutation(agentDir = getAgentDir()): (succeed
   };
 }
 
-function buildEntry(agentDir: string, scope: ListingScope): ListingEntry {
+function buildEntry(agentDir: string, scope: ListingScope, binding: AccountModelRuntimeBinding): ListingEntry {
   const entry: ListingEntry = {
     // Defer construction until the entry is published, including synchronous failures.
     build: Promise.resolve().then(async () => {
       const runtime = await ModelRuntime.create({
         authPath: join(agentDir, "auth.json"),
-        modelsPath: join(agentDir, "models.json"),
-        modelsStorePath: join(agentDir, "models-store.json"),
-        refreshOnCreate: false,
+        ...binding.runtimeOptions,
       });
       // SDK 1.3 registration starts unawaited public refreshes. Serialize and
       // observe them BEFORE resources register providers. This wrapper belongs
@@ -112,27 +112,38 @@ function buildEntry(agentDir: string, scope: ListingScope): ListingEntry {
     generation: scope.generation,
   };
   void entry.build.then(() => { entry.expiresAt = Date.now() + LISTING_TTL_MS; }, () => {
-    if (scope.entry === entry) scope.entry = undefined;
+    if (scope.entries.get(binding.modelsStorePath) === entry) scope.entries.delete(binding.modelsStorePath);
   });
   return entry;
 }
 
 /**
- * Read-only Pi-default settings catalog, never a session/account runtime.
+ * Read-only settings catalog bound to a complete immutable account snapshot,
+ * never a session runtime. Definitions and settings remain shared.
  * Callbacks must only project data: no credential/settings writes, provider
  * login, registration, network refresh, or returned runtime/provider closures.
  * Clone the projection under the same per-entry queue as refresh so later calls
  * cannot mutate a returned model or status. Invalidated reads fail, never replay
  * their callbacks. Private builders in model-runtime.ts remain unchanged.
  */
-export async function readSettingsListing<T>(read: (runtime: ModelRuntime) => T | Promise<T>): Promise<T> {
+export async function readSettingsListing<T>(
+  read: (runtime: ModelRuntime) => T | Promise<T>,
+  accounts: Readonly<AccountSelection> = {},
+): Promise<T> {
   const agentDir = getAgentDir();
+  // Validate/capture before any await; credentials and catalog have one owner.
+  const binding = prepareAccountModelRuntime(accounts, { agentDir, refreshOnCreate: false });
+  const key = binding.modelsStorePath;
   const scope = scopeFor(agentDir);
   const retain = scope.activeMutations === 0 && !scope.reuseDisabled;
-  let entry = retain ? scope.entry : undefined;
+  let entry = retain ? scope.entries.get(key) : undefined;
   if (!entry || entry.expiresAt <= Date.now()) {
-    entry = buildEntry(agentDir, scope);
-    if (retain) scope.entry = entry;
+    entry = buildEntry(agentDir, scope, binding);
+    if (retain) {
+      for (const [identity, cached] of scope.entries) if (cached.expiresAt <= Date.now()) scope.entries.delete(identity);
+      if (scope.entries.size >= 32) scope.entries.delete(scope.entries.keys().next().value!);
+      scope.entries.set(key, entry);
+    }
   }
   const current = entry;
   // Outside the queue: an old stuck build/refresh must not hold its replacement.
@@ -152,7 +163,7 @@ export async function readSettingsListing<T>(read: (runtime: ModelRuntime) => T 
     } finally {
       // SDK can resolve a degraded build/refresh rather than reject. Preserve
       // the current response/error but do not keep its incomplete registrations.
-      if ((!built.reusable() || built.runtime.getError()) && scope.entry === current) scope.entry = undefined;
+      if ((!built.reusable() || built.runtime.getError()) && scope.entries.get(key) === current) scope.entries.delete(key);
     }
   });
   // Preserve each caller's error without poisoning later operations.
@@ -160,7 +171,7 @@ export async function readSettingsListing<T>(read: (runtime: ModelRuntime) => T 
   try {
     return await operation;
   } catch (error) {
-    if (scope.entry === current) scope.entry = undefined;
+    if (scope.entries.get(key) === current) scope.entries.delete(key);
     throw error;
   }
 }

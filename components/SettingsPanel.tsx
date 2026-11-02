@@ -40,6 +40,7 @@ import type { SessionInfo } from "@/lib/types";
 interface Props {
   cwd: string | null;
   sessionId: string | null;
+  catalogAccounts?: Readonly<Record<string, string>>;
   initialSection: SettingsSection;
   initialPluginScope?: "global" | "project" | "session";
   onClose: () => void;
@@ -519,7 +520,7 @@ export function GeneralSettings({ cwd, sessionId, onSessionReloaded, trustStatus
   );
 }
 
-export function SettingsPanel({ cwd, sessionId, initialSection, initialPluginScope, onClose, onSessionReloaded, trustStatus, onManageTrust, quoteSelectionEnabled, onQuoteSelectionChange, sessions, privacy }: Props) {
+export function SettingsPanel({ cwd, sessionId, catalogAccounts, initialSection, initialPluginScope, onClose, onSessionReloaded, trustStatus, onManageTrust, quoteSelectionEnabled, onQuoteSelectionChange, sessions, privacy }: Props) {
   const { t } = useI18n();
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [mountedSections, setMountedSections] = useState<ReadonlySet<SettingsSection>>(
@@ -616,7 +617,7 @@ export function SettingsPanel({ cwd, sessionId, initialSection, initialPluginSco
 
         <main className="settings-dialog-main">
           {sectionHost("general", <GeneralSettings cwd={cwd} sessionId={sessionId} onSessionReloaded={onSessionReloaded} trustStatus={trustStatus} onManageTrust={onManageTrust} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} sessions={sessions} privacy={privacy} />)}
-          {sectionHost("models", <ModelsConfig embedded cwd={cwd} onClose={onClose} />)}
+          {sectionHost("models", <ModelsConfig embedded cwd={cwd} sessionId={sessionId} initialAccounts={catalogAccounts} onClose={onClose} />)}
           {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("agents", <AgentsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} onClose={onClose} onReloaded={onSessionReloaded} />)}
           {cwd && sectionHost("plugins", <PluginsConfig embedded key={`${cwd}:${sessionId ?? ""}`} cwd={cwd} sessionId={sessionId} initialPluginScope={initialPluginScope} onClose={onClose} onReloaded={onSessionReloaded} />)}

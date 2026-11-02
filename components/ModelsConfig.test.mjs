@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { createJiti } from "jiti";
-import { createElement as h, useState } from "react";
+import { createElement as h, act, useState } from "react";
 import { settingsFixture } from "./settings.fixture.mjs";
 
 const jiti = createJiti(import.meta.url, { jsx: { runtime: 'automatic' }, tsconfigPaths: true, fsCache: false });
@@ -172,12 +172,17 @@ async function modelEditor(t, initial, provider = {}) {
   }
   await f.mount(h(Editor)); return { f, model: () => current };
 }
+function sharedPanelReads(f, cwd, selectionReply = { data: { accounts: [], project: {}, session: null } }) {
+  f.route('GET', '/api/auth/accounts/selection', { query: { cwd }, reply: selectionReply });
+  f.route('GET', '/api/models/defaults', { reply: { data: {} } });
+}
 async function modelsPanel(t, { config = { providers: { stepfun: { api: 'openai-completions', models: [{ id: 'aaa' }, { id: 'ddd' }] } } }, providers = { oauthProviders: [], apiKeyProviders: [] }, scope = 'global', enabled, selection } = {}) {
   const f = await settingsFixture(t), graph = await f.load('models');
   let discovery = providers;
+  sharedPanelReads(f, '/project');
   f.route('GET', '/api/models-config', { reply: { data: config } });
-  f.route('GET', '/api/auth/providers', { reply: () => ({ data: discovery }) });
-  f.route('GET', '/api/models/enabled', { query: { cwd: '/project' }, reply: { data: enabled ?? enabledView(scope) } });
+  f.route('GET', '/api/auth/providers', { query: { accounts: '{}' }, reply: () => ({ data: discovery }) });
+  f.route('GET', '/api/models/enabled', { query: { cwd: '/project', accounts: '{}' }, reply: { data: enabled ?? enabledView(scope) } });
   await f.mount(h(graph.ModelsConfig, { cwd: '/project', embedded: true, onClose() {} }), { setup(window) {
     if (selection) window.localStorage.setItem('brabbler:settings-navigation', JSON.stringify({ selections: { models: JSON.stringify(selection) } }));
   } });
@@ -191,6 +196,7 @@ test('Markdown managed budget: discovery retry, active auth routing, exact saves
   let stored = { providers: { 'openai-codex': { modelOverrides: { 'fixture-context-model': {} } }, relay } };
   let discoveryFailed = true, project = false, rejectSave = false, expected;
   const f = await settingsFixture(t), graph = await f.load('models');
+  sharedPanelReads(f, '/project');
   const enabled = () => ({ allEnabled: true, patterns: null, stalePatterns: [], enabledTotal: 1, availableTotal: 1,
     scope: project ? 'project' : 'global', settingsPath: 'synthetic/settings.json', editable: !project,
     providers: [{ id: 'openai-codex', name: 'OpenAI Codex', kind: 'builtin', enabledCount: 1, models: [{
@@ -198,16 +204,16 @@ test('Markdown managed budget: discovery retry, active auth routing, exact saves
       contextWindow: stored.providers['openai-codex']?.modelOverrides?.['fixture-context-model']?.contextWindow ?? 272000,
     }] }] });
   f.route('GET', '/api/models-config', { reply: () => ({ data: stored }) });
-  f.route('GET', '/api/auth/providers', { reply: () => ({ data: discoveryFailed ? { error: 'Synthetic provider discovery unavailable' } : {
+  f.route('GET', '/api/auth/providers', { query: { accounts: '{}' }, reply: () => ({ data: discoveryFailed ? { error: 'Synthetic provider discovery unavailable' } : {
     oauthProviders: [{ id: 'openai-codex', name: 'OpenAI Codex', loggedIn: false }],
     apiKeyProviders: [{ id: 'openai-codex', displayName: 'OpenAI Codex', configured: true, modelCount: 1 }],
   } }) });
-  f.route('GET', '/api/models/enabled', { query: { cwd: '/project' }, reply: () => ({ data: enabled() }) });
+  f.route('GET', '/api/models/enabled', { query: { cwd: '/project', accounts: '{}' }, reply: () => ({ data: enabled() }) });
   f.route('PUT', '/api/models-config', { body: () => expected, reply: () => {
     if (rejectSave) return { data: { error: 'Synthetic save unavailable' } };
     stored = structuredClone(expected); return { data: { success: true } };
   } });
-  const resyncBody = { op: 'resync', renames: [], modelRenames: [], fullyEnabled: ['openai-codex'], cwd: '/project' };
+  const resyncBody = { op: 'resync', renames: [], modelRenames: [], fullyEnabled: ['openai-codex'], cwd: '/project', accounts: {} };
   f.route('PUT', '/api/models/enabled', { body: resyncBody, reply: () => ({ data: enabled() }) });
   const counts = (method, path) => f.requests.filter(r => r.method === method && r.path === path).length;
   const budget = () => {
@@ -300,7 +306,7 @@ test('Markdown adaptive endpoint inheritance saves exact sparse config and refus
   const { f } = await modelsPanel(t, { config: { providers: { 'e2e-followups': provider } }, enabled });
   let expected;
   f.route('PUT', '/api/models-config', { body: () => expected, reply: { data: { success: true } } });
-  const resync = { op: 'resync', renames: [], modelRenames: [], fullyEnabled: ['e2e-followups'], cwd: '/project' };
+  const resync = { op: 'resync', renames: [], modelRenames: [], fullyEnabled: ['e2e-followups'], cwd: '/project', accounts: {} };
   f.route('PUT', '/api/models/enabled', { body: resync, reply: { data: enabled } });
   await f.click(sidebarRow(f, 'adaptive-fixture'));
   await f.click('button[aria-controls="model-advanced-settings"]');
@@ -467,7 +473,7 @@ test('actual Models save carries provider/model renames, added/removed slots, pr
   await f.click(f.button('+ Model')); await f.input('input[placeholder="model-id"]', 'new');
   await f.click(f.button('ddd')); await f.input('input[placeholder="model-id"]', 'ddd1');
   expectedConfig = { providers: { house: { api: 'openai-completions', models: [{ id: 'ddd1' }, { id: 'new' }] } } };
-  expectedResync = { op: 'resync', renames: [{ from: 'stepfun', to: 'house' }], modelRenames: [{ from: 'stepfun/ddd', to: 'house/ddd1' }], fullyEnabled: ['stepfun'], cwd: '/project' };
+  expectedResync = { op: 'resync', renames: [{ from: 'stepfun', to: 'house' }], modelRenames: [{ from: 'stepfun/ddd', to: 'house/ddd1' }], fullyEnabled: ['stepfun'], cwd: '/project', accounts: {} };
   await f.click(f.button('Save'));
   assert.equal(saves, 1);
   await f.timers(2000);
@@ -480,7 +486,7 @@ test('actual failed save retains rename slots and literal draft; project-shadowe
   for (const scope of ['global', 'project']) await t.test(scope, async t => {
     const { f } = await modelsPanel(t, { scope }); let status = 500;
     f.route('PUT', '/api/models-config', { body: { providers: { stepfun: { api: 'openai-completions', models: [{ id: 'aaa' }, { id: 'ddd1' }] } } }, reply: () => ({ status, data: status === 500 ? { error: 'save failed' } : { success: true } }) });
-    f.route('PUT', '/api/models/enabled', { body: { op: 'resync', renames: [], modelRenames: [{ from: 'stepfun/ddd', to: 'stepfun/ddd1' }], fullyEnabled: ['stepfun'], cwd: '/project' }, reply: { data: enabledView(scope) } });
+    f.route('PUT', '/api/models/enabled', { body: { op: 'resync', renames: [], modelRenames: [{ from: 'stepfun/ddd', to: 'stepfun/ddd1' }], fullyEnabled: ['stepfun'], cwd: '/project', accounts: {} }, reply: { data: enabledView(scope) } });
     await f.click(f.button('ddd')); await f.input('input[placeholder="model-id"]', 'ddd1'); await f.click(f.button('Save'));
     assert.equal(f.node('[role="alert"]').textContent, 'save failed');
     assert.equal(f.node('input[placeholder="model-id"]').value, 'ddd1');
@@ -536,7 +542,7 @@ test('actual remembered model detail selection is restored and subsequent provid
 test('actual deleting a saved provider and adding a new provider cannot report a model rename', async t => {
   const { f } = await modelsPanel(t);
   f.route('PUT', '/api/models-config', { body: { providers: { 'new-provider': { api: 'openai-completions', models: [{ id: 'fresh' }] } } }, reply: { data: { success: true } } });
-  f.route('PUT', '/api/models/enabled', { body: { op: 'resync', renames: [], modelRenames: [], fullyEnabled: ['stepfun'], cwd: '/project' }, reply: { data: enabledView() } });
+  f.route('PUT', '/api/models/enabled', { body: { op: 'resync', renames: [], modelRenames: [], fullyEnabled: ['stepfun'], cwd: '/project', accounts: {} }, reply: { data: enabledView() } });
   await f.click(f.button('Delete'));
   await f.click(f.button('Add provider'));
   const custom = [...f.view.container.querySelectorAll('button')].find(n => n.textContent.includes('OpenAI / Anthropic compatible'));
@@ -563,4 +569,273 @@ test('actual catalog fill completes prices, closes manual editing and keeps spec
   assert.equal(f.text().indexOf('Model specifications') < f.text().indexOf('Cost per million tokens'), true);
   assert.equal(f.text().indexOf('Cost per million tokens') < f.text().indexOf('Advanced settings'), true);
   assert.equal(f.text().indexOf('$1.25') < f.text().indexOf('Advanced settings'), true);
+});
+
+test('Models Save waits for complete account resolution and current catalog before preserving rename intent', async t => {
+  const f = await settingsFixture(t), graph = await f.load('models');
+  const resolution = f.gate('complete catalog account resolution');
+  const initialCatalog = f.gate('initial enabled catalog'), nextCatalog = f.gate('B enabled catalog');
+  const b = { stepfun: 'account-b' }; let accounts = {}, catalogGate = initialCatalog;
+  sharedPanelReads(f, '/project', { gate: resolution, data: { accounts: [
+    { id: 'account-b', provider: 'stepfun', label: 'Account B', type: 'api_key', authorized: true },
+  ], project: {}, session: null } });
+  const config = { providers: { stepfun: { api: 'openai-completions', models: [{ id: 'aaa' }, { id: 'ddd' }] } } };
+  f.route('GET', '/api/models-config', { reply: { data: config } });
+  f.route('GET', '/api/auth/providers', { query: () => ({ accounts: JSON.stringify(accounts) }), reply: { data: { oauthProviders: [], apiKeyProviders: [] } } });
+  f.route('GET', '/api/models/enabled', { query: () => ({ cwd: '/project', accounts: JSON.stringify(accounts) }), reply: () => ({ gate: catalogGate, data: enabledView() }) });
+  await f.mount(h(graph.ModelsConfig, { cwd: '/project', embedded: true, onClose() {} }), { settle: false });
+  await f.commit(undefined, 'models.config');
+  const save = () => f.button('Save', f.node('.config-footer-actions'));
+  assert.equal(save().disabled, true, 'unresolved accounts are not an explicit empty snapshot');
+  assert.equal(f.requests.some(r => r.path === '/api/models/enabled' || r.path === '/api/auth/providers'), false);
+  await f.click(sidebarRow(f, 'ddd'), { settle: false });
+  await f.input('input[placeholder="model-id"]', 'nested/ddd', { settle: false });
+  await act(async () => { save().click(); });
+  assert.equal(configWrites(f).length, 0, 'disabled Save admits no configuration write');
+  await f.deliver(resolution, 'accounts.reload');
+  assert.equal(save().disabled, true, 'resolved accounts still require their pre-save catalog');
+  await f.deliver(initialCatalog, 'enabled.read');
+  assert.equal(save().disabled, false);
+  await f.click(f.button('Catalog · stepfun · Pi default'), { settle: false });
+  const account = f.view.window.document.querySelector('select[aria-label="Catalog account"]');
+  assert.equal(account !== null, true, 'real catalog-only account control');
+  accounts = b; catalogGate = nextCatalog;
+  await f.input(account, 'account-b', { settle: false });
+  assert.equal(save().disabled, true, 'account navigation cannot save from an empty catalog view');
+  assert.equal(f.node('input[placeholder="model-id"]').value, 'nested/ddd', 'navigation retains the shared draft');
+  await f.click(f.button('Catalog · stepfun · Account B'), { settle: false });
+  await f.deliver(nextCatalog, 'enabled.read');
+  const expectedConfig = { providers: { stepfun: { api: 'openai-completions', models: [{ id: 'aaa' }, { id: 'nested/ddd' }] } } };
+  const resync = { op: 'resync', renames: [], modelRenames: [{ from: 'stepfun/ddd', to: 'stepfun/nested/ddd' }], fullyEnabled: ['stepfun'], cwd: '/project', accounts: b };
+  f.route('PUT', '/api/models-config', { body: expectedConfig, reply: { data: { success: true } } });
+  f.route('PUT', '/api/models/enabled', { body: resync, reply: { data: enabledView() } });
+  await f.click(save());
+  assert.deepEqual(configWrites(f).map(r => r.body), [expectedConfig]);
+  assert.deepEqual(f.requests.filter(r => r.method === 'PUT' && r.path === '/api/models/enabled').map(r => r.body), [resync]);
+  assert.equal(f.requests.some(r => r.method === 'POST' || r.path.startsWith('/api/agent/') || r.path === '/api/provider-usage/query'), false, 'catalog inspection neither refreshes automatically nor changes bindings/usage');
+});
+
+test('real shared-default Save retains failed draft and saves globally across inspected-account navigation', async t => {
+  const f = await settingsFixture(t), { SharedModelDefaults } = await f.load('models');
+  const before = { model: { provider: 'stepfun', modelId: 'aaa' }, thinkingLevel: 'low' };
+  const desired = { model: { provider: 'stepfun', modelId: 'ddd' }, thinkingLevel: 'high' };
+  const calls = [], held = f.gate('failed shared-default HTTP save'); let refuse = true;
+  const controller = { accounts: { stepfun: 'account-a' }, view: enabledView(),
+    refresh() { calls.push('refresh'); }, resync() { calls.push('resync'); } };
+  f.route('GET', '/api/models/defaults', { reply: { data: before } });
+  f.route('PUT', '/api/models/defaults', { body: desired, reply: () => refuse
+    ? { gate: held, status: 500, data: { error: 'Synthetic global defaults unavailable' } }
+    : { data: desired } });
+  await f.mount(h(SharedModelDefaults, { controller }));
+  await f.click(f.node('summary'));
+  assert.equal(f.node('details').open, true);
+  const model = 'select[aria-label="Default model for new chats"]', thinking = 'select[aria-label="Default thinking for new chats"]';
+  await f.input(model, JSON.stringify(['stepfun', 'ddd'])); await f.input(thinking, 'high');
+  const writes = () => f.requests.filter(r => r.method === 'PUT');
+  assert.equal(writes().length, 0, 'editing shared defaults is only a draft');
+  await f.click(f.button('Save defaults'), { settle: false });
+  assert.equal(f.node(model).disabled, true);
+  await f.rerender(h(SharedModelDefaults, { controller: { ...controller, accounts: { stepfun: 'account-b' } } }));
+  await f.deliver(held, 'models.defaults.save');
+  assert.equal(f.node('[role="alert"]').textContent, 'Error: Synthetic global defaults unavailable');
+  assert.equal(f.button('Save defaults').disabled, false, 'failed save is retryable, never Saved');
+  assert.equal(f.node(model).value, JSON.stringify(['stepfun', 'ddd']));
+  assert.equal(f.node(thinking).value, 'high');
+  assert.deepEqual(writes().map(r => ({ path: r.path, body: r.body })), [{ path: '/api/models/defaults', body: desired }]);
+  refuse = false; await f.click(f.button('Save defaults'));
+  assert.equal(f.button('Saved').disabled, true);
+  assert.equal(f.view.container.querySelector('[role="alert"]') === null, true);
+  assert.deepEqual(writes().map(r => ({ path: r.path, body: r.body })), Array.from({ length: 2 }, () => ({ path: '/api/models/defaults', body: desired })), 'both PUTs contain only global model/thinking changes, never accounts or cwd');
+  assert.deepEqual(calls, [], 'default persistence does not invoke catalog or conversation continuations');
+  assert.equal(f.requests.some(r => r.method === 'POST' || (r.method === 'PUT' && r.path !== '/api/models/defaults')), false);
+});
+
+for (const captured of [{ retained: 'retained-account', stepfun: 'account-a' }, {}]) test(`Settings uses the warmed native snapshot rather than changed project defaults: ${JSON.stringify(captured)}`, async t => {
+  const f = await settingsFixture(t), { ModelsConfig } = await f.load('models');
+  const sessionId = 'warmed-passive-composer', cwd = '/project';
+  const catalog = enabledView(); catalog.providers[0].models[0].name = 'Native snapshot catalog';
+  f.route('GET', '/api/auth/accounts/selection', { query: { cwd, sessionId }, reply: { data: {
+    accounts: [{ id: 'account-a', provider: 'stepfun', label: 'A', type: 'api_key', authorized: true },
+      { id: 'account-b', provider: 'stepfun', label: 'B', type: 'api_key', authorized: true },
+      { id: 'retained-account', provider: 'retained', label: 'Retained', type: 'api_key', authorized: true }],
+    project: { stepfun: 'account-b' }, session: captured,
+  } } });
+  f.route('GET', '/api/models/defaults', { reply: { data: {} } });
+  f.route('GET', '/api/models-config', { reply: { data: { providers: {} } } });
+  f.route('GET', '/api/auth/providers', { query: { accounts: JSON.stringify(captured) }, reply: { data: {
+    oauthProviders: [], apiKeyProviders: [{ id: 'stepfun', displayName: 'Native provider', configured: true, modelCount: 2 }],
+  } } });
+  f.route('GET', '/api/models/enabled', { query: { cwd, accounts: JSON.stringify(captured) }, reply: { data: catalog } });
+  await f.mount(h(ModelsConfig, { cwd, sessionId, embedded: true, onClose() {} }), { setup(window) {
+    window.localStorage.setItem('brabbler:settings-navigation', JSON.stringify({ selections: { models: JSON.stringify({ type: 'apikey', providerId: 'stepfun' }) } }));
+  } });
+  assert.equal(f.text().includes('Native snapshot catalog'), true, 'session-aware Settings presents the native binding, including explicit Pi default');
+  const reads = f.requests.filter(r => r.path === '/api/models/enabled');
+  assert.equal(reads.length > 0, true);
+  assert.equal(reads.every(r => new Map(r.query).get('accounts') === JSON.stringify(captured)), true, 'no catalog read uses project account B');
+  assert.equal(f.requests.some(r => r.method !== 'GET'), false, 'receiving a warmed identity does not recreate or change a session');
+});
+
+async function accountCatalogPanel(t, { extraKind = 'oauth', defaultKind = 'oauth', scope = 'global' } = {}) {
+  const f = await settingsFixture(t), graph = await f.load('models');
+  const provider = 'stepfun', a = { retained: 'retained-account', stepfun: 'account-a' }, piDefault = { retained: 'retained-account' };
+  let inspected = a, refreshed = false, contextWindow = 16000, authGate;
+  const catalog = () => {
+    const result = enabledView(scope);
+    result.providers[0].models[0].contextWindow = contextWindow;
+    result.providers[0].kind = 'builtin';
+    result.providers[0].models[0].name = inspected.stepfun ? (refreshed ? 'A after refresh' : 'A before refresh') : 'Pi default catalog';
+    return result;
+  };
+  sharedPanelReads(f, '/project', { data: { accounts: [
+    { id: 'account-a', provider, label: 'Account A', type: extraKind === 'oauth' ? 'oauth' : 'api_key', authorized: true },
+    { id: 'retained-account', provider: 'retained', label: 'Retained account', type: 'api_key', authorized: true },
+  ], project: a, session: null } });
+  f.route('GET', '/api/models-config', { reply: { data: { providers: {} } } });
+  f.route('GET', '/api/auth/providers', { query: () => ({ accounts: JSON.stringify(inspected) }), reply: () => {
+    const kind = inspected.stepfun ? extraKind : defaultKind;
+    return { ...(authGate ? { gate: authGate } : {}), data: {
+      oauthProviders: [{ id: provider, name: 'Dual-auth fixture', loggedIn: kind === 'oauth', supportsApiKey: true, usesCallbackServer: false }],
+      apiKeyProviders: [{ id: provider, displayName: 'Dual-auth fixture', configured: kind === 'apikey', supportsOAuth: true, modelCount: 2 }],
+    } };
+  } });
+  f.route('GET', '/api/models/enabled', { query: () => ({ cwd: '/project', accounts: JSON.stringify(inspected) }), reply: () => ({ data: catalog() }) });
+  await f.mount(h(graph.ModelsConfig, { cwd: '/project', embedded: true, onClose() {} }), { setup(window) {
+    window.localStorage.setItem('brabbler:settings-navigation', JSON.stringify({ selections: { models: JSON.stringify({ type: extraKind, providerId: provider }) } }));
+  } });
+  const choose = async id => {
+    const before = inspected.stepfun ? 'Account A' : 'Pi default';
+    await f.click(f.button(`Catalog · ${provider} · ${before}`), { settle: false });
+    inspected = id ? a : piDefault;
+    const select = f.view.window.document.querySelector('select[aria-label="Catalog account"]');
+    assert.equal(select !== null, true, 'catalog selector is in the real popover portal');
+    await f.input(select, id, { settle: false });
+    await f.commit(undefined, 'enabled.read');
+    await f.commit(undefined, 'models.authProviders');
+    await f.click(f.button(`Catalog · ${provider} · ${id ? 'Account A' : 'Pi default'}`), { settle: false });
+  };
+  return { f, provider, a, piDefault, choose, refreshed() { refreshed = true; },
+    contextWindow(value) { contextWindow = value; }, holdDiscovery(gate) { authGate = gate; } };
+}
+
+test('held credential discovery preserves a newer explicit OAuth form selection', async t => {
+  const { f, provider, choose, holdDiscovery } = await accountCatalogPanel(t, { extraKind: 'apikey', defaultKind: 'apikey' });
+  await choose('');
+  const held = f.gate('credential readback after manual auth-mode choice'); holdDiscovery(held);
+  f.route('POST', `/api/auth/api-key/${provider}`, { body: { apiKey: 'synthetic-replacement' }, reply: { data: { success: true } } });
+  await f.input('input[placeholder="Enter new key to replace…"]', 'synthetic-replacement');
+  await f.click(f.button('Save', f.node('.config-detail-stack')), { settle: false });
+  await f.commit(undefined, 'enabled.read');
+  assert.equal(f.works.some(work => work.label === 'models.authProviders' && !work.settled), true);
+  await f.click(f.button('Add provider'), { settle: false });
+  const picker = f.node('input[placeholder="Search providers…"]').closest('div').parentElement;
+  const oauth = [...picker.querySelectorAll('button')].find(button => button.textContent.includes('Dual-auth fixture') && button.textContent.includes('OAuth'));
+  assert.equal(oauth !== undefined, true);
+  await f.click(oauth, { settle: false });
+  assert.equal(f.text().includes('Connect your Dual-auth fixture account.'), true);
+  await f.deliver(held, 'models.authProviders'); await f.commit();
+  assert.equal(f.text().includes('Connect your Dual-auth fixture account.'), true, 'an older read cannot undo the newer manual login-form choice');
+  assert.deepEqual(f.requests.filter(r => r.method !== 'GET').map(r => ({ path: r.path, body: r.body })), [
+    { path: `/api/auth/api-key/${provider}`, body: { apiKey: 'synthetic-replacement' } },
+  ]);
+});
+
+test('shared definition Save reloads the current catalog after navigation with project-shadowed enabled models', async t => {
+  const { f, choose, contextWindow } = await accountCatalogPanel(t, { scope: 'project' });
+  const held = f.gate('shared definition Save across account navigation');
+  const body = { providers: { stepfun: { modelOverrides: { aaa: { contextWindow: 64000 } } } } };
+  f.route('PUT', '/api/models-config', { body, reply: { gate: held, data: { success: true } } });
+  await f.input('input[aria-label="Context window for A before refresh"]', '64000');
+  await f.click(f.button('Save', f.node('.config-footer-actions')), { settle: false });
+  await choose('');
+  assert.equal(f.node('input[aria-label="Context window for Pi default catalog"]').placeholder, '16000', 'current catalog read finishes before shared publication');
+  const reads = () => f.requests.filter(r => r.path === '/api/models/enabled');
+  const before = reads().length; contextWindow(64000);
+  await f.deliver(held, 'models.handleSave'); await f.commit(undefined, 'enabled.read');
+  assert.equal(reads().length, before + 1, 'shared Save rereads the current catalog, not just the captured account');
+  assert.equal(f.node('input[aria-label="Context window for Pi default catalog"]').placeholder, '64000');
+  assert.deepEqual(f.requests.filter(r => r.method !== 'GET').map(r => ({ path: r.path, body: r.body })), [{ path: '/api/models-config', body }], 'project-shadowed patterns remain untouched');
+});
+
+for (const extraKind of ['oauth', 'apikey']) test(`account navigation selects the actual Pi-default authentication kind after ${extraKind}`, async t => {
+  const defaultKind = extraKind === 'oauth' ? 'apikey' : 'oauth';
+  const { f, choose } = await accountCatalogPanel(t, { extraKind, defaultKind });
+  assert.equal(f.text().includes('A before refresh'), true);
+  await choose('');
+  assert.equal(f.text().includes('Pi default catalog'), true, 'authorized Pi-default models stay reachable without another sidebar click');
+  assert.equal(f.view.container.querySelectorAll('.enabled-models-section').length, 1);
+  assert.equal(f.node('.config-sidebar-item[aria-current="page"]').querySelector('.config-sidebar-text').textContent, 'Dual-auth fixture', 'same provider keeps its active sidebar row');
+  assert.equal(f.text().includes('Connect your Dual-auth fixture account.'), false);
+  assert.equal(f.requests.some(r => r.method !== 'GET'), false, 'navigation neither changes credentials/bindings nor refreshes catalogs');
+});
+
+for (const completed of [true, false]) for (const finishOnA of [true, false]) test(`detail-remounted catalog completion reloads only matching owner: complete=${completed}, A=${finishOnA}`, async t => {
+  const { f, provider, a, choose, refreshed } = await accountCatalogPanel(t);
+  const held = f.gate('A refresh across actual detail remounts');
+  const body = { provider, accounts: a };
+  f.route('POST', '/api/models/refresh', { body, reply: { gate: held, data: { completed, changed: false } } });
+  const original = f.node('.enabled-models-section');
+  await f.click(f.button('Refresh catalog'), { settle: false });
+  await choose('');
+  assert.equal(original === f.node('.enabled-models-section'), false, 'Pi-default detail replaces the actual additional-account section');
+  if (finishOnA) {
+    await choose('account-a');
+    assert.equal(original === f.node('.enabled-models-section'), false, 'returning A is a new section instance');
+    assert.equal(f.text().includes('A before refresh'), true, 'A offline read finishes before the held refresh');
+  }
+  const reads = () => f.requests.filter(r => r.method === 'GET' && r.path === '/api/models/enabled');
+  const before = reads().length;
+  refreshed();
+  await f.deliver(held, 'enabled.catalog'); await f.commit(undefined, 'enabled.read');
+  assert.equal(reads().length, before + (finishOnA ? 1 : 0), 'readback survives detail unmount but refuses a different account context');
+  assert.equal(f.text().includes(finishOnA ? 'A after refresh' : 'Pi default catalog'), true);
+  assert.equal(f.text().includes('Catalog refresh finished;'), false, 'retired detail feedback stays retired');
+  assert.deepEqual(f.requests.filter(r => r.method !== 'GET').map(r => ({ path: r.path, body: r.body })), [{ path: '/api/models/refresh', body }], 'only the explicit refresh ran; no mutation or network replay');
+});
+
+test('obsolete Pi-default key Save cannot invalidate the held B provider discovery', async t => {
+  const f = await settingsFixture(t), graph = await f.load('models');
+  const provider = 'account-review-fixture', b = { [provider]: 'account-b' };
+  const keySave = f.gate('Pi-default key Save after catalog departure'), bAuth = f.gate('B provider discovery');
+  let providerQuery = {}, catalogAccounts = {};
+  const listing = displayName => ({ oauthProviders: [], apiKeyProviders: [{ id: provider, displayName, configured: true, modelCount: 2 }] });
+  sharedPanelReads(f, '/project', { data: { accounts: [
+    { id: 'account-b', provider, label: 'Account B', type: 'api_key', authorized: true },
+  ], project: {}, session: null } });
+  const catalog = enabledView(); catalog.patterns = [`${provider}/*`]; catalog.providers[0].id = provider;
+  catalog.providers[0].models.forEach(model => { model.ref = `${provider}/${model.id}`; });
+  f.route('GET', '/api/models-config', { reply: { data: { providers: {} } } });
+  f.route('GET', '/api/auth/providers', { query: () => ({ accounts: JSON.stringify(providerQuery) }), reply: request =>
+    new Map(request.query).get('accounts') === '{}' ? { data: listing('Pi-default API fixture') }
+      : { gate: bAuth, data: listing('Provider B readback') } });
+  f.route('GET', '/api/models/enabled', { query: () => ({ cwd: '/project', accounts: JSON.stringify(catalogAccounts) }), reply: { data: catalog } });
+  f.route('POST', `/api/auth/api-key/${provider}`, { body: { apiKey: 'synthetic-replacement' }, reply: { gate: keySave, data: { success: true } } });
+  await f.mount(h(graph.ModelsConfig, { cwd: '/project', embedded: true, onClose() {} }));
+  await f.click(sidebarRow(f, 'Pi-default API fixture'));
+  await f.input('input[placeholder="Enter new key to replace…"]', 'synthetic-replacement');
+  await f.click(f.button('Save', f.node('.config-detail-stack')), { settle: false });
+  assert.equal(keySave.released, false);
+  await f.click(f.button(`Catalog · ${provider} · Pi default`), { settle: false });
+  providerQuery = b; catalogAccounts = b;
+  const account = f.view.window.document.querySelector('select[aria-label="Catalog account"]');
+  assert.equal(account !== null, true);
+  await f.input(account, 'account-b', { settle: false });
+  const authReads = () => f.requests.filter(r => r.path === '/api/auth/providers');
+  const beforeOldCallback = authReads().length;
+  assert.equal(authReads().some(r => new Map(r.query).get('accounts') === JSON.stringify(b)), true);
+  assert.equal(f.works.some(work => work.label === 'models.authProviders' && !work.settled), true, 'actual B discovery is held');
+  assert.equal(f.text().includes('Provider B readback'), false);
+  // Permit an obsolete default request at the transport boundary so a broken
+  // guard fails the count/publication assertions, not fixture route admission.
+  providerQuery = {};
+  await f.deliver(keySave, 'models.handleSave');
+  assert.equal(authReads().length, beforeOldCallback, 'departed default callback must not allocate another discovery request');
+  assert.equal(bAuth.released, false, 'old Save completes before B publishes');
+  await f.deliver(bAuth, 'models.authProviders'); await f.commit();
+  assert.equal(sidebarRow(f, 'Provider B readback').getAttribute('aria-current'), 'page', 'B auth result still owns publication');
+  assert.equal(f.text().includes('Pi-default API fixture'), false);
+  assert.equal(authReads().length, beforeOldCallback, 'B completion does not retry obsolete default discovery');
+  assert.deepEqual(f.requests.filter(r => r.method === 'POST' || r.method === 'PUT').map(r => ({ method: r.method, path: r.path, body: r.body })), [
+    { method: 'POST', path: `/api/auth/api-key/${provider}`, body: { apiKey: 'synthetic-replacement' } },
+  ], 'only the explicit Pi-default credential write; no catalog, chat or project mutation');
 });

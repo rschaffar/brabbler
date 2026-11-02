@@ -1,55 +1,30 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { SettingsManager } from "@earendil-works/pi-coding-agent";
 
-export interface ExplicitStartupPreferences {
+/** Shared native defaults, not a conversation's effective/clamped selection. */
+export interface StartupPreferences {
   model?: { provider: string; modelId: string };
   thinkingLevel?: ThinkingLevel;
 }
 
-export interface EffectiveStartupPreferences {
-  model?: { provider: string; modelId: string };
-  thinkingLevel: ThinkingLevel;
-  supportsThinking: boolean;
+export function readStartupPreferences(settings: SettingsManager): StartupPreferences {
+  const global = settings.getGlobalSettings();
+  return {
+    ...(global.defaultProvider && global.defaultModel
+      ? { model: { provider: global.defaultProvider, modelId: global.defaultModel } } : {}),
+    ...(global.defaultThinkingLevel ? { thinkingLevel: global.defaultThinkingLevel } : {}),
+  };
 }
 
-/**
- * Persist explicit browser selections without re-running AgentSession setters.
- *
- * The session constructor already records the effective model and thinking
- * level. Calling setModel()/setThinkingLevel() again would append duplicate
- * session entries and emit duplicate extension events.
- */
-export async function persistExplicitStartupPreferences(
-  settingsManager: SettingsManager,
-  explicit: ExplicitStartupPreferences,
-  effective: EffectiveStartupPreferences,
-): Promise<{ modelDefaultChanged: boolean }> {
-  if (!explicit.model && !explicit.thinkingLevel) {
-    return { modelDefaultChanged: false };
-  }
-
-  let modelDefaultChanged = false;
-
-  if (
-    explicit.model
-    && effective.model
-    && explicit.model.provider === effective.model.provider
-    && explicit.model.modelId === effective.model.modelId
-  ) {
-    settingsManager.setDefaultModelAndProvider(
-      effective.model.provider,
-      effective.model.modelId,
-    );
-    modelDefaultChanged = true;
-  }
-
-  if (
-    explicit.thinkingLevel
-    && (effective.supportsThinking || effective.thinkingLevel !== "off")
-  ) {
-    settingsManager.setDefaultThinkingLevel(effective.thinkingLevel);
-  }
-
-  await settingsManager.flush();
-  return { modelDefaultChanged };
+/** Only the explicit Settings action calls this. Preserve all unedited fields. */
+export async function saveStartupPreferences(settings: SettingsManager, changes: StartupPreferences): Promise<void> {
+  const checkErrors = () => {
+    const errors = settings.drainErrors();
+    if (errors.length) throw new Error("Could not save shared model defaults");
+  };
+  checkErrors();
+  if (changes.model) settings.setDefaultModelAndProvider(changes.model.provider, changes.model.modelId);
+  if (changes.thinkingLevel) settings.setDefaultThinkingLevel(changes.thinkingLevel);
+  await settings.flush();
+  checkErrors();
 }

@@ -33,7 +33,6 @@ import {
 } from "./project-command-env";
 import { cacheSessionPath, getLatestModelChange, invalidateSessionListCache, readLatestSessionEntryId, resolveSessionPath } from "./session-reader";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
-import { persistExplicitStartupPreferences } from "./startup-preferences";
 import { notifySessionComplete } from "./web-push";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
@@ -228,8 +227,6 @@ export interface RpcSessionStartOptions {
   allowInitialModelFallback?: boolean;
   thinkingLevel?: ThinkingLevel;
   modelSpeed?: ModelSpeed;
-  /** Inherited agent-launch preferences are session-local, not new user defaults. */
-  persistPreferences?: boolean;
   /** Host-only observer for exact initial launch prompt validation after input handlers. */
   observePrompt?: (prompt: string) => void;
 }
@@ -3348,21 +3345,8 @@ async function startRpcSessionInternal(
     });
     speedAgent.current = inner.agent;
 
-    const persistedPreferences = options.persistPreferences === false ? { modelDefaultChanged: false } : await persistExplicitStartupPreferences(
-      services.settingsManager,
-      {
-        ...(effectiveInitialModel ? { model: effectiveInitialModel } : {}),
-        ...(thinkingLevel ? { thinkingLevel } : {}),
-      },
-      {
-        ...(inner.model
-          ? { model: { provider: inner.model.provider, modelId: inner.model.id } }
-          : {}),
-        thinkingLevel: inner.thinkingLevel,
-        supportsThinking: inner.supportsThinking(),
-      },
-    );
-    if (persistedPreferences.modelDefaultChanged) invalidateModelsCache();
+    // Constructor choices belong to this conversation. Shared new-chat defaults
+    // are changed explicitly in Settings, never by startup or ordinary setters.
 
     // If specific tool names were requested (non-empty), set the active tools to the
     // requested builtin coding tools PLUS all extension/package tools, so installed

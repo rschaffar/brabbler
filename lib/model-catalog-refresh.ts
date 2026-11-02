@@ -129,7 +129,9 @@ async function runModelCatalogRefresh(
   // A pass that failed for one provider can still have persisted another's
   // catalog, so compare regardless of the outcome.
   const changed = modelCatalogSignature(runtime.getModels()) !== before;
-  if (changed) invalidateModelsCache();
+  // Even unchanged/partial passes may have repaired stale cached reads or auth
+  // visibility. A completed attempt requires fresh readback, not mutation replay.
+  invalidateModelsCache();
   return { completed, changed };
 }
 

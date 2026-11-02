@@ -88,7 +88,10 @@ source-derived inventory and fresh receipts; the historical baseline stays intac
 | `auth` | Installed CLI setup/mismatch/overwrite refusal, corrupt/missing state, shared throttling and password redaction, Basic/cookie access, rotation revocation, real browser login; removed SSH settings/sidebar/cards/API and no browser SSH requests, including a retired saved navigation value |
 | `terminal` | Real shell/PTY, retained Nerd/System families with shared mono base/bold weights, live palette/font-size changes without PTY/SSE replacement, coarse-touch portrait modifier/arrow input, reconnect/restart/exit, creation cancellation and workspace/Explorer coexistence |
 
-Git-backed review receipts use the v11 Git and v4/v3 worktree input IDs. The same
+Git-backed review receipts use the v11 Git and v5/v4 worktree input IDs. Worktree
+acknowledgement waits for the owned overview to render before scrolling, then
+measures its current button rectangle and the same center hit-test atomically;
+loading-content reflow cannot stale a separately captured rectangle. The same
 native settings/approval/Stop, desktop/mobile file drawer/fullscreen/Wide/focus,
 immutable historical context and browser download bridges remain. Standalone
 history downloads full owned metadata after native resource removal, not a patch

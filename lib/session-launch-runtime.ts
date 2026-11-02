@@ -78,7 +78,7 @@ export const sessionLaunchHost: SessionLaunchHost = {
       const started = await startRpcSession(`__launch__${randomUUID()}`, "", config.cwd, {
         initialPromptOwner: owner,
         initialModel: { provider: config.provider, modelId: config.modelId }, thinkingLevel: config.thinkingLevel,
-        modelSpeed: config.modelSpeed, accounts: config.accounts, toolNames: config.toolNames, persistPreferences: false,
+        modelSpeed: config.modelSpeed, accounts: config.accounts, toolNames: config.toolNames,
         observePrompt: (text) => { observedPrompt = text; },
       });
       session = started.session;
