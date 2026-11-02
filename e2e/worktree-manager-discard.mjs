@@ -100,16 +100,21 @@ export async function checkManagerDiscard(page, { base, fixture, manager, open, 
     return op;
   };
   const acknowledge = async () => {
+    // The owned overview replaces loading text above the actions. Await its
+    // rendered content before scrolling, rather than measuring across reflow.
+    await surface.getByText("Original proposal", { exact: true }).waitFor();
     await loss().focus();
     assert.equal(await loss().evaluate(node => node === document.activeElement), true);
     await loss().check();
     await waitManagerButton(page, surface, "Remove listed resources");
     await remove().scrollIntoViewIfNeeded();
-    const rect = await remove().boundingBox(); assert.ok(rect, "native review action has a physical box");
-    assert.equal(await remove().evaluate((node, bounds) => {
+    const geometry = await remove().evaluate(node => {
+      const bounds = node.getBoundingClientRect();
       const hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-      return node === hit || node.contains(hit);
-    }, rect), true, "loss approval action is reachable in the native modal");
+      return { hasBox: bounds.width > 0 && bounds.height > 0, reachable: node === hit || node.contains(hit) };
+    });
+    assert.equal(geometry.hasBox, true, "native review action has a physical box");
+    assert.equal(geometry.reachable, true, "loss approval action is reachable in the native modal");
   };
   const refreshActual = async () => {
     await surface.getByRole("button", { name: "Refresh actual state", exact: true }).click();
