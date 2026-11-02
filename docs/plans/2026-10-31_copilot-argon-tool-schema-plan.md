@@ -7,12 +7,14 @@ send a request to `github-copilot/gemini-4-argon` without its `git_worktree` too
 declaration causing HTTP 400. Preserve the tool's public name, argument names,
 three actions, selected-repository authority and existing Git safeguards.
 
-**Status / authority:** Independently reviewed plan; implementation is proposed.
-Planning and independent plan review are authorized. Runtime edits, live-provider
-probes, deployment and local integration are not part of this planning phase. Keep the same feature branch and
-linked worktree for subsequent authorized implementation and integration
-preparation; local `main` remains the eventual non-fast-forward merge target,
-with exact-state approval and cleanup separately gated.
+**Status / authority:** Implementation authorized after the independent plan
+reviews and local-main rebase. The plugin-local schema, validation and regression
+tests passed focused verification and independent implementation review; complete
+acceptance remains pending. Keep the same feature branch and
+linked worktree for implementation and integration preparation; local `main`
+remains the eventual non-fast-forward merge target, with exact-state approval and
+cleanup separately gated. Live-provider probes, activation and publication are
+not authorized by this plan.
 
 ## Context
 
@@ -92,11 +94,11 @@ or the SDK adapter about Git actions.
 
 ### P1 — Preserve the execution contract while changing the declaration
 
-- [ ] In `plugins/git-workflow/index.ts`, replace the root union with the object
+- [x] In `plugins/git-workflow/index.ts`, replace the root union with the object
   declaration above and add action-dependent validation/narrowing before Git
   dispatch. Confirm TypeScript accepts the real `GitOperation` without a broad
   cast and `git_worktree` keeps the same name, arguments and three actions.
-- [ ] Extend `plugins/git-workflow/runtime.test.mjs` using the real registered
+- [x] Extend `plugins/git-workflow/runtime.test.mjs` using the real registered
   tool and SDK lifecycle. For each of create and attach, separately assert that
   missing `branch`, missing `baseBranch` and optional-null conditional fields
   produce the specific plugin-owned conditional-validation error, not a generic
@@ -112,19 +114,19 @@ or the SDK adapter about Git actions.
 
 ### P2 — Protect the provider-facing schema and document its boundary
 
-- [ ] In the same runtime test owner, capture actual registered Git tool
+- [x] In the same runtime test owner, capture actual registered Git tool
   declarations and pass them through the pinned SDK OpenAI-completions payload
   path using a synthetic key. Stop in `onPayload` before HTTP and deny unexpected
   transport. Assert that the emitted `git_worktree` parameters are an object
   with the required common fields, all three action values, the two conditional
   fields, and no root union/composition keywords. Assert all six Git plugin
   tools remain present. This proves serialization shape, not remote acceptance.
-- [ ] Prove the regression meaningfully: the old root union must fail the named
+- [x] Prove the regression meaningfully: the old root union must fail the named
   declaration assertion; removing each action-specific requirement must fail
   its named plugin-boundary error assertion even when native preflight still
   refuses the operation. Preserve failing/restored evidence outside tracked public
   content; compile/setup failures do not count.
-- [ ] Update `docs/git-workflow-plugin.md` at the tool contract to explain the
+- [x] Update `docs/git-workflow-plugin.md` at the tool contract to explain the
   object-root compatibility choice, execution-time conditional validation and
   the deliberate malformed-removal-extra tightening. Keep empirical compatibility
   claims limited to the observed endpoint; do not grow `AGENTS.md` or add a
@@ -132,14 +134,14 @@ or the SDK adapter about Git actions.
 
 ### P3 — Verify the settled implementation and prepare local integration
 
-- [ ] Run focused static/native checks from the feature root and record tested
+- [x] Run focused static/native checks from the feature root and record tested
   input identities, results, end-to-end command time and artifact locations:
   `nix run .#test -- core --file plugins/git-workflow/runtime.test.mjs` and
   `nix run .#test -- core --file plugins/git-workflow/server.test.mjs`.
   These entry points include the required static checks; focused passes are not
   full acceptance. Reuse existing native cases instead of duplicating their
   full operation matrices.
-- [ ] Obtain an independent implementation safety review of declaration shape,
+- [x] Obtain an independent implementation safety review of declaration shape,
   action narrowing, preserved policy/effect boundaries and changed native-test
   isolation. Keep cases serial in the existing N-lane owner. On success and failure,
   await admitted prompt/stream settlement and session shutdown before restoring
@@ -188,16 +190,43 @@ exercise removal extras and review native-test settlement/isolation. No blocking
 design finding remains. These are plan reviews, not implementation review,
 TypeScript/test execution, provider acceptance or implementation authorization.
 
+## Implementation checkpoint
+
+On 2026-11-02, the retained feature was rebased onto local `main` at
+`34f1b39b2acf5da8f90d6d1c8c5d5721b2b3a966`; the sole conflict was additive plan
+index entries, all preserved. Focused command on the implementation:
+
+```sh
+nix run .#test -- core --file plugins/git-workflow/runtime.test.mjs --file plugins/git-workflow/server.test.mjs --jobs 2
+```
+
+Native x86_64 Linux Nix sandboxes passed **94/94 tests** in two files, with static
+checks; end-to-end command time **133 seconds**, including in-run realization.
+The owned inner execution envelope was **128.769 seconds**, not a separate test-only
+interval. Existing unrelated lint warnings remain nonfatal; no new runtime-file
+warning was reported. This is not complete application acceptance.
+
+The initial unchanged-production control failed the named object-root assertion.
+Two private exported-source counterexamples defaulted a missing branch or base
+instead of rejecting it. Each failed all four named create/attach omitted/null
+plugin-boundary assertions (commands returned failure in **75/71 seconds**, each
+including realization). The real feature was never mutated for these controls;
+its successful focused run is the unchanged receiving implementation. The serial
+N-lane ownership and full runtime/server matrix remain intact. Independent
+implementation review found no actionable safety findings. Exact reports, input
+manifests and first-failure logs are retained in private task evidence; no live
+provider request or installed-service interaction was used.
+
 ## Completion Checklist
 
 - [x] Two independent plan reviews are complete; material findings are resolved
-  in this plan, and implementation remains the next authority gate.
-- [ ] Implementation authorization is obtained before runtime/test edits.
-- [ ] The emitted tool schema has the compatible object root and all three
+  in this plan; integration remains separately gated.
+- [x] Implementation authorization obtained before runtime/test edits.
+- [x] The emitted tool schema has the compatible object root and all three
   actions; action-specific requirements remain fail closed with negative tests.
 - [ ] Focused regression controls, independent implementation review and complete
   Nix acceptance pass for the receiving candidate; evidence scope is explicit.
-- [ ] Maintained Git plugin guidance contains the durable compatibility contract;
+- [x] Maintained Git plugin guidance contains the durable compatibility contract;
   no private sessions, hosts, credentials or personal paths enter tracked files.
 - [ ] Local-main integration passes its exact-state approval and verification;
   retain or clean feature resources only through the separate authorized gate.
