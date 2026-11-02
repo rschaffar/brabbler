@@ -9,6 +9,7 @@ async function models(t) {
   const x = await lowerFixture(t), { f, graph: c } = x;
   f.route('GET', '/api/models-config', { reply: { data: { providers: {} } } });
   f.route('GET', '/api/auth/accounts/selection', { query: { cwd: '/synthetic/project' }, reply: { data: { accounts: [], project: {}, session: null } } });
+  f.route('GET', '/api/models/defaults', { reply: { data: {} } });
   f.route('GET', '/api/auth/providers', { query: { accounts: '{}' }, reply: { data: { oauthProviders: [{ id: 'fixture-oauth', name: 'Synthetic Subscription', loggedIn: false, usesCallbackServer: false }], apiKeyProviders: [] } } });
   f.route('GET', '/api/models/enabled', { query: { cwd: '/synthetic/project', accounts: '{}' }, reply: { data: { allEnabled: true, patterns: [], stalePatterns: [], enabledTotal: 0, availableTotal: 0, providers: [], scope: 'global', editable: true, settingsPath: 'synthetic/settings.json' } } });
   await x.mount(h(c.ModelsConfig, { cwd: '/synthetic/project', embedded: true, onClose() {} }));
@@ -78,6 +79,7 @@ test('original Models OAuth literals: exact provider-wide source, DEFAULT-42/pro
   const originalLogin = '/api/auth/login/github-copilot';
   f.route('GET', '/api/models-config', { reply: { data: { providers: {} } } });
   f.route('GET', '/api/auth/accounts/selection', { query: { cwd }, reply: { data: { accounts: [], project: {}, session: null } } });
+  f.route('GET', '/api/models/defaults', { reply: { data: {} } });
   f.route('GET', '/api/auth/providers', { query: { accounts: '{}' }, reply: { data: { oauthProviders: [
     { id: 'github-copilot', name: 'GitHub Copilot', loggedIn: false, usesCallbackServer: false },
   ], apiKeyProviders: [] } } });

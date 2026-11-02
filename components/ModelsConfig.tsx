@@ -30,6 +30,7 @@ import {
 } from "./models-config-helpers";
 import {
   useSettingsWork,
+  useSettingsTask,
   ConfigButton,
   ConfigDetail,
   ConfigDetailActions,
@@ -59,6 +60,7 @@ import { providerBadgeLabel } from "./enabled-models-helpers";
 import { ProviderIcon } from "./ProviderIcon";
 import { ProviderUsageSummary } from "./ProviderUsageSummary";
 import { ProviderAccounts } from "./ProviderAccounts";
+import type { StartupPreferences } from "@/lib/startup-preferences";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1870,6 +1872,83 @@ export function AddProviderPicker({
   );
 }
 
+/** Shared defaults are a separate explicit save, never a chat-selection side effect. */
+export function SharedModelDefaults({ controller }: { controller: EnabledModelsController }) {
+  const { t } = useI18n();
+  const observe = useSettingsWork();
+  const task = useSettingsTask();
+  const [saved, setSaved] = useState<StartupPreferences | null>(null);
+  const [draft, setDraft] = useState<StartupPreferences | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savedOk, setSavedOk] = useState(false);
+  const mounted = useRef(false);
+  const version = useRef(0);
+  useEffect(() => {
+    mounted.current = true;
+    const request = ++version.current;
+    void observe("models.defaults.read", (async () => {
+      try {
+        const response = await fetch("/api/models/defaults");
+        const data = await response.json() as StartupPreferences & { error?: string };
+        if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+        if (mounted.current && request === version.current) { setSaved(data); setDraft(data); }
+      } catch (cause) {
+        if (mounted.current && request === version.current) setError(String(cause));
+      }
+    })());
+    return () => { mounted.current = false; };
+  }, [observe]);
+  const modelKey = (model?: StartupPreferences["model"]) => model ? JSON.stringify([model.provider, model.modelId]) : "";
+  const choices = (controller.view?.providers ?? []).flatMap((provider) => provider.models.map((model) => ({
+    key: modelKey({ provider: provider.id, modelId: model.id }), label: `${provider.id}/${model.id}`,
+  })));
+  const selected = modelKey(draft?.model);
+  const changedModel = selected !== modelKey(saved?.model);
+  const changedThinking = draft?.thinkingLevel !== saved?.thinkingLevel;
+  const save = task("models.defaults.save", async () => {
+    if (!draft || saving || (!changedModel && !changedThinking)) return;
+    const request = ++version.current;
+    setSaving(true); setError(null); setSavedOk(false);
+    try {
+      const response = await fetch("/api/models/defaults", { method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...(changedModel ? { model: draft.model } : {}), ...(changedThinking ? { thinkingLevel: draft.thinkingLevel } : {}) }) });
+      const data = await response.json() as StartupPreferences & { error?: string };
+      if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+      if (mounted.current && request === version.current) { setSaved(data); setDraft(data); setSavedOk(true); }
+    } catch (cause) {
+      if (mounted.current && request === version.current) setError(String(cause));
+    } finally {
+      if (mounted.current && request === version.current) setSaving(false);
+    }
+  });
+  return <details className="shared-model-defaults" style={{ padding: "8px 16px", fontSize: 12 }}>
+    <summary style={{ cursor: "pointer" }}>{t("models.newChatDefaults")}</summary>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 8 }}>
+    <div className="enabled-models-note">{t("models.newChatDefaultsHelp")}</div>
+    <label>{t("models.defaultModel")}
+      <select style={inputStyle} aria-label={t("models.defaultModel")} value={selected} disabled={!draft || saving}
+        onChange={(event) => { const [provider, modelId] = JSON.parse(event.target.value) as [string, string]; setDraft({ ...draft, model: { provider, modelId } }); setSavedOk(false); }}>
+        <option value="" disabled>{t("models.nativeDefault")}</option>
+        {selected && !choices.some((choice) => choice.key === selected) && <option value={selected}>{draft?.model?.provider}/{draft?.model?.modelId}</option>}
+        {choices.map((choice) => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
+      </select>
+    </label>
+    <label>{t("models.defaultThinking")}
+      <select style={inputStyle} aria-label={t("models.defaultThinking")} value={draft?.thinkingLevel ?? ""} disabled={!draft || saving}
+        onChange={(event) => { setDraft({ ...draft, thinkingLevel: event.target.value as ThinkingLevel }); setSavedOk(false); }}>
+        <option value="" disabled>{t("models.nativeDefault")}</option>
+        {THINKING_LEVELS.map((level) => <option key={level} value={level}>{level}</option>)}
+      </select>
+    </label>
+    <ConfigButton size="small" onClick={save} disabled={!draft || saving || (!changedModel && !changedThinking)}>
+      {saving ? t("i18n.saving") : savedOk ? t("i18n.saved") : t("models.saveDefaults")}
+    </ConfigButton>
+    {error && <div role="alert">{error}</div>}
+    </div>
+  </details>;
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ModelsConfig({ onClose, embedded = false, cwd = null, sessionId = null, initialAccounts }: {
@@ -2223,6 +2302,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, sessionId 
           catalog={{ accounts: catalogAccounts, baseAccounts: initialAccounts, onChange: setCatalogAccounts, onProviderChange: selectCatalogProvider }}
           onSessionChange={async () => { throw new Error("Catalog inspection cannot change a conversation account"); }}
           onAccountsChanged={catalogChanged} />
+        <SharedModelDefaults controller={enabledModels} />
         <EnabledModelsBanner controller={enabledModels} />
         {authListFailed && <div role="alert" className="enabled-models-note">
           {t("models.providerDiscoveryUnavailable")}{" "}

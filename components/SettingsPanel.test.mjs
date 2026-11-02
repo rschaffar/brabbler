@@ -25,6 +25,7 @@ test('actual Settings navigation keeps real visited General/Models mounted, reme
   const { f, graph: c, props } = await generalFixture(t, { onClose() { closed++; } });
   f.route('GET', '/api/models-config', { reply: { data: { providers: { fixture: { api: 'openai-completions' } } } } });
   f.route('GET', '/api/auth/accounts/selection', { query: { cwd: '/project', sessionId: 'session-A' }, reply: { data: { accounts: [], project: {}, session: {} } } });
+  f.route('GET', '/api/models/defaults', { reply: { data: {} } });
   f.route('GET', '/api/auth/providers', { query: { accounts: '{}' }, reply: { data: { oauthProviders: [], apiKeyProviders: [] } } });
   f.route('GET', '/api/models/enabled', { query: { cwd: '/project', accounts: '{}' }, reply: { data: modelView } });
   await f.mount(h(c.SettingsPanel, props));

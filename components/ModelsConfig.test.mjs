@@ -174,6 +174,7 @@ async function modelEditor(t, initial, provider = {}) {
 }
 function sharedPanelReads(f, cwd, selectionReply = { data: { accounts: [], project: {}, session: null } }) {
   f.route('GET', '/api/auth/accounts/selection', { query: { cwd }, reply: selectionReply });
+  f.route('GET', '/api/models/defaults', { reply: { data: {} } });
 }
 async function modelsPanel(t, { config = { providers: { stepfun: { api: 'openai-completions', models: [{ id: 'aaa' }, { id: 'ddd' }] } } }, providers = { oauthProviders: [], apiKeyProviders: [] }, scope = 'global', enabled, selection } = {}) {
   const f = await settingsFixture(t), graph = await f.load('models');
@@ -614,6 +615,41 @@ test('Models Save waits for complete account resolution and current catalog befo
   assert.equal(f.requests.some(r => r.method === 'POST' || r.path.startsWith('/api/agent/') || r.path === '/api/provider-usage/query'), false, 'catalog inspection neither refreshes automatically nor changes bindings/usage');
 });
 
+test('real shared-default Save retains failed draft and saves globally across inspected-account navigation', async t => {
+  const f = await settingsFixture(t), { SharedModelDefaults } = await f.load('models');
+  const before = { model: { provider: 'stepfun', modelId: 'aaa' }, thinkingLevel: 'low' };
+  const desired = { model: { provider: 'stepfun', modelId: 'ddd' }, thinkingLevel: 'high' };
+  const calls = [], held = f.gate('failed shared-default HTTP save'); let refuse = true;
+  const controller = { accounts: { stepfun: 'account-a' }, view: enabledView(),
+    refresh() { calls.push('refresh'); }, resync() { calls.push('resync'); } };
+  f.route('GET', '/api/models/defaults', { reply: { data: before } });
+  f.route('PUT', '/api/models/defaults', { body: desired, reply: () => refuse
+    ? { gate: held, status: 500, data: { error: 'Synthetic global defaults unavailable' } }
+    : { data: desired } });
+  await f.mount(h(SharedModelDefaults, { controller }));
+  await f.click(f.node('summary'));
+  assert.equal(f.node('details').open, true);
+  const model = 'select[aria-label="Default model for new chats"]', thinking = 'select[aria-label="Default thinking for new chats"]';
+  await f.input(model, JSON.stringify(['stepfun', 'ddd'])); await f.input(thinking, 'high');
+  const writes = () => f.requests.filter(r => r.method === 'PUT');
+  assert.equal(writes().length, 0, 'editing shared defaults is only a draft');
+  await f.click(f.button('Save defaults'), { settle: false });
+  assert.equal(f.node(model).disabled, true);
+  await f.rerender(h(SharedModelDefaults, { controller: { ...controller, accounts: { stepfun: 'account-b' } } }));
+  await f.deliver(held, 'models.defaults.save');
+  assert.equal(f.node('[role="alert"]').textContent, 'Error: Synthetic global defaults unavailable');
+  assert.equal(f.button('Save defaults').disabled, false, 'failed save is retryable, never Saved');
+  assert.equal(f.node(model).value, JSON.stringify(['stepfun', 'ddd']));
+  assert.equal(f.node(thinking).value, 'high');
+  assert.deepEqual(writes().map(r => ({ path: r.path, body: r.body })), [{ path: '/api/models/defaults', body: desired }]);
+  refuse = false; await f.click(f.button('Save defaults'));
+  assert.equal(f.button('Saved').disabled, true);
+  assert.equal(f.view.container.querySelector('[role="alert"]') === null, true);
+  assert.deepEqual(writes().map(r => ({ path: r.path, body: r.body })), Array.from({ length: 2 }, () => ({ path: '/api/models/defaults', body: desired })), 'both PUTs contain only global model/thinking changes, never accounts or cwd');
+  assert.deepEqual(calls, [], 'default persistence does not invoke catalog or conversation continuations');
+  assert.equal(f.requests.some(r => r.method === 'POST' || (r.method === 'PUT' && r.path !== '/api/models/defaults')), false);
+});
+
 for (const captured of [{ retained: 'retained-account', stepfun: 'account-a' }, {}]) test(`Settings uses the warmed native snapshot rather than changed project defaults: ${JSON.stringify(captured)}`, async t => {
   const f = await settingsFixture(t), { ModelsConfig } = await f.load('models');
   const sessionId = 'warmed-passive-composer', cwd = '/project';
@@ -624,6 +660,7 @@ for (const captured of [{ retained: 'retained-account', stepfun: 'account-a' }, 
       { id: 'retained-account', provider: 'retained', label: 'Retained', type: 'api_key', authorized: true }],
     project: { stepfun: 'account-b' }, session: captured,
   } } });
+  f.route('GET', '/api/models/defaults', { reply: { data: {} } });
   f.route('GET', '/api/models-config', { reply: { data: { providers: {} } } });
   f.route('GET', '/api/auth/providers', { query: { accounts: JSON.stringify(captured) }, reply: { data: {
     oauthProviders: [], apiKeyProviders: [{ id: 'stepfun', displayName: 'Native provider', configured: true, modelCount: 2 }],
