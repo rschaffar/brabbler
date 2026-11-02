@@ -58,6 +58,7 @@ import {
 import { providerBadgeLabel } from "./enabled-models-helpers";
 import { ProviderIcon } from "./ProviderIcon";
 import { ProviderUsageSummary } from "./ProviderUsageSummary";
+import { ProviderAccounts } from "./ProviderAccounts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1871,14 +1872,22 @@ export function AddProviderPicker({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
-  onClose: () => void; embedded?: boolean; cwd?: string | null;
+export function ModelsConfig({ onClose, embedded = false, cwd = null, sessionId = null, initialAccounts }: {
+  onClose: () => void; embedded?: boolean; cwd?: string | null; sessionId?: string | null;
+  initialAccounts?: Readonly<Record<string, string>>;
 }) {
   const observe = useSettingsWork();
   const { t } = useI18n();
   // `enabledModels` lives in pi's settings, not models.json, so these switches
   // apply immediately instead of waiting for this panel's Save button.
-  const enabledModels = useEnabledModels(cwd);
+  const sourceIdentity = JSON.stringify([cwd, sessionId, initialAccounts]);
+  const [catalogContext, setCatalogContext] = useState<{ source: string; accounts: Readonly<Record<string, string>> } | null>(null);
+  // null is deliberately not Pi default: no read/refresh before resolution.
+  const catalogAccounts = catalogContext?.source === sourceIdentity ? catalogContext.accounts : null;
+  const setCatalogAccounts = useCallback((accounts: Readonly<Record<string, string>>) => {
+    setCatalogContext({ source: sourceIdentity, accounts: Object.freeze(Object.fromEntries(Object.entries(accounts).sort())) });
+  }, [sourceIdentity]);
+  const enabledModels = useEnabledModels(cwd, catalogAccounts);
   const [config, setConfig] = useState<ModelsJson>({ providers: {} });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1888,6 +1897,8 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(readRememberedSelection);
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
   const [apiKeyProviders, setApiKeyProviders] = useState<ApiKeyProvider[]>([]);
   const [authListed, setAuthListed] = useState(false);
@@ -1903,21 +1914,41 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
    */
   const savedModelIdsRef = useRef<Map<string, (string | null)[]>>(new Map());
 
+  const authIdentity = JSON.stringify([sourceIdentity, catalogAccounts]);
+  const authIdentityRef = useRef(authIdentity);
+  authIdentityRef.current = authIdentity;
+  const authVersion = useRef(0);
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; authVersion.current++; return () => { mounted.current = false; }; }, []);
+
   const refreshAuthProviders = useCallback(() => {
-    void observe("models.authProviders", fetch("/api/auth/providers")
+    if (catalogAccounts === null || !mounted.current || authIdentity !== authIdentityRef.current) return;
+    const version = ++authVersion.current;
+    const selectionAtRequest = selectionRef.current;
+    const current = () => mounted.current && version === authVersion.current && authIdentity === authIdentityRef.current;
+    const query = new URLSearchParams({ accounts: JSON.stringify(catalogAccounts) });
+    void observe("models.authProviders", fetch(`/api/auth/providers?${query}`)
       .then(async (r) => {
         const d = await r.json() as { oauthProviders?: OAuthProvider[]; apiKeyProviders?: ApiKeyProvider[] };
         if (!r.ok || !Array.isArray(d.oauthProviders) || !Array.isArray(d.apiKeyProviders)) throw new Error("Provider discovery unavailable");
         return d;
       })
       .then((d) => {
+        if (!current()) return;
+        setSelection((previous) => {
+          if (previous !== selectionAtRequest || (previous?.type !== "oauth" && previous?.type !== "apikey")) return previous;
+          const kind = managedProviderKind(previous.providerId, d.oauthProviders ?? [], d.apiKeyProviders ?? []);
+          return kind && kind !== previous.type ? { type: kind, providerId: previous.providerId } : previous;
+        });
         if (Array.isArray(d.oauthProviders)) setOauthProviders(d.oauthProviders);
         if (Array.isArray(d.apiKeyProviders)) setApiKeyProviders(d.apiKeyProviders);
         setAuthListed(true);
         setAuthListFailed(false);
       })
-      .catch(() => setAuthListFailed(true)));
-  }, [observe]);
+      .catch(() => { if (current()) setAuthListFailed(true); }));
+  }, [catalogAccounts, authIdentity, observe]);
+
+  useEffect(() => { refreshAuthProviders(); }, [refreshAuthProviders]);
 
   useEffect(() => {
     void observe("models.config", fetch("/api/models-config")
@@ -1940,8 +1971,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
       })
       .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false)));
-    refreshAuthProviders();
-  }, [refreshAuthProviders, observe]);
+  }, [observe]);
 
   useEffect(() => {
     if (selection) setLastSettingsSelection("models", JSON.stringify(selection));
@@ -2083,7 +2113,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
   }, []);
 
   const handleSave = useCallback(() => observe("models.handleSave", (async () => {
-    if (loadError) return;
+    if (loadError || catalogAccounts === null || enabledModels.loading || !enabledModels.view) return;
     setSaving(true);
     setSaveError(null);
     setSavedOk(false);
@@ -2116,7 +2146,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
     } finally {
       setSaving(false);
     }
-  })()), [config, enabledModels, loadError, t, observe]);
+  })()), [config, catalogAccounts, enabledModels, loadError, t, observe]);
 
   const providers = Object.entries(config.providers ?? {}).filter(([id, entry]) => {
     if (!isOverridesOnlyProvider(entry)) return true;
@@ -2127,6 +2157,14 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
     const label = providerBadgeLabel(enabledModels.view, providerId);
     return label ? <span className="models-sidebar-badge">{label}</span> : null;
   };
+  const catalogProvider = selection?.type === "oauth" || selection?.type === "apikey" ? selection.providerId
+    : selection?.type === "provider" ? selection.name : selection?.type === "model" ? selection.providerName : "";
+  const selectCatalogProvider = (id: string) => {
+    const kind = managedProviderKind(id, oauthProviders, apiKeyProviders);
+    if (kind) setSelection({ type: kind, providerId: id });
+    else if (config.providers?.[id]) setSelection({ type: "provider", name: id });
+  };
+  const catalogChanged = async () => { refreshAuthProviders(); enabledModels.refresh(); };
   const activeOAuth = oauthProviders.filter((p) => p.loggedIn);
   const activeApiKey = apiKeyProviders.filter((p) => p.configured);
 
@@ -2136,12 +2174,14 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
     if (selection.type === "oauth") {
       const p = oauthProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <OAuthDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} enabledModels={enabledModels} contextSettings={contextSettings(p.id)} />;
+      if (catalogAccounts?.[p.id]) return <EnabledModelsSection providerId={p.id} controller={enabledModels} contextSettings={contextSettings(p.id)} />;
+      return <OAuthDetail key={p.id} provider={p} onRefresh={catalogChanged} enabledModels={enabledModels} contextSettings={contextSettings(p.id)} />;
     }
     if (selection.type === "apikey") {
       const p = apiKeyProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <ApiKeyDetail key={p.id} provider={p} onRefresh={refreshAuthProviders} enabledModels={enabledModels} contextSettings={contextSettings(p.id)} />;
+      if (catalogAccounts?.[p.id]) return <EnabledModelsSection providerId={p.id} controller={enabledModels} contextSettings={contextSettings(p.id)} />;
+      return <ApiKeyDetail key={p.id} provider={p} onRefresh={catalogChanged} enabledModels={enabledModels} contextSettings={contextSettings(p.id)} />;
     }
     if (selection.type === "provider") {
       const provider = config.providers?.[selection.name];
@@ -2178,6 +2218,11 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
     <>
     <ConfigPanelShell embedded={embedded} title={t("common.models")} subtitle="~/.pi/agent/models.json" closeLabel={t("i18n.close")} onClose={onClose}>
 
+        <div className="enabled-models-note">{t("models.sharedScope")}</div>
+        <ProviderAccounts key={sourceIdentity} cwd={cwd} sessionId={sessionId} provider={catalogProvider} busy={false}
+          catalog={{ accounts: catalogAccounts, baseAccounts: initialAccounts, onChange: setCatalogAccounts, onProviderChange: selectCatalogProvider }}
+          onSessionChange={async () => { throw new Error("Catalog inspection cannot change a conversation account"); }}
+          onAccountsChanged={catalogChanged} />
         <EnabledModelsBanner controller={enabledModels} />
         {authListFailed && <div role="alert" className="enabled-models-note">
           {t("models.providerDiscoveryUnavailable")}{" "}
@@ -2310,7 +2355,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null }: {
           <ConfigButton
             variant="primary"
             onClick={handleSave}
-            disabled={saving || savedOk || loadError !== null}
+            disabled={saving || savedOk || loadError !== null || catalogAccounts === null || enabledModels.loading || !enabledModels.view}
             className={savedOk ? "is-success" : undefined}
           >
             {savedOk && (

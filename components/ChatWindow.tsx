@@ -82,6 +82,8 @@ export interface ChatWindowProps {
   onSessionCreated?: (session: SessionInfo, sourceDraftKey: string) => void;
   onSessionForked?: (newSessionId: string) => void;
   modelsRefreshKey?: number;
+  onAccountSelectionChange?: (accounts: Readonly<Record<string, string>>) => void;
+  onNativeSessionIdChange?: (id: string | null) => void;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
   onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => void;
   onSystemPromptChange?: (prompt: string | null) => void;
@@ -332,7 +334,7 @@ export function ChatWindowView(props: ChatWindowViewProps) {
   return useChatWindowView(props);
 }
 
-function useChatWindowView({ workObserver, session, sessionRunning, contextReloadNotice, covered = false, searchTarget, onSearchTargetHandled, onScrollPositionChange, archivedRootSessionId, archiveActionBusy, onSessionRestored, newSessionCwd, newSessionDraftKey, chatInputRef, onSessionStatsChange, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, state, work, restore }: ChatWindowViewProps) {
+function useChatWindowView({ workObserver, session, sessionRunning, contextReloadNotice, covered = false, searchTarget, onSearchTargetHandled, onScrollPositionChange, archivedRootSessionId, archiveActionBusy, onSessionRestored, newSessionCwd, newSessionDraftKey, chatInputRef, onNativeSessionIdChange, onSessionStatsChange, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, state, work, restore }: ChatWindowViewProps) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
@@ -769,8 +771,13 @@ function useChatWindowView({ workObserver, session, sessionRunning, contextReloa
     container.scrollTop = restoreScrollTop(container.scrollHeight, prevScrollDistanceRef.current);
     prevScrollDistanceRef.current = null;
   }, [visibleCount, messages.length, scrollContainerRef]);
-  // Push session stats up to AppShell for the top bar.
-  // Compare scalar fields to avoid loops from new object identity each render.
+  // Setup can warm a native session before it is promoted to a conversation.
+  const nativeSessionId = session?.id ?? sessionIdRef.current;
+  useEffect(() => {
+    onNativeSessionIdChange?.(nativeSessionId);
+  }, [nativeSessionId, onNativeSessionIdChange]);
+
+  // Push session stats up to AppShell; compare scalars to avoid render loops.
   const statsKey = sessionStats
     ? [
       sessionStats.sessionId,

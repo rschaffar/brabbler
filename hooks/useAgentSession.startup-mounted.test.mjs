@@ -8,6 +8,41 @@ const options = { timeout: 10000 };
 const creations = f => f.requests.filter(request => request.path === "/api/agent/new");
 const commands = f => f.requests.filter(request => request.method === "POST" && /^\/api\/agent\/[^/]+$/.test(request.path));
 
+test("real passive ChatWindow publishes its warmed native identity without promoting a conversation", options, async t => {
+  const ids = [], f = await sessionFixture(t, { defaultChat: true });
+  await f.mountReady(f.newOptions({ onNativeSessionIdChange: id => ids.push(id), soundEnabled: false }));
+  assert.equal(creations(f).length, 0);
+  await f.run("warm the real passive composer through System", () => f.loader());
+  await f.settleMaintenance(); await f.settleDefault();
+  assert.equal(creations(f).length, 1);
+  assert.equal(f.requests.some(r => r.path === '/api/auth/accounts/selection' && r.query.get('sessionId') === f.savedId), true, 'existing lower account controls already know the native identity');
+  assert.equal(ids.at(-1), f.savedId, 'Settings receives the same native identity instead of falling back to project defaults');
+  assert.equal(f.promotions.length, 0, 'warming does not promote or send a conversation');
+  assert.equal(commands(f).some(request => request.body.type === 'prompt'), false);
+});
+
+test("a departed real ChatWindow cannot publish its late warmed identity into the next composer", options, async t => {
+  const ids = [], f = await sessionFixture(t, { defaultChat: true });
+  const old = f.hold(command('ensure_session'));
+  await f.mountReady(f.newOptions({ onNativeSessionIdChange: id => ids.push({ owner: 'old', id }), soundEnabled: false }));
+  const pending = await f.start('outgoing System initializer', () => f.loader());
+  await old.entered.promise;
+  const newId = `${f.savedId}-next`; f.declareSession(newId);
+  const current = f.hold(command('ensure_session'));
+  await f.mount(f.newOptions({ newSessionDraftKey: `${f.draftKey}:next`, onNativeSessionIdChange: id => ids.push({ owner: 'new', id }), soundEnabled: false }));
+  const warming = await f.start('current System initializer', () => f.loader());
+  await current.entered.promise;
+  await f.finish(warming, () => current.resolve({ sessionId: newId, model: selected('B'), thinkingLevel: 'high' }));
+  await f.settleMaintenance();
+  const before = ids.length;
+  await f.finish(pending, () => old.resolve({ sessionId: f.savedId, model: selected('B'), thinkingLevel: 'high' }));
+  await f.settleDefault();
+  assert.equal(ids.at(-1)?.owner, 'new');
+  assert.equal(ids.at(-1)?.id, newId);
+  assert.equal(ids.length, before, 'late completion has no mounted view that can publish an outgoing identity');
+  assert.equal(ids.some(value => value.owner === 'old' && value.id !== null), false);
+});
+
 test("mounted startup: implicit catalog defaults/pins are displayed but omitted from lazy creation", options, async t => {
   const f = await sessionFixture(t);
   await f.mountReady();
@@ -124,6 +159,26 @@ test("mounted startup: keyed departure refuses account PUT and rekeys only outgo
   assert.equal(f.promotions.length, 1);
   assert.equal(f.promotions[0].key, f.draftKey);
   assert.equal(f.promotions[0].draftAtCallback.value, "  outgoing\nunsent  ", "rekey precedes publication");
+});
+
+test("mounted account selection: an outgoing PUT cannot publish over a new composer's snapshot", options, async t => {
+  const f = await sessionFixture(t);
+  const published = [];
+  await f.mountReady({ ...f.existingOptions(), onAccountSelectionChange: accounts => published.push({ owner: "old", accounts }) });
+  const put = f.hold(request => request.path === "/api/auth/accounts/selection" && request.method === "PUT");
+  const outgoing = await f.start("held outgoing account PUT", value =>
+    value.handleSessionAccountChange(provider, "account-A", { [provider]: "account-A" }));
+  await put.entered.promise;
+  const maintenance = f.maintenanceHandle;
+  await f.mountReady(f.newOptions({ newSessionDraftKey: `${f.draftKey}:next`,
+    onAccountSelectionChange: accounts => published.push({ owner: "new", accounts }) }));
+  await f.run("new composer selects its own account", value =>
+    value.handleSessionAccountChange(provider, "account-B", { [provider]: "account-B" }));
+  await f.finish(outgoing, () => put.resolve({ sessionId: f.savedId }));
+  await f.settleMaintenance(maintenance);
+  assert.deepEqual(published, [{ owner: "new", accounts: { [provider]: "account-B" } }]);
+  assert.equal(f.current.sessionIdRef.current, null, "outgoing completion cannot bind the new composer");
+  assert.equal(f.requests.filter(request => request.path === "/api/auth/accounts/selection").length, 1);
 });
 
 test("mounted startup: mounted input rekeys before real-ID publication", options, async t => {

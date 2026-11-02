@@ -8,8 +8,9 @@ import { lowerFixture } from './lower-account-controls.fixture.mjs';
 async function models(t) {
   const x = await lowerFixture(t), { f, graph: c } = x;
   f.route('GET', '/api/models-config', { reply: { data: { providers: {} } } });
-  f.route('GET', '/api/auth/providers', { reply: { data: { oauthProviders: [{ id: 'fixture-oauth', name: 'Synthetic Subscription', loggedIn: false, usesCallbackServer: false }], apiKeyProviders: [] } } });
-  f.route('GET', '/api/models/enabled', { query: { cwd: '/synthetic/project' }, reply: { data: { allEnabled: true, patterns: [], stalePatterns: [], enabledTotal: 0, availableTotal: 0, providers: [], scope: 'global', editable: true, settingsPath: 'synthetic/settings.json' } } });
+  f.route('GET', '/api/auth/accounts/selection', { query: { cwd: '/synthetic/project' }, reply: { data: { accounts: [], project: {}, session: null } } });
+  f.route('GET', '/api/auth/providers', { query: { accounts: '{}' }, reply: { data: { oauthProviders: [{ id: 'fixture-oauth', name: 'Synthetic Subscription', loggedIn: false, usesCallbackServer: false }], apiKeyProviders: [] } } });
+  f.route('GET', '/api/models/enabled', { query: { cwd: '/synthetic/project', accounts: '{}' }, reply: { data: { allEnabled: true, patterns: [], stalePatterns: [], enabledTotal: 0, availableTotal: 0, providers: [], scope: 'global', editable: true, settingsPath: 'synthetic/settings.json' } } });
   await x.mount(h(c.ModelsConfig, { cwd: '/synthetic/project', embedded: true, onClose() {} }));
   await f.click(x.button('Add provider'));
   const choice = [...f.view.container.querySelectorAll('button')].find(n => n.textContent.includes('Synthetic Subscription'));
@@ -76,10 +77,11 @@ test('original Models OAuth literals: exact provider-wide source, DEFAULT-42/pro
   const cwd = '/synthetic/original-account-project';
   const originalLogin = '/api/auth/login/github-copilot';
   f.route('GET', '/api/models-config', { reply: { data: { providers: {} } } });
-  f.route('GET', '/api/auth/providers', { reply: { data: { oauthProviders: [
+  f.route('GET', '/api/auth/accounts/selection', { query: { cwd }, reply: { data: { accounts: [], project: {}, session: null } } });
+  f.route('GET', '/api/auth/providers', { query: { accounts: '{}' }, reply: { data: { oauthProviders: [
     { id: 'github-copilot', name: 'GitHub Copilot', loggedIn: false, usesCallbackServer: false },
   ], apiKeyProviders: [] } } });
-  f.route('GET', '/api/models/enabled', { query: { cwd }, reply: { data: {
+  f.route('GET', '/api/models/enabled', { query: { cwd, accounts: '{}' }, reply: { data: {
     allEnabled: true, patterns: [], stalePatterns: [], enabledTotal: 0, availableTotal: 0,
     providers: [], scope: 'global', editable: true, settingsPath: 'synthetic/original-settings.json',
   } } });
@@ -94,7 +96,7 @@ test('original Models OAuth literals: exact provider-wide source, DEFAULT-42/pro
   await f.click(choice);
   const enabledReads = f.requests.filter(request => request.path === '/api/models/enabled');
   assert.ok(enabledReads.length > 0);
-  for (const request of enabledReads) assert.deepEqual(request.query, [['cwd', cwd]]);
+  for (const request of enabledReads) assert.deepEqual(request.query, [['accounts', '{}'], ['cwd', cwd]]);
 
   x.allowSource(originalLogin); await f.click(x.button('Login'));
   const deviceSource = x.sources[0];

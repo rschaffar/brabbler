@@ -25,6 +25,7 @@ import type { EnabledModelsInput } from "@/lib/enabled-models";
 import { readSettingsListing } from "@/lib/settings-listing-runtime";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { invalidateModelsCache } from "@/lib/models-cache";
+import { validateAccountSelection, type AccountSelection } from "@/lib/provider-accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ interface RequestContext {
   paths: { cwd: string; agentDir: string };
 }
 
-async function loadContext(cwd: string): Promise<RequestContext> {
+async function loadContext(cwd: string, accounts: Readonly<AccountSelection> = {}): Promise<RequestContext> {
   const agentDir = getAgentDir();
   // Detach the entire catalog under the listing queue. Settings edits below run
   // once, outside cache acquisition; invalidation must never replay a write.
@@ -52,7 +53,7 @@ async function loadContext(cwd: string): Promise<RequestContext> {
     providerNames: new Map(runtime.getProviders().map((provider) => [provider.id, provider.name])),
     customProviders: customProviderIds(runtime),
     modelError: runtime.getError(),
-  }));
+  }), accounts);
   return {
     ...catalog,
     settingsManager: SettingsManager.create(cwd, agentDir),
@@ -103,8 +104,15 @@ export async function GET(req: Request) {
   const resolved = await resolveCwd(new URL(req.url).searchParams.get("cwd"));
   if ("error" in resolved) return resolved.error;
 
+  let accounts: AccountSelection;
   try {
-    return Response.json(await buildView(await loadContext(resolved.cwd)));
+    accounts = JSON.parse(new URL(req.url).searchParams.get("accounts") ?? "{}");
+    validateAccountSelection(accounts);
+  } catch {
+    return Response.json({ error: "Invalid or unavailable account selection" }, { status: 400 });
+  }
+  try {
+    return Response.json(await buildView(await loadContext(resolved.cwd, accounts)));
   } catch (error) {
     return Response.json({ error: String(error) }, { status: 500 });
   }
@@ -112,6 +120,7 @@ export async function GET(req: Request) {
 
 interface EnabledModelsRequest {
   cwd?: unknown;
+  accounts?: unknown;
   op?: unknown;
   provider?: unknown;
   refs?: unknown;
@@ -208,11 +217,15 @@ export async function PUT(req: Request) {
     return Response.json({ error: "Invalid cwd" }, { status: 400 });
   }
 
+  const accounts = (body.accounts === undefined ? {} : body.accounts) as AccountSelection;
+  try { validateAccountSelection(accounts); }
+  catch { return Response.json({ error: "Invalid or unavailable account selection" }, { status: 400 }); }
+
   const resolved = await resolveCwd(typeof body.cwd === "string" ? body.cwd : null);
   if ("error" in resolved) return resolved.error;
 
   try {
-    const context = await loadContext(resolved.cwd);
+    const context = await loadContext(resolved.cwd, accounts);
     const { patterns, scope } = readEnabledModelsSettings(context.settingsManager, context.paths);
     if (scope === "project") {
       return Response.json(

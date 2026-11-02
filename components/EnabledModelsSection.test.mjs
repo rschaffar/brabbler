@@ -146,18 +146,19 @@ function requireEnabledWrite(f, before, body) {
   return request;
 }
 
-async function mountedEnabled(t, initial, { providerId = 'anthropic', custom = false } = {}) {
+async function mountedEnabled(t, initial, { providerId = 'anthropic', custom = false, accounts, readReply } = {}) {
   const f = await settingsFixture(t);
   const graph = await f.load('enabled');
   let latest, snapshot = initial;
-  f.route('GET', '/api/models/enabled', { query: { cwd: '/project' }, reply: () => ({ data: snapshot }) });
+  f.route('GET', '/api/models/enabled', { query: () => ({ cwd: '/project', ...(accounts === undefined ? {} : { accounts: JSON.stringify(accounts) }) }), reply: readReply ?? (() => ({ data: snapshot })) });
   function Probe() {
-    latest = graph.useEnabledModels('/project');
+    latest = graph.useEnabledModels('/project', accounts);
     return h('div', null, h(graph.EnabledModelsBanner, { controller: latest }),
       custom ? h(graph.EnabledModelsProviderSwitch, { providerId, controller: latest }) : h(graph.EnabledModelsSection, { providerId, controller: latest }));
   }
   await f.mount(h(Probe));
-  return { f, controller: () => latest, setSnapshot(value) { snapshot = value; } };
+  return { f, controller: () => latest, setSnapshot(value) { snapshot = value; },
+    async inspect(next) { accounts = next; await f.rerender(h(Probe)); } };
 }
 
 test('actual serialized PUT queue retains the latest save-resync after success AND failure', async t => {
@@ -290,17 +291,18 @@ test('actual custom switch is off for partial, completes provider in one click, 
   assert.equal(f.view.container.querySelector('.enabled-models-section') === null, true, 'custom header has no built-in section');
 });
 
-test('actual explicit catalog refresh posts exact provider only; offline/unchanged/changed/errors retain feedback', async t => {
+test('actual explicit catalog refresh posts the complete default snapshot; unchanged/partial passes reload readback', async t => {
   const initial = view([entry('sonnet', true)], { settingsPath: '~/.pi/agent/settings.json' });
   const { f } = await mountedEnabled(t, initial);
   let reply = { completed: false, reason: 'offline' }, status = 200;
-  f.route('POST', '/api/models/refresh', { body: { provider: 'anthropic' }, reply: () => ({ status, data: reply }) });
+  f.route('POST', '/api/models/refresh', { body: { provider: 'anthropic', accounts: {} }, reply: () => ({ status, data: reply }) });
   assert.equal(f.requests.some(r => r.method === 'POST'), false, 'no automatic catalog request');
   const initialReads = f.requests.filter(r => r.path === '/api/models/enabled').length;
   for (const [data, http, text] of [
     [{ completed: false, reason: 'offline' }, 200, 'offline'],
     [{ completed: false, reason: 'runtime' }, 200, 'Could not'],
-    [{ completed: true, changed: false }, 200, 'up to date'],
+    [{ completed: true, changed: false }, 200, 'no metadata changes'],
+    [{ completed: false, changed: false }, 200, 'Could not complete'],
     [{ completed: true, changed: true }, 200, 'updated'],
     [{ error: 'network refusal' }, 500, 'Could not'],
   ]) {
@@ -308,7 +310,7 @@ test('actual explicit catalog refresh posts exact provider only; offline/unchang
     await f.click(f.button('Refresh catalog'));
     assert.equal(f.node('.enabled-models-note').textContent.toLowerCase().includes(text.toLowerCase()), true, `catalog feedback ${text}`);
   }
-  assert.equal(f.requests.filter(r => r.path === '/api/models/enabled').length, initialReads + 1, 'only the changed catalog reloads the actual enabled view');
+  assert.equal(f.requests.filter(r => r.path === '/api/models/enabled').length, initialReads + 3, 'unchanged, partial and changed attempts all reload the actual enabled view');
 });
 
 test('enabled-model title, row separators and provider badge CSS declarations', async () => {
@@ -338,4 +340,74 @@ test('actual admitted toggle and queued resync drain through full body/callback/
   assert.equal(held.released, true);
   assert.equal(f.works.every(work => work.settled), true, 'full original promises, including nested resync, are joined');
   assert.equal(f.requests.filter(r => r.method === 'GET').every(r => r.signal?.aborted === true), true, 'read observers aborted before realm closure');
+});
+
+test('failed account-bound resync settles an invalidated held read and permits authoritative retry', async t => {
+  const accounts = Object.freeze({ anthropic: 'account-a', openai: 'retained-account' });
+  const initial = view([entry('sonnet', true), entry('opus', false)]);
+  let heldRead, snapshot = initial;
+  const { f, controller } = await mountedEnabled(t, initial, { accounts,
+    readReply: () => ({ ...(heldRead ? { gate: heldRead } : {}), data: snapshot }) });
+  heldRead = f.gate('enabled read superseded by refused resync');
+  await act(async () => { controller().refresh(); });
+  assert.equal(controller().loading, true);
+  const body = { op: 'resync', renames: [], modelRenames: [], fullyEnabled: [], cwd: '/project', accounts };
+  f.route('PUT', '/api/models/enabled', { body, reply: { status: 500, data: { error: 'Synthetic resync refused' } } });
+  await f.commit(() => controller().resync([], []), 'enabled.mutate');
+  await f.deliver(heldRead, 'enabled.read');
+  assert.equal(controller().pending, null);
+  assert.equal(controller().loading, false, 'failed mutation cannot strand the invalidated read spinner');
+  assert.equal(f.text().includes('Synthetic resync refused'), true, 'failure remains visible after obsolete read delivery');
+  const before = f.requests.filter(r => r.method === 'GET').length;
+  heldRead = null; snapshot = view([entry('recovered', true)]);
+  await f.commit(() => controller().refresh());
+  assert.equal(f.requests.filter(r => r.method === 'GET').length, before + 1);
+  assert.equal(f.text().includes('RECOVERED'), true);
+  assert.equal(controller().failure, null);
+  assert.deepEqual(enabledWrites(f).map(r => r.body), [body], 'retry reads; it never replays the refused write');
+});
+
+test('held A catalog refresh invalidates matching A readback after A/B/A without obsolete feedback or automatic POSTs', async t => {
+  const a = Object.freeze({ anthropic: 'account-a', openai: 'retained-account' });
+  const b = Object.freeze({ anthropic: 'account-b', openai: 'retained-account' });
+  const oldA = view([entry('a-before-refresh', true)]);
+  const { f, inspect, setSnapshot } = await mountedEnabled(t, oldA, { accounts: a });
+  const refresh = f.gate('A catalog completion after A/B/A');
+  const body = { provider: 'anthropic', accounts: a };
+  f.route('POST', '/api/models/refresh', { body, reply: { gate: refresh, data: { completed: true, changed: true } } });
+  assert.equal(f.requests.some(r => r.method === 'POST'), false);
+  await f.click(f.button('Refresh catalog'), { settle: false });
+  const readsBefore = f.requests.filter(r => r.method === 'GET').length;
+  setSnapshot(view([entry('b-catalog', true)])); await inspect(b); await f.commit(undefined, 'enabled.read');
+  assert.equal(f.text().includes('B-CATALOG'), true);
+  setSnapshot(oldA); await inspect(a); await f.commit(undefined, 'enabled.read');
+  assert.equal(f.text().includes('A-BEFORE-REFRESH'), true, 'returning A read completes before its refresh');
+  assert.deepEqual(f.requests.filter(r => r.method === 'POST').map(r => r.body), [body], 'navigation never requests a catalog refresh');
+  setSnapshot(view([entry('a-after-refresh', true)]));
+  await f.deliver(refresh, 'enabled.catalog'); await f.commit(undefined, 'enabled.read');
+  const reads = f.requests.filter(r => r.method === 'GET').slice(readsBefore);
+  assert.deepEqual(reads.map(r => JSON.parse(new Map(r.query).get('accounts'))), [b, a, a], 'completion triggers a fresh read for matching displayed A');
+  assert.equal(f.text().includes('A-AFTER-REFRESH'), true);
+  assert.equal(f.view.container.querySelector('.enabled-models-note') === null, true, 'retired refresh cannot publish its note');
+  assert.deepEqual(f.requests.filter(r => r.method === 'POST').map(r => r.body), [body]);
+});
+
+test('queued shared resync retains captured A accounts while B remains the displayed catalog', async t => {
+  const a = Object.freeze({ anthropic: 'account-a', openai: 'retained-account' });
+  const b = Object.freeze({ anthropic: 'account-b', openai: 'retained-account' });
+  const initial = view([entry('sonnet', true), entry('opus', false)], { enabledTotal: 4 });
+  const { f, controller, inspect, setSnapshot } = await mountedEnabled(t, initial, { accounts: a });
+  const held = f.gate('A toggle before queued shared resync'); let count = 0;
+  const queued = { op: 'resync', renames: [], modelRenames: [], fullyEnabled: [], cwd: '/project', accounts: a };
+  const bodies = [{ op: 'models', refs: ['anthropic/opus'], enabled: true, cwd: '/project', accounts: a }, queued];
+  f.route('PUT', '/api/models/enabled', { body: () => bodies[count], reply: () => ({ ...(count++ === 0 ? { gate: held } : {}), data: initial }) });
+  await f.click('button[aria-label="Show OPUS in the model selector"]', { settle: false });
+  f.admitContinuation('PUT', '/api/models/enabled', queued);
+  await act(async () => { controller().resync([], []); });
+  setSnapshot(view([entry('b-only', true)])); await inspect(b); await f.commit(undefined, 'enabled.read');
+  assert.equal(f.text().includes('B-ONLY'), true);
+  await f.deliver(held, 'enabled.mutate'); await f.commit(undefined, 'enabled.read');
+  assert.deepEqual(enabledWrites(f).map(r => r.body), bodies);
+  assert.equal(f.text().includes('B-ONLY'), true, 'late A write readback cannot replace B');
+  assert.equal(controller().pending, null);
 });

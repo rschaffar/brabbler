@@ -23,10 +23,17 @@ async function jsonRequest(url: string, method: string, body: unknown) {
 }
 
 /** A compact account indicator beside the model; the controls live in its popover. */
-export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, busy, onSessionChange, onAccountsChanged }: {
-  cwd: string; sessionId: string | null; provider: string; busy: boolean;
+export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, busy, onSessionChange, onAccountsChanged, catalog }: {
+  cwd: string | null; sessionId: string | null; provider: string; busy: boolean;
   onSessionChange: (provider: string, id: string | null, selection: Selection) => Promise<void>;
   onAccountsChanged: () => Promise<void>;
+  /** Inspection/management only: never changes session or project bindings. */
+  catalog?: {
+    accounts: Readonly<Selection> | null;
+    baseAccounts?: Readonly<Selection>;
+    onChange: (accounts: Readonly<Selection>) => void;
+    onProviderChange: (provider: string) => void;
+  };
 }) {
   const { locale, t } = useI18n();
   const observe = useSettingsWork();
@@ -53,7 +60,14 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
   const [session, setSession] = useState<Selection | null>(null);
   const [loadedFor, setLoadedFor] = useState("");
   const selectionIdentity = JSON.stringify([cwd, sessionId]);
-  const selectionReady = loadedFor === selectionIdentity;
+  const selectionReady = loadedFor === selectionIdentity && (!catalog || catalog.accounts !== null);
+  const catalogRef = useRef(catalog);
+  catalogRef.current = catalog;
+  const identityRef = useRef(selectionIdentity);
+  identityRef.current = selectionIdentity;
+  const reloadVersion = useRef(0);
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; reloadVersion.current++; return () => { mounted.current = false; }; }, []);
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [type, setType] = useState<"oauth" | "api_key">("oauth");
@@ -68,23 +82,38 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
   const [error, setError] = useState("");
 
   const reload = useCallback(async () => {
-    const response = await fetch(`/api/auth/accounts/selection?${new URLSearchParams({ cwd, ...(sessionId ? { sessionId } : {}) })}`);
+    const version = ++reloadVersion.current;
+    const identity = JSON.stringify([cwd, sessionId]);
+    const response = await fetch(cwd
+      ? `/api/auth/accounts/selection?${new URLSearchParams({ cwd, ...(sessionId ? { sessionId } : {}) })}`
+      : "/api/auth/accounts");
     if (!response.ok) throw new Error("Could not load provider accounts");
-    const result = await response.json() as { accounts: Account[]; project: Selection; session: Selection | null };
+    const result = await response.json() as { accounts: Account[]; project?: Selection; session?: Selection | null };
+    if (!mounted.current || version !== reloadVersion.current || identityRef.current !== identity) return;
     setAccounts(result.accounts);
-    setProject(result.project);
-    setSession(result.session);
-    setLoadedFor(JSON.stringify([cwd, sessionId]));
+    setProject(result.project ?? {});
+    setSession(result.session ?? null);
+    setLoadedFor(identity);
+    const inspection = catalogRef.current;
+    if (inspection && inspection.accounts === null) inspection.onChange(Object.freeze({
+      ...(inspection.baseAccounts ?? result.session ?? result.project ?? {}),
+    }));
   }, [cwd, sessionId]);
   useEffect(() => { void work.current("accounts.reload", reload().catch((cause) => setError(String(cause)))); }, [reload]);
+  const catalogIdentity = JSON.stringify(catalog?.accounts);
+  const providerVersion = useRef(0);
   const reloadProviders = useCallback(async () => {
-    const response = await fetch("/api/auth/providers");
+    const inspection = catalogRef.current;
+    if (inspection?.accounts === null) return;
+    const version = ++providerVersion.current;
+    const response = await fetch(`/api/auth/providers${inspection ? `?${new URLSearchParams({ accounts: catalogIdentity! })}` : ""}`);
     if (!response.ok) return;
     const result = await response.json() as { oauthProviders?: { id: string }[]; apiKeyProviders?: { id: string }[] };
+    if (!mounted.current || version !== providerVersion.current || inspection?.accounts !== catalogRef.current?.accounts) return;
     setOauthChoices((result.oauthProviders ?? []).map((item) => item.id));
     setApiKeyChoices((result.apiKeyProviders ?? []).map((item) => item.id));
     setProviderChoices([...new Set([...(result.oauthProviders ?? []), ...(result.apiKeyProviders ?? [])].map((item) => item.id))].sort());
-  }, []);
+  }, [catalogIdentity]);
   useEffect(() => { void work.current("accounts.providers", reloadProviders().catch(() => {})); }, [reloadProviders]);
   const usageKey = (providerId: string, accountId: string | null) => JSON.stringify([providerId, accountId]);
   const clearUsage = (providerId: string, accountId: string | null) => {
@@ -137,7 +166,9 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
       const width = Math.min(380, (viewport?.width ?? window.innerWidth) - 24);
       const left = Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12));
       const maxHeight = Math.max(100, Math.min(480, rect.top - 16));
-      setPanelStyle({ position: "fixed", zIndex: 10000, left, bottom: window.innerHeight - rect.top + 8, width, maxHeight });
+      setPanelStyle(catalogRef.current
+        ? { position: "fixed", zIndex: 10000, left, top: rect.bottom + 8, width, maxHeight: Math.max(100, window.innerHeight - rect.bottom - 24) }
+        : { position: "fixed", zIndex: 10000, left, bottom: window.innerHeight - rect.top + 8, width, maxHeight });
     };
     let frame = 0;
     let layoutFrame = 0;
@@ -182,29 +213,29 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
 
   const available = accounts.filter((account) => account.provider === provider && account.authorized);
   // An existing session never silently follows a later change to the project default.
-  const selected = selectionReady ? (session ?? project)[provider] ?? "" : "";
-  const currentId = selectionReady ? (session ?? project)[currentProvider] ?? "" : "";
+  const selected = selectionReady ? (catalog?.accounts ?? session ?? project)[provider] ?? "" : "";
+  const currentId = selectionReady ? (catalog?.accounts ?? session ?? project)[currentProvider] ?? "" : "";
   const currentAccount = !selectionReady ? "Loading account…" : currentId
     ? accounts.find((account) => account.id === currentId && account.provider === currentProvider && account.authorized)?.label ?? "Unavailable account"
     : "Pi default";
   useEffect(() => {
-    if (!selectionReady || !currentProvider || currentAccount === "Unavailable account") return;
+    if (catalog || !selectionReady || !currentProvider || currentAccount === "Unavailable account") return;
     void queryUsage(currentProvider, currentId || null);
-  }, [selectionReady, currentProvider, currentId, currentAccount, queryUsage]);
+  }, [catalog, selectionReady, currentProvider, currentId, currentAccount, queryUsage]);
   useEffect(() => {
-    if (!selectionReady || !currentProvider || currentAccount === "Unavailable account") return;
+    if (catalog || !selectionReady || !currentProvider || currentAccount === "Unavailable account") return;
     const refreshOnReturn = () => { if (document.visibilityState === "visible") void queryUsage(currentProvider, currentId || null); };
     window.addEventListener("focus", refreshOnReturn);
     document.addEventListener("visibilitychange", refreshOnReturn);
     return () => { window.removeEventListener("focus", refreshOnReturn); document.removeEventListener("visibilitychange", refreshOnReturn); };
-  }, [selectionReady, currentProvider, currentId, currentAccount, queryUsage]);
+  }, [catalog, selectionReady, currentProvider, currentId, currentAccount, queryUsage]);
   useEffect(() => {
-    if (!open || !provider) return;
+    if (catalog || !open || !provider) return;
     void queryUsage(provider, null);
     for (const account of accounts) {
       if (account.provider === provider && account.authorized) void queryUsage(provider, account.id);
     }
-  }, [open, provider, accounts, queryUsage]);
+  }, [catalog, open, provider, accounts, queryUsage]);
   const usageText = (providerId: string, accountId: string | null) => {
     if (!isProviderUsageId(providerId)) return "Usage not supported";
     const snapshot = usage[usageKey(providerId, accountId)];
@@ -220,6 +251,13 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
   const compactUsage = currentUsage.replaceAll("Weekly ", "W ").replaceAll(" remaining", "");
 
   const changeSession = (value: string) => work.current("accounts.session", (async () => {
+    if (catalog) {
+      if (catalog.accounts === null) return;
+      const next = { ...catalog.accounts };
+      if (value) next[provider] = value; else delete next[provider];
+      catalog.onChange(Object.freeze(next));
+      return;
+    }
     setPending(true); setError("");
     const next = { ...(session ?? project) };
     if (value) next[provider] = value;
@@ -232,6 +270,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
     finally { setPending(false); }
   })());
   const changeProject = (value: string) => work.current("accounts.project", (async () => {
+    if (catalog || !cwd) return;
     setPending(true); setError("");
     try {
       const result = await jsonRequest("/api/auth/accounts/selection", "PUT", {
@@ -286,7 +325,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
         setMessage("Account authorized");
         clearUsage(loginProvider, id);
         void work.current("accounts.authorized", Promise.all([reload(), reloadProviders(), onAccountsChanged()]).then(() => {
-          void queryUsage(loginProvider, id, true);
+          if (!catalogRef.current) void queryUsage(loginProvider, id, true);
         }).catch((cause) => setError(String(cause))));
       } else if (data.type === "error" || data.type === "cancelled") {
         events.close(); eventsRef.current = null;
@@ -329,7 +368,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
       onClick={() => setOpen((value) => !value)}>
       <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
         <circle cx="12" cy="8" r="3" /><path d="M5 20a7 7 0 0 1 14 0" />
-      </svg><span className="min-w-0 truncate">{currentAccount}</span>{compactUsage && <span className="truncate whitespace-nowrap text-[10px] text-text-dim">{compactUsage}</span>}
+      </svg><span className="min-w-0 truncate">{catalog ? t("models.catalogAccountFor", { provider: currentProvider || t("auth.account"), account: currentAccount }) : currentAccount}</span>{!catalog && compactUsage && <span className="truncate whitespace-nowrap text-[10px] text-text-dim">{compactUsage}</span>}
     </button>
     {open && createPortal(<div ref={panelRef} id={panelId} role="region" aria-label="Provider accounts"
       className="overflow-y-auto overscroll-contain rounded-lg border border-border bg-bg-panel p-3 text-xs text-text-muted shadow-xl"
@@ -340,7 +379,7 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
       </div>
       <div className="flex flex-col gap-2">
         <label className="flex flex-col gap-1">Account provider
-          <select className={field} aria-label="Account provider" value={provider} disabled={oauthPending} onChange={(event) => { setManualProvider(event.target.value); setEditingDefaultKey(false); setDefaultApiKey(""); }}>
+          <select className={field} aria-label="Account provider" value={provider} disabled={oauthPending} onChange={(event) => { if (catalog) catalog.onProviderChange(event.target.value); else setManualProvider(event.target.value); setEditingDefaultKey(false); setDefaultApiKey(""); }}>
             <option value="">Choose a provider…</option>
             {currentProvider && !providerChoices.includes(currentProvider) && <option value={currentProvider}>{currentProvider}</option>}
             {providerChoices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}
@@ -348,20 +387,20 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
         </label>
         {provider && <>
           <label className="flex flex-col gap-1">{provider} account
-            <select className={field} aria-label="Session account" value={selected} disabled={!selectionReady || busy || pending}
+            <select className={field} aria-label={catalog ? t("models.catalogAccount") : "Session account"} value={selected} disabled={!selectionReady || busy || pending}
               onChange={(event) => void changeSession(event.target.value)}>
               <option value="">Pi default</option>
               {available.map((account) => <option key={account.id} value={account.id}>{account.label}</option>)}
               {selected && !available.some((account) => account.id === selected) && <option value={selected}>Unavailable account</option>}
             </select>
           </label>
-          <label className="flex flex-col gap-1" title="Default for new sessions in this project (including worktrees)">New sessions in project
+          {!catalog && <label className="flex flex-col gap-1" title="Default for new sessions in this project (including worktrees)">New sessions in project
             <select className={field} aria-label="Project account default" value={project[provider] ?? ""} disabled={!selectionReady || pending}
               onChange={(event) => void changeProject(event.target.value)}>
               <option value="">Pi default</option>
               {available.map((account) => <option key={account.id} value={account.id}>{account.label}</option>)}
             </select>
-          </label>
+          </label>}
           <button className={`${field} self-start`} type="button" disabled={oauthPending} onClick={() => { setAdding(!adding); setLabel(""); setApiKey(""); }} aria-expanded={adding}>{adding ? "Close add form" : "Add account"}</button>
         </>}
       </div>
@@ -381,12 +420,12 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
           {editingDefaultKey && apiKeyChoices.includes(provider) && <form className="flex w-full gap-1" onSubmit={(event) => { event.preventDefault(); if (!defaultApiKey.trim()) return;
             setPending(true); setError("");
             void work.current("accounts.defaultKey", jsonRequest(`/api/auth/api-key/${encodeURIComponent(provider)}`, "POST", { apiKey: defaultApiKey })
-              .then(async () => { clearUsage(provider, null); setDefaultApiKey(""); setEditingDefaultKey(false); await onAccountsChanged(); await queryUsage(provider, null, true); })
+              .then(async () => { clearUsage(provider, null); setDefaultApiKey(""); setEditingDefaultKey(false); await onAccountsChanged(); if (!catalogRef.current) await queryUsage(provider, null, true); })
               .catch((cause) => setError(String(cause))).finally(() => setPending(false)));
           }}><input className={`${field} flex-1`} type="password" autoComplete="off" aria-label="Pi default API key" value={defaultApiKey} onChange={(event) => setDefaultApiKey(event.target.value)} />
             <button type="submit" className={field} disabled={pending || !defaultApiKey.trim()}>Save</button></form>}
-          <span className="w-full text-text-dim">{usageText(provider, null)}</span>
-          {isProviderUsageId(provider) && <button type="button" className={field} onClick={() => void queryUsage(provider, null, true)}>Refresh usage</button>}
+          {!catalog && <span className="w-full text-text-dim">{usageText(provider, null)}</span>}
+          {!catalog && isProviderUsageId(provider) && <button type="button" className={field} onClick={() => void queryUsage(provider, null, true)}>Refresh usage</button>}
         </div>
         {accounts.filter((account) => account.provider === provider).map((account) => <div key={account.id} className="flex flex-wrap items-center gap-1">
           <span>{account.label}{!account.authorized ? " (not authorized)" : ""}</span>
@@ -400,8 +439,8 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
             }
           }}>Remove</button>
           {account.type === "oauth" && <button className={field} type="button" disabled={pending} onClick={() => startOAuth(account.id)}>{account.authorized ? "Change login" : "Retry login"}</button>}
-          <span className="w-full text-text-dim">{account.authorized ? usageText(provider, account.id) : "Sign in to see usage"}</span>
-          {account.authorized && isProviderUsageId(provider) && <button type="button" className={field} onClick={() => void queryUsage(provider, account.id, true)}>Refresh usage</button>}
+          {!catalog && <span className="w-full text-text-dim">{account.authorized ? usageText(provider, account.id) : "Sign in to see usage"}</span>}
+          {!catalog && account.authorized && isProviderUsageId(provider) && <button type="button" className={field} onClick={() => void queryUsage(provider, account.id, true)}>Refresh usage</button>}
         </div>)}
       </div>}
       {message && <p role="status" className="mt-2 break-words">{message}</p>}
