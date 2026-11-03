@@ -333,6 +333,37 @@ for (const explicit of [false, true]) test(`mounted startup EXTRA: sessionless d
   }
 });
 
+for (const level of ['off', 'high', null]) test(`per-model default suggestion follows the chosen target without becoming explicit constructor thinking: ${level}`, options, async t => {
+  const f = await sessionFixture(t);
+  f.setCatalog({ model: 'B', thinking: 'high', thinkingPins: {},
+    modelThinkingDefaults: { [`${provider}/A`]: level, [`${provider}/B`]: 'high' } });
+  await f.mountReady();
+  await f.run('choose the nondefault model', value => value.handleModelChange(provider, 'A'));
+  assert.deepEqual(f.current.displayModel, selected('A'));
+  assert.equal(f.current.thinkingLevel, level ?? 'auto', 'the previous default model scalar must not substitute for this target');
+  await f.run('admit the chosen model using the real System initializer', () => f.loader());
+  assert.equal(creations(f).length, 1);
+  assert.equal(creations(f)[0].body.modelId, 'A');
+  assert.equal(Object.hasOwn(creations(f)[0].body, 'thinkingLevel'), false, 'a suggestion remains implicit so native startup resolves it');
+});
+
+for (const explicit of [false, true]) test(`refreshed per-model defaults follow an explicit MODEL choice but never replace explicit THINKING: ${explicit}`, options, async t => {
+  const f = await sessionFixture(t);
+  f.setCatalog({ model: 'B', thinking: 'high', thinkingPins: {},
+    modelThinkingDefaults: { [`${provider}/A`]: 'off', [`${provider}/B`]: 'high' } });
+  await f.mountReady();
+  await f.run('choose target A before creation', value => value.handleModelChange(provider, 'A'));
+  if (explicit) await f.run('explicit conversation thinking', value => value.handleThinkingLevelChange('high'));
+  f.setCatalog({ modelThinkingDefaults: { [`${provider}/A`]: null, [`${provider}/B`]: 'high' } });
+  await f.run('refresh current model defaults after shared save', value => value.loadModels());
+  assert.deepEqual(f.current.displayModel, selected('A'), 'metadata does not replace explicit model intent');
+  assert.equal(f.current.thinkingLevel, explicit ? 'high' : 'auto', 'null is an automatic target default, not the other model scalar');
+  f.setCatalog({ thinkingPins: { [`${provider}/A`]: 'off' } });
+  await f.run('read an effective pattern pin', value => value.loadModels());
+  assert.equal(f.current.thinkingLevel, explicit ? 'high' : 'off', 'pins retain native priority below explicit conversation thinking');
+  assert.equal(creations(f).length, 0);
+});
+
 for (const explicit of [false, true]) test(`mounted startup EXTRA: exact rejected text with undefined images after departure: ${explicit}`, options, async t => {
   const f = await sessionFixture(t, { fixtureCwd: "/new-project" });
   const draftKey = "new:temporary:/new-project";

@@ -7,7 +7,7 @@ import { readSessionAccounts } from "@/lib/session-accounts";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { resolveSessionPath } from "@/lib/session-reader";
 import type { SessionEntry } from "@/lib/types";
-import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { clampThinkingLevel, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import {
   loadModelsWithCache,
   withModelRuntimeError,
@@ -37,6 +37,7 @@ async function loadModels(cwd: string, accounts: AccountSelection = {}): Promise
   let defaultModel: { provider: string; modelId: string } | null = null;
   const thinkingLevels: Record<string, string[]> = {};
   const thinkingLevelMaps: Record<string, Record<string, string | null>> = {};
+  const modelThinkingDefaults: Record<string, string | null> = {};
 
   const agentDir = getAgentDir();
   // Gate untrusted project extensions: enumerating models still imports and
@@ -72,6 +73,8 @@ async function loadModels(cwd: string, accounts: AccountSelection = {}): Promise
     nameMap.set(key, m.name);
     thinkingLevels[key] = getSupportedThinkingLevels(m);
     if (m.thinkingLevelMap) thinkingLevelMaps[key] = m.thinkingLevelMap;
+    const level = settings.getModelThinkingLevel(m.provider, m.id) ?? settings.getDefaultThinkingLevel();
+    modelThinkingDefaults[`${m.provider}/${m.id}`] = level === undefined ? null : clampThinkingLevel(m, level);
   }
 
   const defaultProvider = settings.getDefaultProvider();
@@ -97,6 +100,7 @@ async function loadModels(cwd: string, accounts: AccountSelection = {}): Promise
       modelList,
       defaultModel,
       defaultThinkingLevel,
+      modelThinkingDefaults,
       thinkingLevels,
       thinkingLevelMaps,
       thinkingLevelPins,
@@ -111,6 +115,7 @@ const EMPTY_MODELS: ModelsData = {
   modelList: [],
   defaultModel: null,
   defaultThinkingLevel: null,
+  modelThinkingDefaults: {},
   thinkingLevels: {},
   thinkingLevelMaps: {},
   thinkingLevelPins: {},

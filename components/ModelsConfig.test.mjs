@@ -348,7 +348,7 @@ test('Markdown adaptive endpoint inheritance saves exact sparse config and refus
   assert.equal(f.button('Test').disabled, false);
   assert.equal(field(f, 'Base URL override').querySelector('input').value, 'http://127.0.0.1:9/changed-after-test');
   assert.equal(configWrites(f).length, 2, 'testing/editing never saves config');
-  assert.equal(f.text().includes('Open sessions: select the model again while idle to apply saved changes.'), true);
+  assert.equal(f.text().includes('Definition edits: select the model again while idle to apply them to open sessions.'), true);
 });
 
 test('actual Add provider search matches label/stable OAuth/API IDs while retaining eligibility', async t => {
@@ -596,14 +596,12 @@ test('Models Save waits for complete account resolution and current catalog befo
   assert.equal(save().disabled, true, 'resolved accounts still require their pre-save catalog');
   await f.deliver(initialCatalog, 'enabled.read');
   assert.equal(save().disabled, false);
-  await f.click(f.button('Catalog · stepfun · Pi default'), { settle: false });
-  const account = f.view.window.document.querySelector('select[aria-label="Catalog account"]');
+  const account = f.view.container.querySelector('select[aria-label="Catalog account"]');
   assert.equal(account !== null, true, 'real catalog-only account control');
   accounts = b; catalogGate = nextCatalog;
   await f.input(account, 'account-b', { settle: false });
   assert.equal(save().disabled, true, 'account navigation cannot save from an empty catalog view');
   assert.equal(f.node('input[placeholder="model-id"]').value, 'nested/ddd', 'navigation retains the shared draft');
-  await f.click(f.button('Catalog · stepfun · Account B'), { settle: false });
   await f.deliver(nextCatalog, 'enabled.read');
   const expectedConfig = { providers: { stepfun: { api: 'openai-completions', models: [{ id: 'aaa' }, { id: 'nested/ddd' }] } } };
   const resync = { op: 'resync', renames: [], modelRenames: [{ from: 'stepfun/ddd', to: 'stepfun/nested/ddd' }], fullyEnabled: ['stepfun'], cwd: '/project', accounts: b };
@@ -629,7 +627,7 @@ test('real shared-default Save retains failed draft and saves globally across in
   await f.mount(h(SharedModelDefaults, { controller }));
   await f.click(f.node('summary'));
   assert.equal(f.node('details').open, true);
-  const model = 'select[aria-label="Default model for new chats"]', thinking = 'select[aria-label="Default thinking for new chats"]';
+  const model = 'select[aria-label="Default model for new chats"]', thinking = 'select[aria-label="Fallback thinking for new chats"]';
   await f.input(model, JSON.stringify(['stepfun', 'ddd'])); await f.input(thinking, 'high');
   const writes = () => f.requests.filter(r => r.method === 'PUT');
   assert.equal(writes().length, 0, 'editing shared defaults is only a draft');
@@ -646,7 +644,7 @@ test('real shared-default Save retains failed draft and saves globally across in
   assert.equal(f.button('Saved').disabled, true);
   assert.equal(f.view.container.querySelector('[role="alert"]') === null, true);
   assert.deepEqual(writes().map(r => ({ path: r.path, body: r.body })), Array.from({ length: 2 }, () => ({ path: '/api/models/defaults', body: desired })), 'both PUTs contain only global model/thinking changes, never accounts or cwd');
-  assert.deepEqual(calls, [], 'default persistence does not invoke catalog or conversation continuations');
+  assert.deepEqual(calls, ['refresh'], 'successful fallback save rereads row inheritance without a provider-network or conversation mutation');
   assert.equal(f.requests.some(r => r.method === 'POST' || (r.method === 'PUT' && r.path !== '/api/models/defaults')), false);
 });
 
@@ -704,15 +702,12 @@ async function accountCatalogPanel(t, { extraKind = 'oauth', defaultKind = 'oaut
     window.localStorage.setItem('brabbler:settings-navigation', JSON.stringify({ selections: { models: JSON.stringify({ type: extraKind, providerId: provider }) } }));
   } });
   const choose = async id => {
-    const before = inspected.stepfun ? 'Account A' : 'Pi default';
-    await f.click(f.button(`Catalog · ${provider} · ${before}`), { settle: false });
     inspected = id ? a : piDefault;
-    const select = f.view.window.document.querySelector('select[aria-label="Catalog account"]');
-    assert.equal(select !== null, true, 'catalog selector is in the real popover portal');
+    const select = f.view.container.querySelector('select[aria-label="Catalog account"]');
+    assert.equal(select !== null, true, 'catalog selector is directly inside the real provider detail');
     await f.input(select, id, { settle: false });
     await f.commit(undefined, 'enabled.read');
     await f.commit(undefined, 'models.authProviders');
-    await f.click(f.button(`Catalog · ${provider} · ${id ? 'Account A' : 'Pi default'}`), { settle: false });
   };
   return { f, provider, a, piDefault, choose, refreshed() { refreshed = true; },
     contextWindow(value) { contextWindow = value; }, holdDiscovery(gate) { authGate = gate; } };
@@ -815,9 +810,8 @@ test('obsolete Pi-default key Save cannot invalidate the held B provider discove
   await f.input('input[placeholder="Enter new key to replace…"]', 'synthetic-replacement');
   await f.click(f.button('Save', f.node('.config-detail-stack')), { settle: false });
   assert.equal(keySave.released, false);
-  await f.click(f.button(`Catalog · ${provider} · Pi default`), { settle: false });
   providerQuery = b; catalogAccounts = b;
-  const account = f.view.window.document.querySelector('select[aria-label="Catalog account"]');
+  const account = f.view.container.querySelector('select[aria-label="Catalog account"]');
   assert.equal(account !== null, true);
   await f.input(account, 'account-b', { settle: false });
   const authReads = () => f.requests.filter(r => r.path === '/api/auth/providers');
@@ -838,4 +832,47 @@ test('obsolete Pi-default key Save cannot invalidate the held B provider discove
   assert.deepEqual(f.requests.filter(r => r.method === 'POST' || r.method === 'PUT').map(r => ({ method: r.method, path: r.path, body: r.body })), [
     { method: 'POST', path: `/api/auth/api-key/${provider}`, body: { apiKey: 'synthetic-replacement' } },
   ], 'only the explicit Pi-default credential write; no catalog, chat or project mutation');
+});
+
+for (const detail of ['model', 'missing-provider']) test(`readback recovery remains in the persistent settings owner for ${detail} detail`, async t => {
+  const f = await settingsFixture(t), { ModelsConfig } = await f.load('models');
+  sharedPanelReads(f, '/project');
+  f.route('GET', '/api/models-config', { reply: { data: { providers: { relay: { api: 'openai-completions', models: [{ id: 'one' }] } } } } });
+  f.route('GET', '/api/auth/providers', { query: { accounts: '{}' }, reply: { data: { oauthProviders: [], apiKeyProviders: [] } } });
+  let failRead = false;
+  const catalog = { ...enabledView(), providers: [], enabledTotal: 0, availableTotal: 0, allEnabled: true };
+  f.route('GET', '/api/models/enabled', { query: { cwd: '/project', accounts: '{}' }, reply: () => failRead
+    ? { status: 503, data: { error: 'Synthetic model-list readback unavailable' } } : { data: catalog } });
+  f.route('PUT', '/api/models/defaults', { body: { thinkingLevel: 'high' }, reply: { data: { thinkingLevel: 'high' } } });
+  await f.mount(h(ModelsConfig, { cwd: '/project', embedded: true, onClose() {} }), { setup(window) {
+    const selection = detail === 'model' ? { type: 'model', providerName: 'relay', index: 0 } : { type: 'provider', name: 'relay' };
+    window.localStorage.setItem('brabbler:settings-navigation', JSON.stringify({ selections: { models: JSON.stringify(selection) } }));
+  } });
+  await f.click(f.node('summary'));
+  await f.input('select[aria-label="Fallback thinking for new chats"]', 'high');
+  failRead = true; await f.click(f.button('Save defaults')); await f.commit(undefined, 'enabled.read');
+  assert.equal(f.button('Save', f.node('.config-footer-actions')).disabled, true);
+  const retry = f.button('Retry');
+  assert.equal(retry.closest('.config-detail') !== null, true, 'readback recovery belongs to the persistent provider area, independent of detail type');
+  assert.equal(f.text().includes('Synthetic model-list readback unavailable'), true);
+  failRead = false; await f.click(retry); await f.commit(undefined, 'enabled.read');
+  assert.equal(f.button('Save', f.node('.config-footer-actions')).disabled, false);
+  assert.equal(f.requests.filter(request => request.method !== 'GET').length, 1, 'recovery does not repeat the default save or mutate a binding');
+});
+
+test('catalog account selection is directly visible INSIDE the provider detail, with management and shared scope beside the rows', async t => {
+  const { f, choose } = await accountCatalogPanel(t);
+  const account = f.view.container.querySelector('select[aria-label="Catalog account"]');
+  assert.equal(account !== null, true, 'account selection does not require discovering and opening a remote popover trigger');
+  assert.equal(account.closest('.config-detail') !== null, true, 'account picker belongs to the provider detail it controls');
+  assert.equal(account.closest('[role="region"]') === null, true, 'primary account choice is not hidden in account management');
+  assert.equal(account.value, 'account-a');
+  assert.equal(f.button('Manage accounts').closest('.config-detail') !== null, true);
+  const scope = f.node('.models-shared-scope');
+  assert.equal(scope.closest('.config-detail') !== null, true, 'shared-scope notice remains visible in the working provider area');
+  assert.equal(scope.textContent.includes('thinking defaults'), true);
+  await choose('');
+  assert.equal(account.isConnected, true, 'provider/auth detail replacement does not retire its account selector');
+  assert.equal(account.value, '', 'Pi default is an explicit inspected choice');
+  assert.equal(f.requests.some(r => r.method !== 'GET'), false, 'inline inspection does not mutate credentials, bindings, preferences, catalog or usage');
 });

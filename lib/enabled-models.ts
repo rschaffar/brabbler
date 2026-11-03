@@ -27,6 +27,8 @@
  * `lib/enabled-models-runtime.ts`.
  */
 
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+
 /** How one configured pattern resolves against the available models. */
 export interface PatternResolution {
   /** The pattern exactly as stored in settings. */
@@ -77,10 +79,19 @@ export interface EnabledModelsModelView {
   /** `provider/modelId`, the reference used by every edit. */
   ref: string;
   enabled: boolean;
-  /** Context budget resolved by the Pi-default runtime, including model overrides. */
+  /** Context budget resolved by the inspected account's runtime, including overrides. */
   contextWindow?: number;
   /** Thinking level pinned by a `:level` pattern; read-only in brabbler. */
   thinkingPin?: string;
+  thinking?: {
+    supportedLevels: ThinkingLevel[];
+    /** The editable global per-model preference; shared across accounts. */
+    sharedLevel?: ThinkingLevel;
+    /** A project entry overrides this model's global preference, independently of enabledModels. */
+    projectLevel?: ThinkingLevel;
+    /** Native-clamped result when this model's global preference is removed. */
+    inheritedLevel: ThinkingLevel;
+  };
 }
 
 export interface EnabledModelsProviderView {
@@ -272,10 +283,14 @@ export function computeEnabledModelsState(input: EnabledModelsInput): EnabledMod
   const entries = toEntries(input.resolutions);
   const enabled = enabledRefs(entries);
   const pins: Record<string, string> = {};
+  const seen = new Set<string>();
   for (const entry of entries) {
-    if (!entry.pin) continue;
-    // The resolver keeps the first occurrence of a model, so its pin wins.
-    for (const ref of entry.matched) pins[ref] ??= entry.pin;
+    // Native scope resolution keeps the first occurrence, even without a pin.
+    for (const ref of entry.matched) {
+      if (seen.has(ref)) continue;
+      seen.add(ref);
+      if (entry.pin) pins[ref] = entry.pin;
+    }
   }
   // pi falls back to every available model when the patterns resolve to
   // nothing, so a fully stale list reads as "all enabled" here too.

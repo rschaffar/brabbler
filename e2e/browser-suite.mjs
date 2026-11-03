@@ -718,7 +718,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "markdown") {
-      await coverage.run(`markdown/${inputId === "legacy-desktop" ? "render-files-native-v5" : "render-touch-wiring-v4"}@${inputId}`, async () => {
+      await coverage.run(`markdown/${inputId === "legacy-desktop" ? "render-files-native-v6" : "render-touch-wiring-v5"}@${inputId}`, async () => {
       const finishMarkdownStage = stage.start(`markdown/${inputId}/chain`);
       // This added chunk-interception fixture needs no service worker. Existing
       // Markdown scenarios below retain their original, independent context.
@@ -758,7 +758,7 @@ let nativeToolsFixture;
       await stage(`markdown/${inputId}/review-notebooks`, async () => { await checkReviewNotebooks(page, { base, fixture: reviewNotebookFixture }); });
       await stage(`markdown/${inputId}/skill-instructions`, async () => { await checkSkillInstructions(page, base, followupSettings); });
       await stage(`markdown/${inputId}/model-overrides`, async () => { await checkModelOverrides(page, base, RICH, project); });
-      await stage(`markdown/${inputId}/managed-model-context`, async () => { await checkManagedModelContextLayout(page); });
+      await stage(`markdown/${inputId}/managed-model-context`, async () => { await checkManagedModelContextLayout(page, { agentDir, artifacts }); });
       await stage(`markdown/${inputId}/external-references`, async () => { await checkExternalReferenceBoundary(page, base, externalReferenceFixtures); });
       await stage(`markdown/${inputId}/blocked-preferences`, async () => { await checkPreferenceWiring(page, base, RICH); });
       assert.deepEqual(errors, [], "Browser errors during Markdown preview and line links");

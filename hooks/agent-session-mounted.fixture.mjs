@@ -208,7 +208,7 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
     for (const waiter of submissionWaiters.splice(0)) waiter.resolve(entry);
   };
   let view, current, nativePeerCurrent, subject, incarnation = 0, systemLoader, stopping = false, transportClosed = false, importing = true;
-  let catalogDefault = "B", catalogThinking = "medium", pins = { [`${provider}/B`]: "high" };
+  let catalogDefault = "B", catalogThinking = "medium", pins = { [`${provider}/B`]: "high" }, catalogThinkingDefaults;
   const restorations = [], listenerRemovals = [], expectedConsole = [], consoleEvents = [], lateTransports = new Set();
   const observationFinalizers = [];
   const connections = new Set(), connectionWaits = new Set();
@@ -328,6 +328,7 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
       .map(ref => [`${ref.provider}:${ref.id}`, ref.name])),
     modelList: (modelRefs ?? modelIds.map(name => ({ provider, id: name, name }))).map(ref => ({ ...ref })),
     defaultModel: selected(catalogDefault), defaultThinkingLevel: catalogThinking,
+    ...(catalogThinkingDefaults === undefined ? {} : { modelThinkingDefaults: catalogThinkingDefaults }),
     thinkingLevelPins: pins, thinkingLevels: { [`${provider}:A`]: ["off", "high"] },
     thinkingLevelMaps: { [`${provider}:A`]: { high: "low" } },
   });
@@ -997,8 +998,8 @@ export async function sessionFixture(t, { preset = "configured", policyTime = nu
     receipts: subject.receipts, operations: subject.operations, questionDrafts: subject.questionDrafts,
     declareSession(sid) { knownSessions.add(sid); return record(sid); },
     snapshot, live, metadata, record, hold,
-    setCatalog({ model = catalogDefault, thinking = catalogThinking, thinkingPins = pins } = {}) {
-      catalogDefault = model; catalogThinking = thinking; pins = thinkingPins;
+    setCatalog({ model = catalogDefault, thinking = catalogThinking, thinkingPins = pins, modelThinkingDefaults = catalogThinkingDefaults } = {}) {
+      catalogDefault = model; catalogThinking = thinking; pins = thinkingPins; catalogThinkingDefaults = modelThinkingDefaults;
     },
     getDraft, setDraft,
     newOptions(overrides = {}) {

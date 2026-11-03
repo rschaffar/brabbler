@@ -72,6 +72,7 @@ async function buildView(context: RequestContext): Promise<EnabledModelsView> {
     customProviders,
     scope,
     settingsPath: path,
+    settingsManager: context.settingsManager,
     ...(modelError ? { modelError } : {}),
   });
 }
