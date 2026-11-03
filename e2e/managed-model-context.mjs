@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createOwnedRoutes } from "./owned-routes.mjs";
 
 /** UI-only synthetic managed provider; route tests separately prove the real SDK writer. */
@@ -104,21 +106,40 @@ export async function checkManagedModelContext(page) {
   }
 }
 
-/** Conditional rendering-only tail: retains the original managed budget input's
- * distinct CSS/physical bounds at BOTH inputs. Synthetic catalogue INPUT only;
- * native persistence/auth/SDK decisions remain in their actual lower owners. */
-export async function checkManagedModelContextLayout(page) {
+/** Retain saved-budget geometry at both inputs and connect row thinking to the
+ * installed defaults writer. Catalog/account metadata are synthetic inputs;
+ * preference persistence/readback uses the private fixture's real native file. */
+export async function checkManagedModelContextLayout(page, { agentDir, artifacts }) {
   // Exact original bounds checkpoint: successful 600000 retry, then project
   // scope reopen. Supply that saved catalogue snapshot directly, not an empty
-  // placeholder or a typed-but-unsaved draft; this read-only fixture does no PUT.
+  // placeholder or a typed-but-unsaved draft. Context configuration stays read-only.
   const savedContextWindow = 600000;
-  const reads = [];
-  const paths = new Set(["/api/models-config", "/api/auth/providers", "/api/models/enabled"]);
+  const provider = "openai-codex", modelId = "fixture-context-model", ref = `${provider}/${modelId}`;
+  const settingsPath = join(agentDir, "settings.json");
+  const readThinking = () => {
+    try { return JSON.parse(readFileSync(settingsPath, "utf8")).modelThinkingLevels?.[ref]; }
+    catch (error) { if (error.code === "ENOENT") return undefined; throw error; }
+  };
+  const originalThinking = readThinking();
+  const reads = [], mutations = [];
+  const baseAccounts = { retained: "catalog-retained" };
+  const paths = new Set(["/api/models-config", "/api/auth/providers", "/api/models/enabled", "/api/auth/accounts/selection"]);
+  const observeMutation = request => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() !== "GET" && (path.startsWith("/api/models") || path.startsWith("/api/auth/accounts") || path === "/api/provider-usage/query")) {
+      mutations.push({ method: request.method(), path, body: request.postDataJSON() });
+    }
+  };
+  page.on("request", observeMutation);
   const matches = url => paths.has(url.pathname);
   const routes = createOwnedRoutes(async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
-    assert.equal(request.method(), "GET", "layout never mutates model or enabled scope");
+    assert.equal(request.method(), "GET", "catalog geometry never mutates model configuration, enabled scope or bindings");
     reads.push(path);
+    if (path === "/api/auth/accounts/selection") return route.fulfill({ json: {
+      accounts: ["a", "b"].map(id => ({ id: `catalog-${id}`, provider, label: `Catalog ${id.toUpperCase()}`, type: "api_key", authorized: true })),
+      project: baseAccounts, session: baseAccounts,
+    } });
     if (path === "/api/models-config") return route.fulfill({ json: { providers: {
       "openai-codex": { modelOverrides: { "fixture-context-model": { contextWindow: savedContextWindow } } },
       relay: { api: "openai-completions", models: [{ id: "keep-me" }] },
@@ -131,6 +152,8 @@ export async function checkManagedModelContextLayout(page) {
       scope: "project", settingsPath: "synthetic/settings.json", editable: false,
       providers: [{ id: "openai-codex", name: "OpenAI Codex", kind: "builtin", enabledCount: 1, models: [{
         id: "fixture-context-model", name: "Fixture Context Model", ref: "openai-codex/fixture-context-model", enabled: true, contextWindow: savedContextWindow,
+        thinking: { supportedLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"], inheritedLevel: "medium",
+          ...(readThinking() === undefined ? {} : { sharedLevel: readThinking() }) },
       }] }],
     } });
   }, route => route.continue());
@@ -153,8 +176,81 @@ export async function checkManagedModelContextLayout(page) {
     const bounds = await input.boundingBox();
     assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= page.viewportSize().width);
     for (const path of paths) assert.ok(reads.includes(path), `actual managed layout read ${path}`);
+    const account = dialog.getByRole("combobox", { name: "Catalog account", exact: true });
+    const thinking = dialog.getByRole("combobox", { name: "Thinking default for Fixture Context Model", exact: true });
+    const reachable = async control => {
+      await control.scrollIntoViewIfNeeded();
+      assert.equal(await control.evaluate(element => {
+        const box = element.getBoundingClientRect(), x = box.x + box.width / 2, y = box.y + box.height / 2;
+        const hit = document.elementFromPoint(x, y);
+        return box.width > 24 && box.height >= 26 && box.left >= 0 && box.right <= innerWidth + 1
+          && box.top >= 0 && box.bottom <= innerHeight + 1 && (hit === element || element.contains(hit));
+      }), true, "model settings control has a current positive, unoccluded physical target");
+    };
+    const waitForRows = () => page.waitForFunction(() => {
+      const field = document.querySelector('select[aria-label="Thinking default for Fixture Context Model"]');
+      return field && !field.disabled;
+    });
+    assert.equal(await account.evaluate(element => Boolean(element.closest(".config-detail"))), true, "account choice is inside its provider area, not another popover");
+    await reachable(account);
+    await account.focus();
+    assert.equal(await account.evaluate(element => document.activeElement === element), true);
+    const chooseCatalog = async id => {
+      const expected = { ...baseAccounts, [provider]: id };
+      const [response] = await Promise.all([
+        page.waitForResponse(reply => {
+          const url = new URL(reply.url());
+          return url.pathname === "/api/models/enabled" && JSON.parse(url.searchParams.get("accounts") ?? "{}")[provider] === id;
+        }),
+        account.selectOption(id),
+      ]);
+      await response.json(); await response.finished();
+      assert.deepEqual(JSON.parse(new URL(response.url()).searchParams.get("accounts")), expected, "catalog inspection retains the other provider binding");
+      await waitForRows();
+    };
+    await chooseCatalog("catalog-a");
+    assert.equal(mutations.length, 0, "catalog inspection changes no account binding and requests no provider/usage refresh");
+    await reachable(thinking);
+    const desired = originalThinking === "high" ? "off" : "high";
+    const writeThinking = async level => {
+      const [response] = await Promise.all([
+        page.waitForResponse(reply => new URL(reply.url()).pathname === "/api/models/defaults" && reply.request().method() === "PUT"),
+        thinking.selectOption(level ?? ""),
+      ]);
+      await response.json(); await response.finished();
+      assert.equal(response.status(), 200, "installed native defaults endpoint accepts the actual dropdown intent");
+      await page.waitForFunction(({ selector, expected }) => {
+        const field = document.querySelector(selector);
+        return field && !field.disabled && field.value === expected;
+      }, { selector: 'select[aria-label="Thinking default for Fixture Context Model"]', expected: level ?? "" });
+      assert.equal(readThinking(), level ?? undefined, "UI save is durable in native settings, not a synthetic response store");
+    };
+    await writeThinking(desired);
+    await chooseCatalog("catalog-b");
+    assert.equal(await thinking.inputValue(), desired, "the same native per-model preference appears in the other account's catalog");
+    const notice = dialog.locator(".models-shared-scope");
+    assert.equal(await notice.evaluate(element => Boolean(element.closest(".config-detail"))), true);
+    assert.match(await notice.textContent(), /thinking defaults are shared across all accounts/);
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    const showAgain = page.getByRole("button", { name: "Show sidebar", exact: true });
+    if (await showAgain.isVisible()) await showAgain.click();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    const section = dialog.getByRole("combobox", { name: "Settings", exact: true });
+    if (await section.isVisible()) await section.selectOption("models");
+    else await dialog.getByRole("button", { name: "Models", exact: true }).click();
+    await dialog.locator(".config-sidebar-item").filter({ hasText: "OpenAI Codex" }).click();
+    await waitForRows();
+    assert.equal(await thinking.inputValue(), desired, "reopening Settings reads the persisted native value");
+    await reachable(thinking); await reachable(account);
+    await dialog.screenshot({ path: join(artifacts, `model-settings-${page.viewportSize().width}.png`) });
+    await reachable(thinking);
+    await dialog.screenshot({ path: join(artifacts, `model-settings-rows-${page.viewportSize().width}.png`) });
+    await writeThinking(originalThinking ?? null);
+    assert.deepEqual(mutations, [desired, originalThinking ?? null].map(level => ({ method: "PUT", path: "/api/models/defaults",
+      body: { modelThinking: { provider, modelId, level } } })), "only exact shared preference save/restore; never catalog, scope, configuration or binding mutations");
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
   } finally {
+    page.off("request", observeMutation);
     await routes.dispose(handler => page.unroute(matches, handler));
   }
 }

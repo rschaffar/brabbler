@@ -388,7 +388,7 @@ test('held A catalog refresh invalidates matching A readback after A/B/A without
   const reads = f.requests.filter(r => r.method === 'GET').slice(readsBefore);
   assert.deepEqual(reads.map(r => JSON.parse(new Map(r.query).get('accounts'))), [b, a, a], 'completion triggers a fresh read for matching displayed A');
   assert.equal(f.text().includes('A-AFTER-REFRESH'), true);
-  assert.equal(f.view.container.querySelector('.enabled-models-note') === null, true, 'retired refresh cannot publish its note');
+  assert.equal(f.view.container.querySelector('.enabled-models-catalog-note') === null, true, 'retired refresh cannot publish catalog feedback; permanent row help is unrelated');
   assert.deepEqual(f.requests.filter(r => r.method === 'POST').map(r => r.body), [body]);
 });
 
@@ -410,4 +410,188 @@ test('queued shared resync retains captured A accounts while B remains the displ
   assert.deepEqual(enabledWrites(f).map(r => r.body), bodies);
   assert.equal(f.text().includes('B-ONLY'), true, 'late A write readback cannot replace B');
   assert.equal(controller().pending, null);
+});
+
+test('row thinking save is a shared exact-model intent; pending A completion rereads current B without rebinding', async t => {
+  const a = { anthropic: 'account-a', retained: 'retained-account' }, b = { anthropic: 'account-b', retained: 'retained-account' };
+  const thinking = { supportedLevels: ['off', 'low', 'high'], sharedLevel: 'low', inheritedLevel: 'low' };
+  const initial = view([entry('sonnet', true, { thinking }), entry('opus', true, { thinking })]);
+  const { f, controller, inspect, setSnapshot } = await mountedEnabled(t, initial, { accounts: a });
+  const select = () => f.node('select[aria-label="Thinking default for SONNET"]');
+  assert.equal(select().value, 'low', 'native per-model preference is directly editable on its model row');
+  const held = f.gate('shared per-model save body');
+  const body = { modelThinking: { provider: 'anthropic', modelId: 'sonnet', level: 'high' } };
+  f.route('PUT', '/api/models/defaults', { body, reply: { gate: held, data: { thinkingLevel: 'low' } } });
+  await f.input(select(), 'high', { settle: false });
+  assert.equal(controller().pending, 'thinking:anthropic/sonnet');
+  assert.equal(select().disabled, true, 'thinking saves participate in the existing settings mutation serialization');
+  assert.equal(f.node('button[aria-label="Show OPUS in the model selector"]').disabled, true, 'enabled edits cannot overlap the same owner');
+  await inspect(b); await f.commit(undefined, 'enabled.read');
+  assert.equal(select().value, 'low', 'current B remains authoritative until the shared write completes');
+  setSnapshot(view([entry('sonnet', true, { thinking: { ...thinking, sharedLevel: 'high' } }), entry('b-only', true, { thinking })]));
+  await f.deliver(held, 'enabled.mutate'); await f.commit(undefined, 'enabled.read');
+  assert.equal(select().value, 'high', 'shared completion is reflected in the CURRENT inspected account');
+  assert.equal(f.text().includes('B-ONLY'), true, 'A response does not republish A catalog data');
+  assert.equal(controller().pending, null);
+  assert.deepEqual(f.requests.filter(r => r.method !== 'GET').map(r => ({ path: r.path, body: r.body })), [{ path: '/api/models/defaults', body }],
+    'no account/cwd, pattern rewrite, chat/project binding or provider-network mutation');
+});
+
+test('row thinking exposes supported choices, unsupported saved values, project/pin overrides and retryable Inherit', async t => {
+  const thinking = { supportedLevels: ['off', 'low', 'high'], sharedLevel: 'max', inheritedLevel: 'high', projectLevel: 'high' };
+  const initial = view([entry('sonnet', true, { thinkingPin: 'high', thinking }), entry('opus', true, { thinking })], { scope: 'project', editable: false });
+  const { f, setSnapshot } = await mountedEnabled(t, initial, { accounts: {} });
+  const select = () => f.node('select[aria-label="Thinking default for SONNET"]');
+  assert.equal(select().value, 'max', 'catalog capabilities do not silently overwrite a shared stored preference');
+  assert.equal(select().disabled, false, 'project enabled-pattern scope is not model-default ownership');
+  assert.deepEqual([...select().options].filter(option => !option.disabled).map(option => option.value), ['', 'off', 'low', 'high']);
+  assert.equal(f.text().includes('Pinned'), true, 'pin precedence is visible, not an unexplained level badge');
+  assert.equal(f.text().includes('Project override'), true, 'per-key project default provenance stays separate from enabled scope');
+  let refusal = true, expected = { modelThinking: { provider: 'anthropic', modelId: 'sonnet', level: null } };
+  f.route('PUT', '/api/models/defaults', { body: () => expected, reply: () => refusal
+    ? { status: 500, data: { error: 'Synthetic default unavailable' } } : { data: {} } });
+  await f.input(select(), '');
+  assert.equal(select().value, 'max', 'failed clear leaves saved state intact');
+  assert.equal(select().disabled, false, 'failed finally unlocks retry');
+  assert.equal(f.node('.enabled-models-error').textContent, 'Synthetic default unavailable');
+  refusal = false;
+  setSnapshot(view([entry('sonnet', true, { thinkingPin: 'high', thinking: { ...thinking, sharedLevel: undefined } })], { scope: 'project', editable: false }));
+  await f.input(select(), ''); await f.commit(undefined, 'enabled.read');
+  assert.equal(select().value, '', 'Inherit is represented by removal, not a persisted pseudo-level');
+  assert.equal(select().selectedOptions[0].textContent.includes('high'), true, 'inherit names the native effective pin/project fallback');
+  expected = { modelThinking: { provider: 'anthropic', modelId: 'sonnet', level: 'off' } };
+  setSnapshot(view([entry('sonnet', true, { thinking: { ...thinking, sharedLevel: 'off' } })], { scope: 'project', editable: false }));
+  await f.input(select(), 'off'); await f.commit(undefined, 'enabled.read');
+  assert.equal(select().value, 'off', 'off is an explicit native default, distinct from inherit');
+  assert.equal(f.requests.filter(r => r.method === 'PUT' && r.path === '/api/models/defaults').length, 3);
+  assert.equal(enabledWrites(f).length, 0, 'row defaults never edit project-shadowed enabled patterns');
+});
+
+test('thinking readback captured before a queued resync cannot overwrite that mutation after its completion', async t => {
+  const base = { supportedLevels: ['off', 'low', 'high'], sharedLevel: 'low', inheritedLevel: 'low' };
+  const initial = view([entry('sonnet', true, { thinking: base }), entry('opus', false, { thinking: base })]);
+  let readAfterThinking = false;
+  const fakes = { afterThinking: view([entry('sonnet', true, { thinking: { ...base, sharedLevel: 'high' } }), entry('opus', false, { thinking: base })]) };
+  let heldRead;
+  const { f, controller } = await mountedEnabled(t, initial, { accounts: {},
+    readReply: () => readAfterThinking ? { gate: heldRead, data: fakes.afterThinking } : { data: initial } });
+  const thinking = f.gate('first shared thinking response'), resync = f.gate('queued resync response');
+  heldRead = f.gate('pre-resync shared readback');
+  const final = view([entry('sonnet', true, { thinking: { ...base, sharedLevel: 'high' } }), entry('opus', true, { thinking: base })]);
+  f.route('PUT', '/api/models/defaults', { body: { modelThinking: { provider: 'anthropic', modelId: 'sonnet', level: 'high' } }, reply: { gate: thinking, data: {} } });
+  f.route('PUT', '/api/models/enabled', { body: { op: 'resync', renames: [], modelRenames: [], fullyEnabled: [], cwd: '/project', accounts: {} }, reply: { gate: resync, data: final } });
+  await f.input('select[aria-label="Thinking default for SONNET"]', 'high', { settle: false });
+  await act(async () => { controller().resync([], []); });
+  const originalThinking = f.works.find(work => work.label === 'enabled.mutate' && !work.settled).promise;
+  readAfterThinking = true;
+  await act(async () => { thinking.release(); await originalThinking; });
+  assert.equal(f.works.some(work => work.label === 'enabled.read' && !work.settled), true, 'the actual old GET is admitted while queued resync remains held');
+  fakes.afterThinking = final; // A subsequent GET sees the durable resync; the already-held body keeps its old snapshot.
+  await f.deliver(resync, 'enabled.mutate');
+  assert.equal(controller().view.enabledTotal, 2, 'queued mutation publishes its new scope first');
+  await f.deliver(heldRead, 'enabled.read');
+  assert.equal(controller().view.enabledTotal, 2, 'late older GET must not undo the completed mutation');
+  assert.equal(f.node('button[aria-label="Show OPUS in the model selector"]').getAttribute('aria-checked'), 'true');
+  assert.equal(controller().loading, false);
+});
+
+test('same-catalog thinking readback retains the list node and scroll; a different account still retires it', async t => {
+  const thinking = { supportedLevels: ['off', 'low', 'high'], sharedLevel: 'low', inheritedLevel: 'low' };
+  const initial = view(Array.from({ length: 10 }, (_, i) => entry(`model-${i}`, true, { thinking })));
+  let current = initial, heldRead;
+  const { f, inspect } = await mountedEnabled(t, initial, { accounts: {}, readReply: () => ({ ...(heldRead ? { gate: heldRead } : {}), data: current }) });
+  const list = f.node('.enabled-models-list');
+  list.scrollTop = 120; // DOM identity/retention proof, not physical layout.
+  heldRead = f.gate('same-account preference readback');
+  current = view(initial.providers[0].models.map(model => ({ ...model, thinking: { ...thinking, sharedLevel: 'high' } })));
+  f.route('PUT', '/api/models/defaults', { body: { modelThinking: { provider: 'anthropic', modelId: 'model-9', level: 'high' } }, reply: { data: {} } });
+  await f.input('select[aria-label="Thinking default for MODEL-9"]', 'high', { settle: false });
+  await f.commit(undefined, 'enabled.mutate');
+  assert.equal(f.view.container.querySelector('.enabled-models-list') === list, true, 'same-identity readback keeps the actual list mounted');
+  assert.equal(list.scrollTop, 120);
+  assert.equal(f.node('select[aria-label="Thinking default for MODEL-9"]').disabled, true, 'readback gates repeated edits without removing their DOM');
+  await f.deliver(heldRead, 'enabled.read');
+  assert.equal(f.view.container.querySelector('.enabled-models-list') === list, true);
+  assert.equal(list.scrollTop, 120);
+  assert.equal(f.node('select[aria-label="Thinking default for MODEL-9"]').value, 'high');
+  heldRead = f.gate('different-account catalog'); current = view([entry('b-only', true, { thinking })]);
+  await inspect({ anthropic: 'account-b' });
+  assert.equal(f.view.container.querySelector('.enabled-models-list') === null, true, 'retention never exposes the old account during a new catalog read');
+  await f.deliver(heldRead, 'enabled.read');
+  assert.equal(f.text().includes('B-ONLY'), true);
+  assert.equal(f.view.container.querySelector('.enabled-models-list') === list, false);
+});
+
+test('a mutation completion rereads an intervening catalog refresh rather than discarding its newer models', async t => {
+  const initial = view([entry('sonnet', true), entry('opus', false)]);
+  const toggled = view([entry('sonnet', true), entry('opus', true)]);
+  const freshBefore = view([entry('sonnet', true), entry('opus', false), entry('new-catalog-model', true)]);
+  const freshAfter = view([entry('sonnet', true), entry('opus', true), entry('new-catalog-model', true)]);
+  let phase = 'initial', freshRead;
+  const { f, controller } = await mountedEnabled(t, initial, { accounts: {}, readReply: () => phase === 'initial' ? { data: initial }
+    : phase === 'held' ? { gate: freshRead, data: freshBefore } : { data: freshAfter } });
+  const catalog = f.gate('catalog pass before mutation completion'), mutation = f.gate('old-catalog mutation response');
+  freshRead = f.gate('intervening new catalog with pre-write preferences');
+  f.route('POST', '/api/models/refresh', { body: { provider: 'anthropic', accounts: {} }, reply: { gate: catalog, data: { completed: true, changed: true } } });
+  f.route('PUT', '/api/models/enabled', { body: { op: 'models', refs: ['anthropic/opus'], enabled: true, cwd: '/project', accounts: {} }, reply: { gate: mutation, data: toggled } });
+  await f.click(f.button('Refresh catalog'), { settle: false });
+  await f.click('button[aria-label="Show OPUS in the model selector"]', { settle: false });
+  phase = 'held'; await f.deliver(catalog, 'enabled.catalog');
+  assert.equal(f.works.some(work => work.label === 'enabled.read' && !work.settled), true, 'fresh catalog read genuinely intervenes while PUT is held');
+  phase = 'final'; await f.deliver(mutation, 'enabled.mutate');
+  await f.deliver(freshRead, 'enabled.read');
+  assert.equal(f.text().includes('NEW-CATALOG-MODEL'), true, 'completion must retain a path to the newer refreshed catalog');
+  assert.equal(controller().view.providers[0].models.find(model => model.id === 'opus').enabled, true, 'fresh readback also reflects the completed preference write');
+});
+
+test('failed post-save readback retains labelled stale rows and offers read-only Retry without replaying the save', async t => {
+  const thinking = { supportedLevels: ['off', 'low', 'high'], sharedLevel: 'low', inheritedLevel: 'medium' };
+  const initial = view([entry('sonnet', true, { thinking })]);
+  let failRead = false;
+  const { f } = await mountedEnabled(t, initial, { accounts: {}, readReply: () => failRead
+    ? { status: 503, data: { error: 'Synthetic readback unavailable' } }
+    : { data: failRead === null ? view([entry('sonnet', true, { thinking: { ...thinking, sharedLevel: 'high' } })]) : initial } });
+  f.route('PUT', '/api/models/defaults', { body: { modelThinking: { provider: 'anthropic', modelId: 'sonnet', level: 'high' } }, reply: { data: {} } });
+  failRead = true;
+  await f.input('select[aria-label="Thinking default for SONNET"]', 'high'); await f.commit(undefined, 'enabled.read');
+  assert.equal(f.node('select[aria-label="Thinking default for SONNET"]').value, 'low', 'read failure does not fabricate the saved value');
+  const retry = f.button('Retry');
+  assert.equal(f.text().includes('previous read'), true, 'retained rows are visibly identified as stale');
+  assert.equal(f.node('select[aria-label="Thinking default for SONNET"]').disabled, true, 'stale readback is not presented as editable current state');
+  failRead = null;
+  await f.click(retry); await f.commit(undefined, 'enabled.read');
+  assert.equal(f.node('select[aria-label="Thinking default for SONNET"]').value, 'high');
+  assert.equal(f.node('select[aria-label="Thinking default for SONNET"]').disabled, false);
+  assert.equal(f.view.container.querySelector('.enabled-models-error') === null, true);
+  assert.deepEqual(f.requests.filter(request => request.method !== 'GET').map(request => request.path), ['/api/models/defaults'], 'retry reads saved settings only: no second write or provider refresh');
+});
+
+test('automatic readback failure does not erase a refused mutation while reconciling an intervening read', async t => {
+  const initial = view([entry('sonnet', true), entry('opus', false)]);
+  let phase = 'initial', heldRead;
+  const { f, controller } = await mountedEnabled(t, initial, { accounts: {}, readReply: () => phase === 'initial' ? { data: initial }
+    : { ...(phase === 'held' ? { gate: heldRead } : {}), status: 503, data: { error: 'Synthetic readback refused' } } });
+  const write = f.gate('refused mutation after intervening read'); heldRead = f.gate('earlier metadata read');
+  f.route('PUT', '/api/models/enabled', { body: { op: 'models', refs: ['anthropic/opus'], enabled: true, cwd: '/project', accounts: {} },
+    reply: { gate: write, status: 500, data: { error: 'Synthetic write refused' } } });
+  await f.click('button[aria-label="Show OPUS in the model selector"]', { settle: false });
+  phase = 'held'; await act(async () => { controller().refresh(); });
+  assert.equal(f.works.some(work => work.label === 'enabled.read' && !work.settled), true);
+  phase = 'failed'; await f.deliver(write, 'enabled.mutate'); await f.deliver(heldRead, 'enabled.read');
+  assert.equal(f.text().includes('Synthetic write refused'), true, 'mutation failure remains visible without a new explicit action');
+  assert.equal(f.text().includes('Synthetic readback refused'), true, 'independent stale-read failure is also visible');
+  assert.equal(f.requests.filter(request => request.method === 'PUT').length, 1, 'automatic reconciliation never retries the refused edit');
+});
+
+test('an admitted shared thinking save settles after row unmount without a catalog read or replay', async t => {
+  const initial = view([entry('sonnet', true, { thinking: { supportedLevels: ['off', 'low'], inheritedLevel: 'low' } })]);
+  const { f } = await mountedEnabled(t, initial, { accounts: {} });
+  const held = f.gate('per-model save through observer unmount');
+  f.route('PUT', '/api/models/defaults', { body: { modelThinking: { provider: 'anthropic', modelId: 'sonnet', level: 'off' } }, reply: { gate: held, data: {} } });
+  await f.input('select[aria-label="Thinking default for SONNET"]', 'off', { settle: false });
+  const reads = f.requests.filter(r => r.path === '/api/models/enabled').length;
+  await f.view.unmount();
+  await f.deliver(held, 'enabled.mutate');
+  assert.equal(f.requests.filter(r => r.path === '/api/models/enabled').length, reads, 'unmounted owner does not trigger a readback');
+  assert.equal(f.requests.filter(r => r.method === 'PUT').length, 1, 'observer disposal neither cancels nor replays the admitted preference save');
 });

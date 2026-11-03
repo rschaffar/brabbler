@@ -22,7 +22,7 @@ async function jsonRequest(url: string, method: string, body: unknown) {
   return result;
 }
 
-/** A compact account indicator beside the model; the controls live in its popover. */
+/** Compact conversation popover; catalog mode exposes its selector directly in provider detail. */
 export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, busy, onSessionChange, onAccountsChanged, catalog }: {
   cwd: string | null; sessionId: string | null; provider: string; busy: boolean;
   onSessionChange: (provider: string, id: string | null, selection: Selection) => Promise<void>;
@@ -360,16 +360,32 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
     } catch (cause) { setPending(false); setError(cause instanceof Error ? cause.message : "Could not add account"); }
   })());
 
-  return <div className="min-w-0 shrink-0">
-    <button ref={triggerRef} type="button" className="flex h-8 min-w-0 items-center gap-1 rounded-lg px-2 text-xs text-text-muted hover:bg-bg-hover" style={{ maxWidth: "min(58vw, 280px)" }}
+  return <div className={catalog ? "models-catalog-accounts" : "min-w-0 shrink-0"}>
+    {catalog && <label className="models-catalog-account-label">
+      <span>{t("models.catalogAccount")}</span>
+      <select className={`${field} models-catalog-account-select`} aria-label={t("models.catalogAccount")}
+        value={selected} disabled={!currentProvider || !selectionReady || pending}
+        onChange={(event) => void changeSession(event.target.value)}>
+        <option value="">{!selectionReady ? t("i18n.loading") : !currentProvider ? t("models.catalogSelectProvider") : "Pi default"}</option>
+        {available.map((account) => <option key={account.id} value={account.id}>{account.label}</option>)}
+        {selected && !available.some((account) => account.id === selected) && <option value={selected}>{t("models.catalogUnavailable")}</option>}
+      </select>
+    </label>}
+    {catalog && currentId && <span className="models-catalog-status">
+      {available.some((account) => account.id === currentId) ? t("i18n.connected") : t("models.catalogUnavailable")}
+    </span>}
+    <button ref={triggerRef} type="button" className={catalog ? "config-button config-button-default config-button-small" : "flex h-8 min-w-0 items-center gap-1 rounded-lg px-2 text-xs text-text-muted hover:bg-bg-hover"}
+      style={catalog ? undefined : { maxWidth: "min(58vw, 280px)" }}
       title={`${t("auth.accountFor", { provider: currentProvider || t("auth.account"), account: currentAccount })}${currentUsage ? ` · ${currentUsage}` : ""}`}
-      aria-label={`${t("auth.accountFor", { provider: currentProvider || t("auth.account"), account: currentAccount })}${currentUsage ? ` · ${currentUsage}` : ""}`}
+      aria-label={catalog ? t("models.manageAccountsFor", { provider: currentProvider || t("auth.account"), account: currentAccount })
+        : `${t("auth.accountFor", { provider: currentProvider || t("auth.account"), account: currentAccount })}${currentUsage ? ` · ${currentUsage}` : ""}`}
       aria-expanded={open} aria-controls={panelId}
       onClick={() => setOpen((value) => !value)}>
       <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
         <circle cx="12" cy="8" r="3" /><path d="M5 20a7 7 0 0 1 14 0" />
-      </svg><span className="min-w-0 truncate">{catalog ? t("models.catalogAccountFor", { provider: currentProvider || t("auth.account"), account: currentAccount }) : currentAccount}</span>{!catalog && compactUsage && <span className="truncate whitespace-nowrap text-[10px] text-text-dim">{compactUsage}</span>}
+      </svg><span className="min-w-0 truncate">{catalog ? t("models.manageAccounts") : currentAccount}</span>{!catalog && compactUsage && <span className="truncate whitespace-nowrap text-[10px] text-text-dim">{compactUsage}</span>}
     </button>
+    {catalog && error && !open && <p role="alert" className="models-catalog-error">{error}</p>}
     {open && createPortal(<div ref={panelRef} id={panelId} role="region" aria-label="Provider accounts"
       className="overflow-y-auto overscroll-contain rounded-lg border border-border bg-bg-panel p-3 text-xs text-text-muted shadow-xl"
       style={panelStyle}>
@@ -386,14 +402,14 @@ export function ProviderAccounts({ cwd, sessionId, provider: currentProvider, bu
           </select>
         </label>
         {provider && <>
-          <label className="flex flex-col gap-1">{provider} account
-            <select className={field} aria-label={catalog ? t("models.catalogAccount") : "Session account"} value={selected} disabled={!selectionReady || busy || pending}
+          {!catalog && <label className="flex flex-col gap-1">{provider} account
+            <select className={field} aria-label="Session account" value={selected} disabled={!selectionReady || busy || pending}
               onChange={(event) => void changeSession(event.target.value)}>
               <option value="">Pi default</option>
               {available.map((account) => <option key={account.id} value={account.id}>{account.label}</option>)}
               {selected && !available.some((account) => account.id === selected) && <option value={selected}>Unavailable account</option>}
             </select>
-          </label>
+          </label>}
           {!catalog && <label className="flex flex-col gap-1" title="Default for new sessions in this project (including worktrees)">New sessions in project
             <select className={field} aria-label="Project account default" value={project[provider] ?? ""} disabled={!selectionReady || pending}
               onChange={(event) => void changeProject(event.target.value)}>

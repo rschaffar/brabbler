@@ -319,6 +319,7 @@ type ModelsResponse = {
   modelList?: ModelEntry[];
   defaultModel?: SelectedModel | null;
   defaultThinkingLevel?: string | null;
+  modelThinkingDefaults?: Record<string, string | null>;
   thinkingLevels?: Record<string, string[]>;
   thinkingLevelMaps?: Record<string, Record<string, string | null>>;
   thinkingLevelPins?: Record<string, string>;
@@ -467,6 +468,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const modelSpeedChangingRef = useRef(false);
   const thinkingLevelPinsRef = useRef<Record<string, string>>({});
   const defaultThinkingLevelRef = useRef<ConcreteThinkingLevel | null>(null);
+  const modelThinkingDefaultsRef = useRef<Record<string, string | null> | null>(null);
   const promptRunIdRef = useRef(0);
   const optimisticUserMessageKeyRef = useRef<string | null>(null);
   const modelSwitchPendingRef = useRef(false);
@@ -2085,8 +2087,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setNewSessionModel(selectedModel);
         setPendingModel(selectedModel);
         if (thinkingLevelOverrideRef.current === null) {
-          const pinned = thinkingLevelPinsRef.current[`${provider}/${modelId}`];
-          setNewSessionDefaultThinkingLevel(asConcreteThinkingLevel(pinned) ?? defaultThinkingLevelRef.current);
+          const key = `${provider}/${modelId}`;
+          const pinned = thinkingLevelPinsRef.current[key];
+          const defaults = modelThinkingDefaultsRef.current;
+          setNewSessionDefaultThinkingLevel(asConcreteThinkingLevel(pinned)
+            ?? (defaults === null ? defaultThinkingLevelRef.current : asConcreteThinkingLevel(defaults[key])));
         }
         sid = sid ?? await ensuringNewSessionRef.current;
         if (!sid || !current(sid)) return;
@@ -2227,16 +2232,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       : null);
     thinkingLevelPinsRef.current = d.thinkingLevelPins ?? {};
     defaultThinkingLevelRef.current = asConcreteThinkingLevel(d.defaultThinkingLevel);
-    if (isNew && !sessionIdRef.current && !newSessionModelOverrideRef.current) {
-      // The first listed model is not necessarily the runtime's automatic choice.
-      // An `enabledModels` pattern may pin a thinking level (`anthropic/*:high`).
-      // Like pi, apply it to the model a new session starts with.
-      const pinned = displayDefaultModel && d.thinkingLevelPins?.[`${displayDefaultModel.provider}/${displayDefaultModel.id}`];
-      if (thinkingLevelOverrideRef.current === null) {
-        setNewSessionDefaultThinkingLevel(
-          asConcreteThinkingLevel(pinned) ?? defaultThinkingLevelRef.current,
-        );
-      }
+    modelThinkingDefaultsRef.current = d.modelThinkingDefaults ?? null;
+    if (isNew && !sessionIdRef.current && thinkingLevelOverrideRef.current === null) {
+      // Explicit model intent can still inherit that target's shared thinking default.
+      // null in a present map means automatic, never the previous model's scalar.
+      const target = newSessionModelOverrideRef.current ?? (displayDefaultModel
+        ? { provider: displayDefaultModel.provider, modelId: displayDefaultModel.id } : null);
+      const key = target ? `${target.provider}/${target.modelId}` : "";
+      setNewSessionDefaultThinkingLevel(asConcreteThinkingLevel(d.thinkingLevelPins?.[key])
+        ?? (d.modelThinkingDefaults === undefined ? defaultThinkingLevelRef.current : asConcreteThinkingLevel(d.modelThinkingDefaults[key])));
     }
   }, [historyOnly, isNew, newSessionCwd, session?.cwd]);
   loadModelsRef.current = loadModels;

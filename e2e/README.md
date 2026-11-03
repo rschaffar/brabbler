@@ -121,7 +121,7 @@ deadlines. Duplication is judged by the exact obligation/input and sufficient ow
 not merely by membership in different integration chains. Preserve the necessary
 connection or physical step, not all of its functional neighbors.
 
-The Markdown media helper also owns the remote-image default-block → inline global enable → native PNG request/decoding → reload → Settings disable bridge at both desktop/touch inputs. An exact synthetic image route supplies inline bytes locally; no external host is contacted. Existing local-media assertions remain unchanged, under fresh `render-files-native-v5` / `render-touch-wiring-v4` receipts. Mounted Markdown owners cover shared chat/file rendering, raw/linked images, inert guided prose, cross-tab changes and failed-write safety; the installed bridge does not duplicate that matrix.
+The Markdown media helper also owns the remote-image default-block → inline global enable → native PNG request/decoding → reload → Settings disable bridge at both desktop/touch inputs. An exact synthetic image route supplies inline bytes locally; no external host is contacted. Existing local-media assertions remain unchanged, under fresh `render-files-native-v6` / `render-touch-wiring-v5` receipts. Mounted Markdown owners cover shared chat/file rendering, raw/linked images, inert guided prose, cross-tab changes and failed-write safety; the installed bridge does not duplicate that matrix.
 
 The Markdown media helper seeds synthetic PCM WAV and a tiny VP8 WebM from reviewed inline bytes (with provenance/hash), not downloaded fixtures or runtime ffmpeg. Desktop/mobile checks observe zero eager media/remote requests, native playback and seeking, session-scoped external-reference range reads/denials, corrupt-file feedback and explicit repair reload, narrow layout, covered-pane/session teardown and no automatic resumption. Direct authorization negatives use Node HTTP, preserving unfiltered browser console/5xx reporting. The existing notebook Markdown chain also retains all read-only assertions before
 its interactive tail. At both original desktop/touch inputs, that tail connects native
@@ -137,6 +137,8 @@ console/HTTP failures are filtered. Programmatic native Selection
 API use is not a claim about physical iOS/Android selection handles. Reducer/mounted/
 native store owners retain policy and race matrices; no prior browser assertions are
 retired. Candidate-specific execution is recorded in the active guided-review plan.
+
+The managed-model tail retains the populated saved-context geometry at both inputs. It now also proves the direct in-provider catalog selector and thinking control have current unoccluded physical targets, preserves the other provider binding during inspection, and connects a row edit to the installed `/api/models/defaults` writer with private native-file readback and reopen. Only that exact shared preference is saved/restored; context configuration, enabled patterns, credentials and account bindings remain unmodified. Catalog/account metadata are synthetic geometry inputs, not live authentication, provider access or native catalog-discovery proof. Mounted/native owners retain precedence, validation, failures and interleaving matrices.
 
 These are native Chromium proofs, not every browser/codec combination; the static demo and Markdown-file previews are outside this feature's scope.
 

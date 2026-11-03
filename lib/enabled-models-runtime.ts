@@ -1,7 +1,8 @@
 import { homedir } from "os";
 import { join, sep } from "path";
 import { getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import { clampThinkingLevel, getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
   resolveModelScopeWithDiagnostics,
   SettingsManager,
@@ -136,6 +137,7 @@ export interface EnabledModelsViewOptions {
   scope: "global" | "project";
   settingsPath: string;
   modelError?: string;
+  settingsManager?: Pick<SettingsManager, "getGlobalSettings" | "getProjectSettings" | "getDefaultThinkingLevel">;
 }
 
 export function buildEnabledModelsView({
@@ -146,9 +148,12 @@ export function buildEnabledModelsView({
   scope,
   settingsPath,
   modelError,
+  settingsManager,
 }: EnabledModelsViewOptions): EnabledModelsView {
   const state = computeEnabledModelsState(input);
   const enabled = new Set(state.enabled);
+  const global = settingsManager?.getGlobalSettings();
+  const project = settingsManager?.getProjectSettings();
 
   const byProvider = new Map<string, EnabledModelsModelView[]>();
   for (const model of models) {
@@ -161,6 +166,13 @@ export function buildEnabledModelsView({
       enabled: enabled.has(ref),
       ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
       ...(pin ? { thinkingPin: pin } : {}),
+      thinking: {
+        supportedLevels: getSupportedThinkingLevels(model),
+        ...(global?.modelThinkingLevels?.[ref] === undefined ? {} : { sharedLevel: global.modelThinkingLevels[ref] }),
+        ...(project?.modelThinkingLevels?.[ref] === undefined ? {} : { projectLevel: project.modelThinkingLevels[ref] }),
+        inheritedLevel: clampThinkingLevel(model, (pin as ThinkingLevel | undefined)
+          ?? project?.modelThinkingLevels?.[ref] ?? settingsManager?.getDefaultThinkingLevel() ?? "medium"),
+      },
     };
     const list = byProvider.get(model.provider);
     if (list) list.push(entry);

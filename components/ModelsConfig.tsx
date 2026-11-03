@@ -1915,7 +1915,10 @@ export function SharedModelDefaults({ controller }: { controller: EnabledModelsC
         body: JSON.stringify({ ...(changedModel ? { model: draft.model } : {}), ...(changedThinking ? { thinkingLevel: draft.thinkingLevel } : {}) }) });
       const data = await response.json() as StartupPreferences & { error?: string };
       if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
-      if (mounted.current && request === version.current) { setSaved(data); setDraft(data); setSavedOk(true); }
+      if (mounted.current && request === version.current) {
+        setSaved(data); setDraft(data); setSavedOk(true);
+        controller.refresh(); // Row inheritance follows the shared fallback in the current catalog.
+      }
     } catch (cause) {
       if (mounted.current && request === version.current) setError(String(cause));
     } finally {
@@ -1981,6 +1984,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, sessionId 
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
   const [apiKeyProviders, setApiKeyProviders] = useState<ApiKeyProvider[]>([]);
   const [authListed, setAuthListed] = useState(false);
+  const [authListedFor, setAuthListedFor] = useState("");
   const [authListFailed, setAuthListFailed] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   /** Provider ids as models.json has them on disk, and where renames moved them. */
@@ -2022,6 +2026,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, sessionId 
         if (Array.isArray(d.oauthProviders)) setOauthProviders(d.oauthProviders);
         if (Array.isArray(d.apiKeyProviders)) setApiKeyProviders(d.apiKeyProviders);
         setAuthListed(true);
+        setAuthListedFor(authIdentity);
         setAuthListFailed(false);
       })
       .catch(() => { if (current()) setAuthListFailed(true); }));
@@ -2192,7 +2197,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, sessionId 
   }, []);
 
   const handleSave = useCallback(() => observe("models.handleSave", (async () => {
-    if (loadError || catalogAccounts === null || enabledModels.loading || !enabledModels.view) return;
+    if (loadError || catalogAccounts === null || enabledModels.loading || enabledModels.failure?.readback || !enabledModels.view) return;
     setSaving(true);
     setSaveError(null);
     setSavedOk(false);
@@ -2254,12 +2259,14 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, sessionId 
       const p = oauthProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
       if (catalogAccounts?.[p.id]) return <EnabledModelsSection providerId={p.id} controller={enabledModels} contextSettings={contextSettings(p.id)} />;
+      if (authListedFor !== authIdentity) return <div className="enabled-models-empty">{t("i18n.loading")}</div>;
       return <OAuthDetail key={p.id} provider={p} onRefresh={catalogChanged} enabledModels={enabledModels} contextSettings={contextSettings(p.id)} />;
     }
     if (selection.type === "apikey") {
       const p = apiKeyProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
       if (catalogAccounts?.[p.id]) return <EnabledModelsSection providerId={p.id} controller={enabledModels} contextSettings={contextSettings(p.id)} />;
+      if (authListedFor !== authIdentity) return <div className="enabled-models-empty">{t("i18n.loading")}</div>;
       return <ApiKeyDetail key={p.id} provider={p} onRefresh={catalogChanged} enabledModels={enabledModels} contextSettings={contextSettings(p.id)} />;
     }
     if (selection.type === "provider") {
@@ -2297,13 +2304,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, sessionId 
     <>
     <ConfigPanelShell embedded={embedded} title={t("common.models")} subtitle="~/.pi/agent/models.json" closeLabel={t("i18n.close")} onClose={onClose}>
 
-        <div className="enabled-models-note">{t("models.sharedScope")}</div>
-        <ProviderAccounts key={sourceIdentity} cwd={cwd} sessionId={sessionId} provider={catalogProvider} busy={false}
-          catalog={{ accounts: catalogAccounts, baseAccounts: initialAccounts, onChange: setCatalogAccounts, onProviderChange: selectCatalogProvider }}
-          onSessionChange={async () => { throw new Error("Catalog inspection cannot change a conversation account"); }}
-          onAccountsChanged={catalogChanged} />
         <SharedModelDefaults controller={enabledModels} />
-        <EnabledModelsBanner controller={enabledModels} />
         {authListFailed && <div role="alert" className="enabled-models-note">
           {t("models.providerDiscoveryUnavailable")}{" "}
           <ConfigButton size="small" onClick={refreshAuthProviders}>{t("models.retryProviderDiscovery")}</ConfigButton>
@@ -2417,6 +2418,12 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, sessionId 
           {/* Right: detail */}
           <ConfigDetail>
             <ConfigDetailStack className="is-fill">
+              <ProviderAccounts key={sourceIdentity} cwd={cwd} sessionId={sessionId} provider={catalogProvider} busy={false}
+                catalog={{ accounts: catalogAccounts, baseAccounts: initialAccounts, onChange: setCatalogAccounts, onProviderChange: selectCatalogProvider }}
+                onSessionChange={async () => { throw new Error("Catalog inspection cannot change a conversation account"); }}
+                onAccountsChanged={catalogChanged} />
+              <div className="models-shared-scope">{t("models.sharedScope")}</div>
+              <EnabledModelsBanner controller={enabledModels} />
               {loading ? null : detailContent ?? (
                 <ConfigEmptyState>{t("i18n.selectProviderModel")}</ConfigEmptyState>
               )}
@@ -2435,7 +2442,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, sessionId 
           <ConfigButton
             variant="primary"
             onClick={handleSave}
-            disabled={saving || savedOk || loadError !== null || catalogAccounts === null || enabledModels.loading || !enabledModels.view}
+            disabled={saving || savedOk || loadError !== null || catalogAccounts === null || enabledModels.loading || enabledModels.failure?.readback || !enabledModels.view}
             className={savedOk ? "is-success" : undefined}
           >
             {savedOk && (

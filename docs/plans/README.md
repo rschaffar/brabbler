@@ -24,6 +24,10 @@ Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
 
+## Contextual model settings and shared thinking defaults
+
+The [verified UI follow-up](archived/2026-11-02_model-settings-ux-plan.md) places catalog account selection in provider detail and shared native per-model thinking defaults on the model rows. It preserves account-bound catalogs, shared preferences, project/pin precedence, explicit conversation intent and durable/read-only recovery. After the independent Copilot tool-schema integration, complete Nix acceptance passed **523 files / 4,429 tests**, all **26 browser/terminal groups / 58 inputs** and the genuine Home Manager VM in **517 seconds**, including realization, at resource-admitted four/four overlap. [Model/account contracts](../model-internals.md) owns current behavior. Exact local integration, deployment, publication and resource cleanup retain separate gates; archival is not their receipt. The adjacent account-catalog plan retains its distinct consuming-input follow-up.
+
 ## Git Workflow override matrix
 
 The [verified matrix implementation](archived/2026-10-28_git-settings-override-matrix-plan.md)
