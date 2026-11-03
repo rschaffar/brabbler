@@ -1,8 +1,11 @@
 "use client";
 
-import { useId, useLayoutEffect, useRef, useState, type FocusEvent, type FormEventHandler, type ReactNode } from "react";
+import { createContext, useCallback, useId, useLayoutEffect, useRef, useState, type FocusEvent, type FormEventHandler, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { deepActiveElement, panelTabStops } from "@/lib/panel-focus";
+
+/** File navigation leaves modal presentation without answering or remounting the card. */
+export const BlockingCardFileNavigation = createContext<(() => void) | undefined>(undefined);
 
 /** Presentation only. Each caller still owns its response and cancellation contract. */
 export function BlockingCard({ title, label, meta, collapsed = false, collapsedLabel, retainBodyWhenCollapsed = true, onCollapse, onExpand, children, footer, onSubmit, allowFullscreen = false }: {
@@ -22,6 +25,7 @@ export function BlockingCard({ title, label, meta, collapsed = false, collapsedL
   const { t } = useI18n();
   const titleId = useId();
   const [fullscreen, setFullscreen] = useState(false);
+  const leaveFullscreen = useCallback(() => setFullscreen(false), []);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const fullscreenTriggerRef = useRef<HTMLButtonElement>(null);
   const previousFullscreenRef = useRef(fullscreen);
@@ -86,7 +90,7 @@ export function BlockingCard({ title, label, meta, collapsed = false, collapsedL
   const card = onSubmit
     ? <form ref={(element) => { rootRef.current = element; }} onFocusCapture={rememberFocus} hidden={collapsed} role="group" aria-label={title} aria-labelledby={titleId} className="blocking-card" onSubmit={onSubmit}>{content}</form>
     : <section ref={(element) => { rootRef.current = element; }} onFocusCapture={rememberFocus} hidden={collapsed} role="group" aria-label={title} aria-labelledby={titleId} className="blocking-card">{content}</section>;
-  return <>{collapsedTrigger}{allowFullscreen ? <dialog ref={dialogRef} className={`blocking-card-dialog${fullscreen ? " is-fullscreen" : ""}`}
+  return <BlockingCardFileNavigation.Provider value={leaveFullscreen}>{collapsedTrigger}{allowFullscreen ? <dialog ref={dialogRef} className={`blocking-card-dialog${fullscreen ? " is-fullscreen" : ""}`}
     role={fullscreen ? "dialog" : "presentation"} aria-label={fullscreen ? title : undefined}
     onCancel={(event) => { event.preventDefault(); event.stopPropagation(); setFullscreen(false); }}
     onKeyDown={(event) => {
@@ -102,5 +106,5 @@ export function BlockingCard({ title, label, meta, collapsed = false, collapsedL
           event.preventDefault(); first?.focus();
         }
       }
-    }}>{card}</dialog> : card}</>;
+    }}>{card}</dialog> : card}</BlockingCardFileNavigation.Provider>;
 }

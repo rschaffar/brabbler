@@ -308,14 +308,14 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
   if (message.role === "custom") {
     if (message.customType === OPERATION_RECEIPT_TYPE) {
       const receipt = readOperationReceipt(message.details);
-      return receipt ? <OperationReceiptCard receipt={receipt} sessionId={sessionId} /> : null;
+      return receipt ? <OperationReceiptCard receipt={receipt} sessionId={sessionId} cwd={cwd} onOpenFile={onOpenFile} /> : null;
     }
     if (message.customType === INTERACTION_RECEIPT_TYPE) {
       const receipt = readInteractionReceipt(message.details);
-      return receipt ? <InteractionReceiptCard receipt={receipt} sessionId={sessionId} /> : null;
+      return receipt ? <InteractionReceiptCard receipt={receipt} sessionId={sessionId} cwd={cwd} onOpenFile={onOpenFile} /> : null;
     }
     if ((message as CustomMessage).customType === "compaction") {
-      return <CompactionMessageView message={message as CustomMessage} />;
+      return <CompactionMessageView message={message as CustomMessage} cwd={cwd} onOpenFile={onOpenFile} />;
     }
     return <CustomMessageView message={message as CustomMessage} cwd={cwd} onOpenFile={onOpenFile} />;
   }
@@ -1572,7 +1572,7 @@ function PairedResult({ text, isEmpty, isError }: {
   );
 }
 
-function CompactionMessageView({ message }: { message: CustomMessage }) {
+function CompactionMessageView({ message, cwd, onOpenFile }: { message: CustomMessage; cwd?: string; onOpenFile?: React.ComponentProps<typeof MarkdownBody>["onOpenFile"] }) {
   const { t } = useI18n();
   const summary = getMessageText(message.content);
   const parsedSummary = useMemo(() => parseCompactionSummary(summary), [summary]);
@@ -1613,7 +1613,7 @@ function CompactionMessageView({ message }: { message: CustomMessage }) {
              {t("i18n.compactionDescription")}
           </div>
           {parsedSummary.body ? (
-            <MarkdownBody className="markdown-compaction-message">{parsedSummary.body}</MarkdownBody>
+            <MarkdownBody className="markdown-compaction-message" cwd={cwd} onOpenFile={onOpenFile}>{parsedSummary.body}</MarkdownBody>
           ) : (
              <span style={{ color: "var(--text-dim)", fontSize: 12 }}>{t("i18n.noSummary")}</span>
           )}

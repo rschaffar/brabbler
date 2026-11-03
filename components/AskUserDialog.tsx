@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { AskUserAnswer } from "@/lib/ask-user";
 import type { ExtensionUiRequest } from "@/lib/types";
 import { useI18n } from "@/hooks/useI18n";
@@ -9,11 +9,13 @@ import { BlockingCard } from "./BlockingCard";
 
 type Request = Extract<ExtensionUiRequest, { method: "ask_user" }>;
 
-export function AskUserDialog({ request, onRespond }: {
+export function AskUserDialog({ request, cwd, onOpenFile, onRespond }: {
   request: Request;
+  cwd?: string; onOpenFile?: import("@/lib/file-links").OpenFileLink;
   onRespond: (request: Request, response: { answer: AskUserAnswer } | { cancelled: true }) => void;
 }) {
   const { t } = useI18n();
+  const descriptionPrefix = useId();
   const [selected, setSelected] = useState<string[]>([]);
   const [freeform, setFreeform] = useState("");
   const [comment, setComment] = useState("");
@@ -54,19 +56,25 @@ export function AskUserDialog({ request, onRespond }: {
       </>}>
       {request.context && <details open={request.contextExpanded || request.context.length <= 240} className="min-w-0 text-xs text-text-muted">
         <summary className="blocking-card-section-title cursor-pointer">{t("chat.askUserContext")}</summary>
-        <div className="break-words"><MarkdownBody>{request.context}</MarkdownBody></div>
+        <div className="break-words"><MarkdownBody cwd={cwd} onOpenFile={onOpenFile}>{request.context}</MarkdownBody></div>
       </details>}
       {request.options.length > 0 && <fieldset className="m-0 grid gap-2 border-0 p-0">
         <legend className="blocking-card-section-title">{t(request.allowMultiple ? "chat.askUserMultiple" : "chat.askUserSingle")}</legend>
         {request.options.map((option, index) => {
           const active = !writing && selected.includes(option.title);
-          return <label key={`${index}-${option.title}`} className="blocking-card-choice" data-selected={active}>
-            <input type={request.allowMultiple ? "checkbox" : "radio"} name="ask-user-choice" checked={active} autoFocus={index === 0}
-              onChange={() => select(option.title)} className="mt-0.5 accent-accent" />
-            <span className="min-w-0"><strong className="block text-[13px] font-medium text-text">{option.title}</strong>
-              {option.description && <span className="mt-1 block whitespace-pre-wrap text-xs text-text-muted">{option.description}</span>}
-            </span>
-          </label>;
+          return <div key={`${index}-${option.title}`} className="blocking-card-choice" data-selected={active}>
+            <div className="min-w-0 flex-1">
+              <label className="flex cursor-pointer items-start gap-2">
+                <input type={request.allowMultiple ? "checkbox" : "radio"} name="ask-user-choice" checked={active} autoFocus={index === 0}
+                  aria-describedby={option.description ? `${descriptionPrefix}-${index}` : undefined}
+                  onChange={() => select(option.title)} className="mt-0.5 accent-accent" />
+                <strong className="block text-[13px] font-medium text-text">{option.title}</strong>
+              </label>
+              {option.description && <div id={`${descriptionPrefix}-${index}`} className="ml-6 mt-1 text-xs text-text-muted">
+                <MarkdownBody cwd={cwd} onOpenFile={onOpenFile}>{option.description}</MarkdownBody>
+              </div>}
+            </div>
+          </div>;
         })}
       </fieldset>}
       {(request.allowFreeform || request.options.length === 0) && <div className="min-w-0">

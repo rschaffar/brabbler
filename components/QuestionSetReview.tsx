@@ -5,8 +5,9 @@ import type { QuestionSet, SetAnswer } from "@/lib/question-set";
 import { MarkdownBody } from "./MarkdownBody";
 
 /** Shared read-only answer rendering. Historical use has no edit callbacks. */
-export function QuestionSetReview({ set, answers, onEdit, showOptions = false }: {
+export function QuestionSetReview({ set, answers, cwd, onOpenFile, onEdit, showOptions = false }: {
   set: QuestionSet;
+  cwd?: string; onOpenFile?: import("@/lib/file-links").OpenFileLink;
   answers: Array<SetAnswer | null>;
   onEdit?: (index: number) => void;
   showOptions?: boolean;
@@ -29,12 +30,12 @@ export function QuestionSetReview({ set, answers, onEdit, showOptions = false }:
         <p className="whitespace-pre-wrap break-words text-text-muted">{answer.comment}</p>
       </div>}
       {showOptions && <>
-        {q.context && <MarkdownBody>{q.context}</MarkdownBody>}
+        {q.context && <MarkdownBody cwd={cwd} onOpenFile={onOpenFile}>{q.context}</MarkdownBody>}
         <ul className="mt-2 grid list-none gap-1 p-0">{q.options.map((o) => <li key={o.id} className="blocking-card-choice"
           data-selected={answer?.kind === "selection" && answer.selections.includes(o.id) || undefined}>
-          <span className="min-w-0"><strong className="block text-xs font-medium">{o.title}
+          <div className="min-w-0"><strong className="block text-xs font-medium">{o.title}
             {o.recommended && <span className="ml-2 text-text-muted">{t("chat.questionsRecommended")}</span>}
-          </strong>{o.description && <span className="block whitespace-pre-wrap text-xs text-text-muted">{o.description}</span>}</span>
+          </strong>{o.description && <MarkdownBody className="text-xs text-text-muted" cwd={cwd} onOpenFile={onOpenFile}>{o.description}</MarkdownBody>}</div>
         </li>)}</ul>
       </>}
     </section>;

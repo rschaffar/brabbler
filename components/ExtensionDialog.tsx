@@ -19,9 +19,12 @@ function getExtensionDialogSummary(request: ExtensionDialogRequest): string | un
 
 export function ExtensionDialog({
   request,
+  cwd,
+  onOpenFile,
   onRespond,
 }: {
   request: ExtensionDialogRequest;
+  cwd?: string; onOpenFile?: import("@/lib/file-links").OpenFileLink;
   onRespond: (request: ExtensionDialogRequest, response: { value: string } | { confirmed: boolean } | { cancelled: true }) => void;
 }) {
   const { t } = useI18n();
@@ -79,7 +82,7 @@ export function ExtensionDialog({
           </button>}
         </>}>
           {request.method === "confirm" && (
-            <MarkdownBody>{request.message}</MarkdownBody>
+            <MarkdownBody cwd={cwd} onOpenFile={onOpenFile}>{request.message}</MarkdownBody>
           )}
           {request.method === "select" && (
             <div

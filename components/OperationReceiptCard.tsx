@@ -6,8 +6,9 @@ import { BlockingCard } from "./BlockingCard";
 import { PluginCardContent } from "./plugin-ui/PluginCard";
 
 /** Read-only full snapshot: no tool callbacks, authorization controls or inferred success. */
-export function OperationReceiptCard({ receipt, sessionId, onReadWork }: {
+export function OperationReceiptCard({ receipt, sessionId, cwd, onOpenFile, onReadWork }: {
   receipt: OperationReceiptSnapshot; sessionId?: string;
+  cwd?: string; onOpenFile?: import("@/lib/file-links").OpenFileLink;
   /** Passive original read-work observation; absent adds no promise handling. */
   onReadWork?: (work: Promise<void>) => void;
 }) {
@@ -35,7 +36,7 @@ export function OperationReceiptCard({ receipt, sessionId, onReadWork }: {
           <li key={index} className="blocking-card-choice break-words">{check.name}: {check.status}</li>)}</ul>}
       </section>
       {request.scope && <p className="blocking-card-scope">{request.scope}</p>}
-      <PluginCardContent request={request} sessionId={sessionId} onReadWork={onReadWork} />
+      <PluginCardContent request={request} sessionId={sessionId} cwd={cwd} onOpenFile={onOpenFile} onReadWork={onReadWork} />
       <section className="min-w-0 text-xs text-text-muted">
         <h3 className="blocking-card-section-title">Correlation</h3>
         <pre className="blocking-card-code">{receipt.pluginId}{"\n"}{receipt.operationId}{receipt.toolCallId ? `\n${receipt.toolCallId}` : ""}</pre>

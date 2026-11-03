@@ -13,16 +13,17 @@ type Response = { value: string } | { confirmed: boolean } | { action: string; d
   | { cancelled: true } | { answer: AskUserAnswer } | { answers: SetAnswer[] };
 
 /** The request ID, not the dialog kind, owns the local draft lifetime. */
-export function BlockingRequestCard({ request, sessionId, onRespond, onReadWork }: {
+export function BlockingRequestCard({ request, sessionId, cwd, onOpenFile, onRespond, onReadWork }: {
   request: InlineBlockingRequest; sessionId?: string;
+  cwd?: string; onOpenFile?: import("@/lib/file-links").OpenFileLink;
   onRespond: (request: InlineBlockingRequest, response: Response) => Promise<void>;
   onReadWork?: (work: Promise<void>) => void;
 }) {
   return request.method === "ask_user_batch"
-    ? <QuestionSetDialog key={request.id} request={request} sessionId={sessionId ?? ""} onRespond={onRespond} />
+    ? <QuestionSetDialog key={request.id} request={request} sessionId={sessionId ?? ""} cwd={cwd} onOpenFile={onOpenFile} onRespond={onRespond} />
     : request.method === "ask_user"
-      ? <AskUserDialog key={request.id} request={request} onRespond={onRespond} />
+      ? <AskUserDialog key={request.id} request={request} cwd={cwd} onOpenFile={onOpenFile} onRespond={onRespond} />
       : request.method === "plugin_card"
-        ? <PluginCard key={request.id} request={request} sessionId={sessionId} onRespond={onRespond} onReadWork={onReadWork} />
-        : <ExtensionDialog key={request.id} request={request} onRespond={onRespond} />;
+        ? <PluginCard key={request.id} request={request} sessionId={sessionId} cwd={cwd} onOpenFile={onOpenFile} onRespond={onRespond} onReadWork={onReadWork} />
+        : <ExtensionDialog key={request.id} request={request} cwd={cwd} onOpenFile={onOpenFile} onRespond={onRespond} />;
 }

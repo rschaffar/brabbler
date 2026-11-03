@@ -1,11 +1,11 @@
 "use client";
 
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useCallback, useContext, useRef, useState } from "react";
 import type { ExtensionUiRequest } from "@/lib/types";
 import type { PluginCardField, PluginCardSection } from "@/lib/plugins/types";
 import { useI18n } from "@/hooks/useI18n";
 import { MarkdownBody } from "../MarkdownBody";
-import { BlockingCard } from "../BlockingCard";
+import { BlockingCard, BlockingCardFileNavigation } from "../BlockingCard";
 import { SuppliedPatchStack } from "../GitPatchStack";
 import { ReviewAttachment } from "./ReviewAttachment";
 
@@ -25,15 +25,21 @@ function Section({ section }: { section: PluginCardSection }) {
   </section>;
 }
 /** Identical supplied fields and patches for live approvals and historical receipts. */
-export function PluginCardContent({ request, sessionId, reviewBaseUrl, onReadWork }: {
+export function PluginCardContent({ request, sessionId, cwd, onOpenFile, reviewBaseUrl, onReadWork }: {
   request: Request; sessionId?: string; reviewBaseUrl?: string;
+  cwd?: string; onOpenFile?: import("@/lib/file-links").OpenFileLink;
   onReadWork?: (work: Promise<void>) => void;
 }) {
+  const leaveFullscreen = useContext(BlockingCardFileNavigation);
+  const openFile = useCallback<import("@/lib/file-links").OpenFileLink>((...args) => {
+    leaveFullscreen?.();
+    onOpenFile?.(...args);
+  }, [leaveFullscreen, onOpenFile]);
   return <>
     {request.sessionLinks?.map((link) => <a key={link.sessionId} className="block break-words text-xs text-accent underline" href={`/?session=${encodeURIComponent(link.sessionId)}`}>{link.label}</a>)}
     {request.fields && <Fields fields={request.fields} />}
     {request.text && <pre className="blocking-card-code">{request.text}</pre>}
-    {request.markdown && <MarkdownBody>{request.markdown}</MarkdownBody>}
+    {request.markdown && <MarkdownBody cwd={cwd} onOpenFile={onOpenFile ? openFile : undefined}>{request.markdown}</MarkdownBody>}
     {request.sections?.filter((section) => !section.collapsible).map((section, index) => <Section key={index} section={section} />)}
     {request.review && <ReviewAttachment key={`${sessionId}:${request.review.id}`} review={request.review} sessionId={sessionId} reviewBaseUrl={reviewBaseUrl} onReadWork={onReadWork} before={request.patchBefore} after={request.patchAfter} contextHandle={request.patchContext} pluginId={request.pluginId} />}
     {request.patch && <SuppliedPatchStack navigation patch={request.patch} before={request.patchBefore ?? "Current"} after={request.patchAfter ?? "Proposed"}
@@ -43,8 +49,9 @@ export function PluginCardContent({ request, sessionId, reviewBaseUrl, onReadWor
 }
 
 /** Reusable presentation only. Buttons answer a live session request, never execute. */
-export function PluginCard({ request, onRespond, sessionId, onReadWork }: {
+export function PluginCard({ request, onRespond, sessionId, cwd, onOpenFile, onReadWork }: {
   request: Request; sessionId?: string;
+  cwd?: string; onOpenFile?: import("@/lib/file-links").OpenFileLink;
   onReadWork?: (work: Promise<void>) => void;
   onRespond: (request: Request, response: { action: string; details?: string } | { cancelled: true }) => void;
 }) {
@@ -67,7 +74,7 @@ export function PluginCard({ request, onRespond, sessionId, onReadWork }: {
         {request.actions.map((action) => <button key={action.id} type="button" disabled={sent} data-primary={action.primary || undefined}
           onClick={() => respond({ action: action.id, ...(request.allowDetails ? { details } : {}) })}>{action.label}</button>)}
       </>}>
-      <PluginCardContent request={request} sessionId={sessionId} onReadWork={onReadWork} />
+      <PluginCardContent request={request} sessionId={sessionId} cwd={cwd} onOpenFile={onOpenFile} onReadWork={onReadWork} />
       {request.allowDetails && <label className="grid gap-2 text-xs">Additional details
         <textarea aria-label="Additional details" value={details} maxLength={20000} disabled={sent} onChange={(event) => setDetails(event.target.value)}
           placeholder="Explain what you want changed. Request changes sends this back without launching."
