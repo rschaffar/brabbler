@@ -881,7 +881,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "questions") {
-      await coverage.run(`questions/${inputId === "legacy-desktop" ? "native-publication-v2" : "compact-native-v2"}@${inputId}`, async () => {
+      await coverage.run(`questions/${inputId === "legacy-desktop" ? "native-publication-files-v3" : "compact-native-files-v3"}@${inputId}`, async () => {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       if (inputId === "legacy-desktop") {

@@ -26,13 +26,33 @@ export async function checkAskUserDialog(page, width) {
     await page.getByText(`E2E ask_user result: ${JSON.stringify(answer)}`, { exact: true }).last().waitFor();
     await page.getByRole("button", { name: "Stop agent", exact: true }).waitFor({ state: "hidden" });
   };
+  const openReference = async (card, name) => {
+    const before = commands.filter(command => command.type === "extension_ui_response").length;
+    const url = page.url(), pages = page.context().pages().length;
+    const link = card.getByRole("link", { name, exact: true });
+    if (desktop) await link.click(); else await link.tap();
+    const panel = page.locator("#file-panel");
+    await panel.locator('[data-line-number="1"][data-file-line-target="true"]').waitFor({ state: "visible" });
+    await panel.getByText("Initial text", { exact: true }).waitFor();
+    assert.equal(page.url(), url, "file references do not navigate away from the question");
+    assert.equal(page.context().pages().length, pages, "file references do not open browser tabs");
+    const hide = panel.getByRole("button", { name: "Hide file panel", exact: true });
+    if (await hide.count() && await hide.getAttribute("aria-expanded") === "true") await hide.click();
+    assert.equal(commands.filter(command => command.type === "extension_ui_response").length, before, "inspecting a reference never answers");
+  };
+  const checkReferences = async card => {
+    await openReference(card, "Context file");
+    await openReference(card, "Option file");
+    assert.equal(await card.getByRole("radio", { name: /First/ }).isChecked(), false, "inspecting an option reference does not select it");
+  };
   try {
     if (desktop) {
       await start("single");
       await page.reload({ waitUntil: "domcontentloaded" });
       const single = page.getByRole("group", { name: "E2E browser question" });
       await single.waitFor();
-      await single.getByText("A detailed reason for asking").waitFor();
+      await single.getByText("A detailed reason for asking", { exact: true }).waitFor();
+      await checkReferences(single);
       await single.getByText("Second", { exact: true }).click();
       await single.getByRole("textbox", { name: "Additional details (optional)" }).fill("More context");
       await single.getByRole("button", { name: "Collapse" }).click();
@@ -55,6 +75,7 @@ export async function checkAskUserDialog(page, width) {
       await receipt.getByText("Another description", { exact: true }).waitFor();
       const historical = receipt.getByRole("group", { name: "E2E browser question" });
       await checkBlockingCard(historical);
+      await openReference(historical, "Context file");
       assert.equal(await historical.getByRole("textbox").count(), 0);
       assert.equal(await historical.getByRole("button", { name: /Submit|Cancel/ }).count(), 0);
       await historical.getByRole("button", { name: "Collapse", exact: true }).click();
@@ -76,6 +97,7 @@ export async function checkAskUserDialog(page, width) {
       await long.getByText("Context", { exact: true }).tap();
       await long.getByText(/More background/).waitFor();
       await checkBlockingCard(long);
+      await checkReferences(long);
       const field = long.getByRole("textbox", { name: "Additional details (optional)" });
       await field.fill("More context");
       await long.getByRole("button", { name: "Collapse", exact: true }).tap();

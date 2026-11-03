@@ -1253,7 +1253,7 @@ function useChatWindowView({ workObserver, session, sessionRunning, contextReloa
 
             {extensionDialog && (
               <div ref={questionCardRef} className="my-4 min-w-0 scroll-mt-4">
-                <BlockingRequestCard request={extensionDialog} sessionId={session?.id ?? sessionIdRef.current ?? undefined} onRespond={respondToExtensionUi} />
+                <BlockingRequestCard request={extensionDialog} sessionId={session?.id ?? sessionIdRef.current ?? undefined} cwd={messageCwd} onOpenFile={onOpenFile} onRespond={respondToExtensionUi} />
               </div>
             )}
             </div>

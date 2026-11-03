@@ -11,9 +11,10 @@ import { QuestionSetReview } from "./QuestionSetReview";
 import { QuestionFields } from "./QuestionFields";
 
 type Request = Extract<ExtensionUiRequest, { method: "ask_user_batch" }>;
-export function QuestionSetDialog({ request, sessionId, onRespond, onSubmissionWork }: {
+export function QuestionSetDialog({ request, sessionId, cwd, onOpenFile, onRespond, onSubmissionWork }: {
   request: Request;
   sessionId: string;
+  cwd?: string; onOpenFile?: import("@/lib/file-links").OpenFileLink;
   onRespond: (request: Request, response: { answers: SetAnswer[] } | { cancelled: true }) => Promise<void>;
   /** Passive complete send/catch/finally observation; absent in default UI. */
   onSubmissionWork?: (work: Promise<void>) => void;
@@ -106,7 +107,7 @@ export function QuestionSetDialog({ request, sessionId, onRespond, onSubmissionW
       {!storageAvailable && <p role="status" className="text-xs text-text-muted">{t("chat.questionsStorageUnavailable")}</p>}
       {request.context && <details open className="min-w-0 text-xs text-text-muted">
         <summary className="blocking-card-section-title cursor-pointer">{t("chat.askUserContext")}</summary>
-        <MarkdownBody>{request.context}</MarkdownBody>
+        <MarkdownBody cwd={cwd} onOpenFile={onOpenFile}>{request.context}</MarkdownBody>
       </details>}
       <nav aria-label={t("chat.questionsNavigation")} className="hidden flex-wrap gap-1 sm:flex">
         {request.questions.map((q, i) => <button key={q.id} type="button" disabled={submitting}
@@ -128,8 +129,8 @@ export function QuestionSetDialog({ request, sessionId, onRespond, onSubmissionW
       </h3>
       {review ? <>
         <p className="text-xs text-text-muted">{t("chat.questionsNotSent")}</p>
-        <QuestionSetReview set={request} answers={answers} onEdit={submitting ? undefined : setPage} />
-      </> : question && draft && <QuestionFields question={question} draft={draft} update={update} disabled={submitting} name={`question-${request.id}-${question.id}`} />}
+        <QuestionSetReview set={request} answers={answers} cwd={cwd} onOpenFile={onOpenFile} showOptions onEdit={submitting ? undefined : setPage} />
+      </> : question && draft && <QuestionFields question={question} draft={draft} update={update} cwd={cwd} onOpenFile={onOpenFile} disabled={submitting} name={`question-${request.id}-${question.id}`} />}
     </BlockingCard>
   </div>;
 }

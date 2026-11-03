@@ -9,8 +9,9 @@ import { PluginCardContent } from "./plugin-ui/PluginCard";
 import { QuestionSetReview } from "./QuestionSetReview";
 
 /** No live request, submit callback, editable draft or timer exists in this component. */
-export function InteractionReceiptCard({ receipt, sessionId, onReadWork }: {
+export function InteractionReceiptCard({ receipt, sessionId, cwd, onOpenFile, onReadWork }: {
   receipt: InteractionReceipt; sessionId?: string;
+  cwd?: string; onOpenFile?: import("@/lib/file-links").OpenFileLink;
   /** Passive original read-work observation; absent adds no promise handling. */
   onReadWork?: (work: Promise<void>) => void;
 }) {
@@ -39,27 +40,27 @@ export function InteractionReceiptCard({ receipt, sessionId, onReadWork }: {
       </section>}
       {request.method === "plugin_card" ? <>
         {request.scope && <p className="blocking-card-scope">{request.scope}</p>}
-        <PluginCardContent request={request} sessionId={sessionId} onReadWork={onReadWork} />
+        <PluginCardContent request={request} sessionId={sessionId} cwd={cwd} onOpenFile={onOpenFile} onReadWork={onReadWork} />
         {request.operationId && <pre className="blocking-card-code">Operation: {request.operationId}</pre>}
       </>
         : request.method === "ask_user_batch" ? <>
-          {request.context && <MarkdownBody>{request.context}</MarkdownBody>}
-          <QuestionSetReview set={request} answers={response && "answers" in response ? response.answers : []} showOptions />
+          {request.context && <MarkdownBody cwd={cwd} onOpenFile={onOpenFile}>{request.context}</MarkdownBody>}
+          <QuestionSetReview set={request} answers={response && "answers" in response ? response.answers : []} cwd={cwd} onOpenFile={onOpenFile} showOptions />
         </> : request.method === "ask_user" ? <>
           {request.context && <section className="min-w-0">
             <h3 className="blocking-card-section-title">{t("chat.askUserContext")}</h3>
-            <MarkdownBody>{request.context}</MarkdownBody>
+            <MarkdownBody cwd={cwd} onOpenFile={onOpenFile}>{request.context}</MarkdownBody>
           </section>}
           <ul className="grid list-none gap-2 p-0">{request.options.map((option, index) => <li key={index}
             className="blocking-card-choice" data-selected={response && "answer" in response
               && response.answer.kind === "selection" && response.answer.selections.includes(option.title) || undefined}>
-            <span className="min-w-0"><strong className="block text-[13px]">{option.title}</strong>
-              {option.description && <span className="block whitespace-pre-wrap text-xs text-text-muted">{option.description}</span>}
-            </span>
+            <div className="min-w-0"><strong className="block text-[13px]">{option.title}</strong>
+              {option.description && <MarkdownBody className="text-xs text-text-muted" cwd={cwd} onOpenFile={onOpenFile}>{option.description}</MarkdownBody>}
+            </div>
           </li>)}</ul>
         </> : request.method === "select" ? <ul className="grid list-none gap-2 p-0">{request.options.map((option, index) =>
           <li key={index} className="blocking-card-choice" data-selected={response && "value" in response && response.value === option || undefined}>{option}</li>)}</ul>
-          : request.method === "confirm" ? <p className="whitespace-pre-wrap break-words text-xs">{request.message}</p>
+          : request.method === "confirm" ? <MarkdownBody className="text-xs" cwd={cwd} onOpenFile={onOpenFile}>{request.message}</MarkdownBody>
             : request.method === "editor" ? <pre className="blocking-card-code">{request.prefill}</pre>
               : request.placeholder ? <p className="text-xs text-text-muted">{request.placeholder}</p> : null}
     </BlockingCard>

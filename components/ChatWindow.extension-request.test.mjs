@@ -305,3 +305,146 @@ test('arrival-follow effects gate loading/coverage, release on absence and never
   assert.equal(scroller.scrollTop > previous, true, 'absence cleared the old lifecycle, even if an ID is reused');
   await h.view.unmount(); assert.equal(h.observers.every(observer => observer.targets.size === 0), true);
 });
+
+// Observe React's interception before suppressing jsdom's unsupported navigation.
+// Native label activation and the final shell -> Files connection stay browser-owned.
+async function fileLinkClick(h, name, modifiers = {}) {
+  const link = [...h.view.container.querySelectorAll('a')].find(node => node.textContent === name);
+  assert.equal(Boolean(link), true, `link ${name} is rendered`);
+  const matches = h.view.window.Element.prototype.matches;
+  h.view.window.Element.prototype.matches = function (selector) {
+    return selector === ':popover-open' ? false : matches.call(this, selector);
+  };
+  let intercepted;
+  const preventNavigation = event => { intercepted = event.defaultPrevented; event.preventDefault(); };
+  h.view.window.document.addEventListener('click', preventNavigation);
+  try { await h.view.dispatch(link, new h.view.window.MouseEvent('click', { bubbles: true, cancelable: true, ...modifiers })); }
+  finally {
+    h.view.window.document.removeEventListener('click', preventNavigation);
+    h.view.window.Element.prototype.matches = matches;
+  }
+  return intercepted;
+}
+
+for (const method of ['ask_user', 'ask_user_batch', 'confirm']) test(`${method} routes local context/description links without answering, using current file callbacks and cwd`, async t => {
+  const opened = [], current = [];
+  const context = '[Context file](src/context.ts#L12-L15)\n\n[Web](https://example.test/docs)\n\n[Blocked](../outside.ts)';
+  const description = '[Option file](report.pdf#page=3)';
+  const request = method === 'ask_user' ? ask({ context, options: [{ title: 'First', description }] })
+    : method === 'confirm' ? { type: 'extension_ui_request', id: 'confirm-links', method, title: 'Confirm', message: context }
+      : { type: 'extension_ui_request', id: 'batch-links', method, title: 'Decisions', context,
+        questions: [{ id: 'scope', shortLabel: 'Scope', question: 'Choose scope', type: 'single', required: true,
+          context: '[Question file](src/question.ts:7:2)', options: [{ id: 'first', title: 'First', description }] }] };
+  const h = await card(t, request, { sessionId: 'link-session', cwd: '/alpha', onOpenFile: (...args) => opened.push(args) });
+  for (const modifiers of [{}, { ctrlKey: true }, { metaKey: true }]) assert.equal(await fileLinkClick(h, 'Context file', modifiers), true);
+  assert.deepEqual(opened, Array.from({ length: 3 }, () => ['/alpha/src/context.ts', undefined, { line: 12, endLine: 15 }]));
+  if (method !== 'confirm') {
+    assert.equal(await fileLinkClick(h, 'Option file'), true);
+    const optionLink = [...h.view.container.querySelectorAll('a')].find(node => node.textContent === 'Option file');
+    assert.equal(optionLink.closest('label') === null, true, 'link and its whole toolbar are outside the choice label');
+    const choice = h.view.container.querySelector('input');
+    const description = h.view.window.document.getElementById(choice.getAttribute('aria-describedby'));
+    assert.equal(description?.contains(optionLink), true, 'the choice retains its accessible description without a wrapping label');
+    assert.deepEqual(opened.at(-1), ['/alpha/report.pdf', 3, undefined]);
+    assert.equal(h.view.container.querySelector('input').checked, false, 'opening an option reference is not a choice');
+  }
+  if (method === 'ask_user_batch') {
+    assert.equal(await fileLinkClick(h, 'Question file'), true);
+    assert.deepEqual(opened.at(-1), ['/alpha/src/question.ts', undefined, { line: 7, column: 2 }]);
+  }
+  await h.renderCard({ cwd: '/beta', onOpenFile: (...args) => current.push(args) });
+  assert.equal(await fileLinkClick(h, 'Context file'), true);
+  assert.deepEqual(current, [['/beta/src/context.ts', undefined, { line: 12, endLine: 15 }]]);
+  assert.equal(await fileLinkClick(h, 'Web'), false, 'web links keep browser navigation');
+  const blocked = [...h.view.container.querySelectorAll('button')].find(node => node.textContent === 'Blocked');
+  assert.equal(Boolean(blocked), true, 'relative traversal is non-navigable');
+  await click(h.view, blocked);
+  assert.equal(current.length, 1);
+  assert.deepEqual(h.calls, [], 'file review never submits/cancels a question');
+  assert.equal(h.requests.length, 0, 'rendering and file callbacks do not probe files');
+});
+
+test('question-set review retains linked contexts and descriptions without submitting', async t => {
+  const opened = [], request = { type: 'extension_ui_request', id: 'review-links', method: 'ask_user_batch', title: 'Decisions',
+    questions: [{ id: 'scope', shortLabel: 'Scope', question: 'Choose scope', type: 'single', required: true,
+      context: '[Question file](src/question.ts#L7)', options: [{ id: 'first', title: 'First', description: '[Option file](report.pdf#page=3)' }] }] };
+  const h = await card(t, request, { sessionId: 'link-session', cwd: '/repo', onOpenFile: (...args) => opened.push(args) });
+  await click(h.view, textButton(h.view.container, 'Review answers'));
+  assert.equal(await fileLinkClick(h, 'Question file'), true);
+  assert.equal(await fileLinkClick(h, 'Option file'), true);
+  assert.deepEqual(opened, [['/repo/src/question.ts', undefined, { line: 7 }], ['/repo/report.pdf', 3, undefined]]);
+  assert.deepEqual(h.calls, []);
+});
+
+for (const method of ['ask_user', 'ask_user_batch', 'confirm']) test(`MessageView forwards file links to expanded ${method} receipts without live controls`, async t => {
+  const h = await packet(t), { MessageView } = await h.load('./MessageView.tsx');
+  const opened = [], context = '[Receipt file](src/saved.ts#L21)', description = '[Option file](report.pdf#page=4)';
+  const request = method === 'ask_user' ? ask({ context, options: [{ title: 'First', description }] })
+    : method === 'confirm' ? { type: 'extension_ui_request', id: 'saved-confirm', method, title: 'Confirm', message: context }
+      : { type: 'extension_ui_request', id: 'saved-batch', method, title: 'Decisions', context,
+        questions: [{ id: 'scope', shortLabel: 'Scope', question: 'Choose scope', type: 'single', required: true,
+          context: '[Question file](src/question.ts#L8)', options: [{ id: 'first', title: 'First', description }] }] };
+  const response = method === 'ask_user' ? { answer: { kind: 'selection', selections: ['First'] } }
+    : method === 'confirm' ? { confirmed: true } : { answers: [{ id: 'scope', kind: 'selection', selections: ['first'] }] };
+  const message = { role: 'custom', customType: 'brabbler:interaction-receipt', content: '', timestamp: 1,
+    details: { version: 1, outcome: 'answered', request, response } };
+  await h.render(createElement(MessageView, { message, cwd: '/repo', sessionId: 'link-session', onOpenFile: (...args) => opened.push(args) }));
+  await click(h.view, h.view.container.querySelector('.blocking-card-collapsed'));
+  assert.equal(await fileLinkClick(h, 'Receipt file'), true);
+  assert.deepEqual(opened[0], ['/repo/src/saved.ts', undefined, { line: 21 }]);
+  if (method !== 'confirm') {
+    assert.equal(await fileLinkClick(h, 'Option file'), true);
+    assert.deepEqual(opened.at(-1), ['/repo/report.pdf', 4, undefined]);
+  }
+  if (method === 'ask_user_batch') assert.equal(await fileLinkClick(h, 'Question file'), true);
+  assert.equal(h.view.container.querySelector('input,textarea,select,[type=submit]') === null, true);
+  assert.equal(h.requests.length, 0, 'receipt inspection never replays an operation');
+});
+
+test('compaction summary prose opens source links through MessageView', async t => {
+  const h = await packet(t), { MessageView } = await h.load('./MessageView.tsx'), opened = [];
+  await h.render(createElement(MessageView, { cwd: '/repo', onOpenFile: (...args) => opened.push(args),
+    message: { role: 'custom', customType: 'compaction', content: '[Summary file](src/summary.ts#L9)', timestamp: 1 } }));
+  assert.equal(await fileLinkClick(h, 'Summary file'), true);
+  assert.deepEqual(opened, [['/repo/src/summary.ts', undefined, { line: 9 }]]);
+});
+
+test('plugin Markdown shares file navigation in live cards, decisions and operation receipts; literal fields stay literal', async t => {
+  const request = { type: 'extension_ui_request', id: 'plugin-links', method: 'plugin_card', pluginId: 'example', title: 'Review',
+    markdown: '[Plugin file](src/plugin.ts#L11)', text: '[Raw](raw.ts)', patch: 'exact patch', allowDetails: true,
+    fields: [{ label: 'Field', value: '[Field](field.ts)' }], actions: [{ id: 'approve', label: 'Approve' }] };
+  const opened = [], h = await card(t, request, { cwd: '/repo', sessionId: 'link-session', onOpenFile: (...args) => opened.push(args) });
+  const draft = h.view.container.querySelector('textarea');
+  await input(h.view, draft, 'Keep this draft');
+  await click(h.view, h.view.container.querySelector('[aria-label="Open fullscreen review"]'));
+  assert.equal(h.view.container.querySelector('dialog').getAttribute('role'), 'dialog');
+  assert.equal(await fileLinkClick(h, 'Plugin file'), true);
+  assert.equal(h.view.container.querySelector('dialog').getAttribute('role'), 'presentation', 'opening Files leaves the covering modal');
+  assert.equal(h.view.container.querySelector('textarea') === draft, true, 'navigation preserves the actual draft owner');
+  assert.equal(draft.value, 'Keep this draft');
+  assert.deepEqual(h.calls, []);
+  const { MessageView } = await h.load('./MessageView.tsx');
+  const operation = { version: 1, pluginId: 'example', sequence: 1, operationId: 'a046677d-8293-4445-9a2b-558317345abc',
+    card: { title: 'Review', markdown: request.markdown, text: request.text, fields: request.fields, patch: request.patch, actions: [] }, phase: 'succeeded',
+    authorization: { mode: 'allow', source: 'session', revision: 'revision-1', decision: 'policy-authorized' }, checks: [], effectStarted: true };
+  for (const [customType, details] of [
+    ['brabbler:interaction-receipt', { version: 1, request, response: { action: 'approve' }, outcome: 'answered' }],
+    ['brabbler:operation-receipt', operation],
+  ]) {
+    await h.render(createElement(MessageView, { cwd: '/repo', sessionId: 'link-session', onOpenFile: (...args) => opened.push(args),
+      message: { role: 'custom', customType, details, content: '', timestamp: 1 } }));
+    await click(h.view, h.view.container.querySelector('.blocking-card-collapsed'));
+    const fullscreen = h.view.container.querySelector('[aria-label="Open fullscreen review"]');
+    await click(h.view, fullscreen);
+    assert.equal(h.view.container.querySelector('dialog').getAttribute('role'), 'dialog', 'each receipt genuinely enters fullscreen');
+    assert.equal(await fileLinkClick(h, 'Plugin file'), true);
+    assert.equal(h.view.container.querySelector('dialog[role="dialog"]') === null, true, 'historical Files is not covered by a modal');
+    assert.equal(h.view.container.querySelector('input,textarea,[data-primary]') === null, true);
+    assert.equal(h.view.container.textContent.includes('[Raw](raw.ts)'), true);
+    assert.equal(h.view.container.textContent.includes('[Field](field.ts)'), true);
+    assert.equal([...h.view.container.querySelectorAll('a')].some(node => ['Raw', 'Field'].includes(node.textContent)), false);
+    await h.render(null);
+  }
+  assert.deepEqual(opened, Array.from({ length: 3 }, () => ['/repo/src/plugin.ts', undefined, { line: 11 }]));
+  assert.equal(h.requests.length, 0);
+});

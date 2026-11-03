@@ -41,9 +41,9 @@ export const extensionSource = `export default function (pi) {
       }
       const question = {
         question: "E2E browser question",
-        context: mode === "long" ? "More background. ".repeat(30) : "A detailed reason for asking",
+        context: (mode === "long" ? "More background. ".repeat(30) : "A detailed reason for asking") + "\\n\\n[Context file](editable.txt#L1)",
         options: mode === "freeform" ? [] : [
-          { title: "First", description: "A helpful description" },
+          { title: "First", description: "A helpful description\\n\\n[Option file](editable.txt#L1)" },
           { title: "Second", description: "Another description" },
         ],
         allowMultiple: mode === "multi",

@@ -14,7 +14,8 @@ Context sections start expanded in live question cards, including set-level and 
 - Cancel asks for confirmation when there are drafts. Stop, timeout and cancellation never submit a partial set.
 - A network failure or missing acknowledgement retains the card and offers retry after a 15-second acknowledgement deadline. The server accepts a pending request once, validating every answer together. A stale/duplicate request cannot overwrite a saved answer.
 - A fatal server-side receipt persistence error ends the request and rejects the tool and HTTP acknowledgement rather than claiming success or retrying a potentially partly written session entry.
-- Completed requests appear as collapsed, read-only receipts with the displayed questions, options and submitted answers. Historical controls never invoke tools.
+- Question contexts and option descriptions render sanitized Markdown. Local file links and inline source references open Files using the session directory, including source-line ranges and PDF pages; ordinary web links retain browser navigation. Opening a reference does not select an option or submit an answer. Relative paths cannot escape the session directory, and file-access checks still apply.
+- The review screen retains question contexts and option descriptions for inspection. Completed requests appear as collapsed, read-only receipts with the displayed questions, options and submitted answers. Their file links open current saved content, not immutable historical evidence. Historical controls never invoke tools; answers and additional details remain literal text.
 
 ## Draft privacy and recovery
 
@@ -103,4 +104,4 @@ automatic images/review cards and forward presenter work; live defaults stay unc
 - `components/QuestionSetDialog.tsx` and `QuestionSetReview.tsx`: live navigation and read-only review/history.
 - `lib/interaction-receipts.ts`: recognized batch snapshots; legacy receipts stay compatible.
 
-Focused browser acceptance: `nix develop -c env E2E_ASK_USER_ONLY=1 npm run test:e2e`. Unit contracts are covered by `lib/question-set.test.mjs`, `lib/ask-user.test.mjs` and `lib/rpc-manager-extension-ui.test.mjs`; receipt and hook regressions remain part of the common suite. See [testing.md](testing.md) and [../e2e/README.md](../e2e/README.md).
+Focused browser acceptance: `nix run .#test -- e2e --group questions`. Mounted link/navigation regressions live in `components/ChatWindow.extension-request.test.mjs`. Unit contracts are covered by `lib/question-set.test.mjs`, `lib/ask-user.test.mjs` and `lib/rpc-manager-extension-ui.test.mjs`; receipt and hook regressions remain part of the common suite. See [testing.md](testing.md) and [../e2e/README.md](../e2e/README.md).

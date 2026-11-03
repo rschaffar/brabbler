@@ -142,6 +142,8 @@ The managed-model tail retains the populated saved-context geometry at both inpu
 
 These are native Chromium proofs, not every browser/codec combination; the static demo and Markdown-file previews are outside this feature's scope.
 
+The question group's `native-publication-files-v3` / `compact-native-files-v3` receipts retain the prior desktop/mobile chains and additionally prove live context/option links open the real Files pane at a source line without browser navigation or native label selection; desktop also checks saved-receipt file navigation. Mounted `ChatWindow.extension-request.test.mjs` owns the broader card/review/receipt/compaction link matrix and no-answer behavior. This is additive coverage, not retirement of the existing native input chains.
+
 ## Contributor recipes and proof boundaries
 
 Keep browser ownership thin: production-module/controller tests own decision
