@@ -11,7 +11,6 @@ on 2026-10-27.
 | Plan | Remaining scope |
 | --- | --- |
 | [Git-backed operation reviews](2026-10-31_git-backed-operation-reviews-plan.md) | Feature-branch metadata production and existing Git-backed viewer/API are independently reviewed, with focused native/mounted/installed-browser checks. Offline converter, real-data rehearsal and complete acceptance remain open; live migration, activation and old-state removal still require separate approval. |
-| [Model settings contextual account selection and thinking defaults](2026-11-02_model-settings-ux-plan.md) | Implementation and independent review complete; focused core/static and installed desktop/mobile bridge passed. Latest-source complete acceptance and exact-state integration remain pending. |
 | [Account-aware catalogs with shared model settings](2026-10-31_account-catalog-refresh-plan.md) | Account-targeted catalog views/refresh, shared preferences/defaults and mutable model-state ownership. Application review and complete Nix acceptance passed; companion consuming input and local integrations remain pending. |
 | [Copilot-compatible Git worktree schema](2026-10-31_copilot-argon-tool-schema-plan.md) | Object-root declaration and action-specific validation implemented; independent review, focused guard counterexamples and complete Nix acceptance passed (523 files / 4,409 tests, 26 browser/terminal groups and deployment VM). Exact-state local integration remains separately gated in the retained feature worktree; activation and publication are out of scope. |
 | [Brabbler 0.1.0 public release](2026-10-28_public-release-plan.md) | Implementation authorized and in progress: portable default-on authentication, fixed modular SDK policy and prebuilt archive are checkpointed; ELK is retained with separate source materials and notices. Linux acceptance and approved history/main cutover are complete; native macOS verification and remote repository/settings/CI/publication remain pending. |
@@ -24,6 +23,10 @@ on 2026-10-27.
 Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
+
+## Contextual model settings and shared thinking defaults
+
+The [verified UI follow-up](archived/2026-11-02_model-settings-ux-plan.md) places catalog account selection in provider detail and shared native per-model thinking defaults on the model rows. It preserves account-bound catalogs, shared preferences, project/pin precedence, explicit conversation intent and durable/read-only recovery. After the independent Copilot tool-schema integration, complete Nix acceptance passed **523 files / 4,429 tests**, all **26 browser/terminal groups / 58 inputs** and the genuine Home Manager VM in **517 seconds**, including realization, at resource-admitted four/four overlap. [Model/account contracts](../model-internals.md) owns current behavior. Exact local integration, deployment, publication and resource cleanup retain separate gates; archival is not their receipt. The adjacent account-catalog plan retains its distinct consuming-input follow-up.
 
 ## Git Workflow override matrix
 
