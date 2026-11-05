@@ -1,5 +1,10 @@
 # Guided review recording and explicit chat drafts
 
+**Superseded decision:** [ADR 0041](0041-guided-reading-and-notebook-authoring.md)
+replaces recording/forms/batch handoff with guided reading and native authoring.
+This record preserves the historical implementation contract; the linked plan
+tracks cutover and verification. Saved user data is not deleted by that decision.
+
 ## Decision
 
 Extend the existing guided reader with a separately activated, single-reviewer
