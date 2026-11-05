@@ -19,5 +19,7 @@ test('actual mounted composer review append preserves unrelated selection, exist
   assert.deepEqual(p.getDraft('review-chat').images, [image]);
   assert.deepEqual(sends, []);
   assert.throws(() => prepareReviewDraft({ id: 'A', label: 'A' }, { id: 'B', label: 'B' }, c.api.current, 'WRONG'), /changed/);
-  assert.equal(c.ta.value.includes('WRONG'), false);
+  assert.throws(() => prepareReviewDraft({ id: 'A', label: 'A' }, undefined, c.api.current, 'MISSING'), /missing/);
+  assert.throws(() => prepareReviewDraft({ id: 'A', label: 'A' }, { id: 'A', label: 'A' }, null, 'UNMOUNTED'), /mounted/);
+  assert.equal(c.ta.value.includes('WRONG') || c.ta.value.includes('MISSING') || c.ta.value.includes('UNMOUNTED'), false);
 });

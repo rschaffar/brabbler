@@ -1,7 +1,8 @@
 # Guided reading and native notebook authoring
 
-**Status:** Independently reviewed plan; implementation authorized. P0 decisions
-are settled; P1 is the next implementation slice. No application verification yet.
+**Status:** P0 complete. P1 is implemented and focused verification passes; native
+authoring tools (P2) are next. This is a reader-first checkpoint, not complete
+feature acceptance or integration. Implementation remains authorized.
 **Workspace:** `feat/notebook-authoring`, based on local `main` at
 `14d60757535e0ed78ff3753fda1372b0e4c47bbb`. One receiving worktree and one repository
 writer; independent reviewers do not edit it. Nothing here authorizes deployment,
@@ -31,7 +32,7 @@ a compact overview, safe step edits and conservative Git-reference maintenance.
 - `docs/testing.md`, `docs/test-writing.md` and `e2e/README.md` own acceptance.
   Documentation-only planning checks are not application verification.
 
-## Grounded current state
+## Grounded baseline at the starting revision
 
 - `GuidedReviewReader` owns free Back/Next, outline, pane layout and immutable
   evidence; `NotebookReviewPanel` is mounted separately below it.
@@ -185,25 +186,61 @@ CLI. Do not broaden this into general Markdown editing or cross-project manageme
 
 ### P1 — Reader-first experience and retirement
 
-- [ ] Replace the mounted reviewer panel and anchor controls with simple step-to-chat
+- [x] Replace the mounted reviewer panel and anchor controls with simple step-to-chat
   context and explicit guide reload; cover actual mounted navigation, stale reads,
   destination changes and draft preservation using the production owners. Cover
   A→B→A/ignored-abort delivery, same target ID with changed references, removed
   steps and fresh mutable snapshots. Retain exact browser no-agent-execution tuples.
-- [ ] Retire recording APIs/modules and recording-specific fixtures; retain legacy
+- [x] Retire recording APIs/modules and recording-specific fixtures; retain legacy
   question readability (including choices) and byte-unchanged synthetic saved
   sidecars/browser recovery, including malformed records. Test retired GET/POST
   with no storage access. Preserve ordinary live-question required validation.
   Document each removed assertion/input at the base revision as retired behavior
   or name its actual surviving owner; do not retire mixed suites wholesale.
-- [ ] Update current notebook instructions, historical manual recovery guidance,
+- [x] Update current notebook instructions, historical manual recovery guidance,
   feature/test contracts, classification and changed browser receipt identities in
   P1 alongside the behavior change, not deferred to P4. Old records do not retain
   Git objects or reconstruct changed prose; no current-answer negotiation remains.
-- [ ] Update the installed Markdown desktop/touch chain to prove the simpler flow,
+- [x] Update the installed Markdown desktop/touch chain to prove the simpler flow,
   including no recording writes/no agent turn before Send, while retaining its
   original pinned-reader, asset, layout and navigation assertions. Run focused
   `nix run .#test -- core --file ...` and `e2e --group markdown` selections.
+
+P1 evidence (2026-11-05, x86_64-linux ordinary Nix sandboxes):
+
+- Tested source export SHA-256:
+  `b751e32411b21bb7cb6acbbf04b455f19ec349bb821a277e0cef10248acb2cda`,
+  based on planning commit `af162360de6bbaba5f74431fb9bd47cbce09b817` plus P1.
+  Subsequent plan/status edits are not relabelled as new application execution.
+- `nix run --offline --no-write-lock-file .#test -- core --jobs 4` with explicit
+  `--file` selections for `lib/notebook-step-context.test.mjs`,
+  `components/GuidedReviewReader.behavior.test.mjs`,
+  `components/ChatInput.review-handoff.test.mjs`, `lib/guided-review.test.mjs`,
+  `app/api/review-data/route.test.mjs`, `lib/e2e-coverage.test.mjs`, and
+  `lib/guided-review-browser-contract.test.mjs`: **59/59 tests, 7/7 files pass**.
+  Static checks pass with eight pre-existing warnings; type evidence is input-bound.
+  Requested/effective file workers: **4/4** (E owners remain exclusive).
+  Whole command approximately **43 s**, including approximately **37.6 s** before
+  file execution; file-execution window **5.357 s**. Artifact:
+  `/nix/store/1b0bcmjbmqghd45l8js5v0q9hn2hsj0r-brabbler-core-checks`.
+- `nix run --offline --no-write-lock-file .#test -- e2e --group markdown`:
+  both complete installed desktop/touch chains pass, with current v7/v6 receipts.
+  One selected group uses **one sandbox**; no reduced full-acceptance budget.
+  Whole command approximately **229 s**, support/manifest preparation **91.603 s**,
+  browser diagnostic capsule **133.011 s** (browser harness **132.667 s**).
+  Artifact:
+  `/nix/store/2vyzriy566wfi8bzy5a302i11k4bqzz1-brabbler-browser-markdown-diagnostics`.
+- Independent runtime review found passive-index teardown and destination round-trip
+  handoff races; both were fixed and reread as closed. Coverage review required
+  authentic v1/valid recovery inputs and retained rich-context image/card suppression
+  and code readability; replacement assertions now pass. One intermediate test
+  failure incorrectly forbade ordinary code-copy buttons as question forms; the
+  assertion now distinguishes them. Failed evidence remains retained privately.
+- [Retirement dispositions and recovery](../notebook-recording-retirement.md), live
+  test classification and current guides are updated. Local Markdown-document link
+  existence and `git diff --check` pass. Raw logs/reviewer reports remain in the
+  private task evidence directory, not tracked. Full core/plugin, other browser/
+  terminal groups and the deployment VM are still P4 work; no merge/deploy occurred.
 
 ### P2 — Shared authoring and native tool adapters
 
@@ -267,8 +304,8 @@ logs and raw reviewer/test evidence stay outside tracked files.
 
 - [x] Independent plan reviews resolved; remaining implementation/verification work
   is explicitly unchecked.
-- [ ] Reader usable without recording/forms; simple chat handoff and stable reload work.
-- [ ] Saved reviewer files/browser drafts remain untouched; recovery is documented.
+- [x] Reader usable without recording/forms; simple chat handoff and stable reload work.
+- [x] Saved reviewer files/browser drafts remain untouched; recovery is documented.
 - [ ] Native inspect/update/refresh tools work without browser state or widened grants.
 - [ ] Reference updates are scoped, validated and explicit; ambiguity remains visible.
 - [ ] Required independent review and complete Nix acceptance pass at the candidate.

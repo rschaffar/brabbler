@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { parseNotebookIndex, stepProse, type Evidence, type GuidedNotebook, type GuidedStep } from "@/lib/guided-review";
 import { getFileDirectory } from "@/lib/file-paths";
 import type { OpenFileLink } from "@/lib/file-links";
@@ -15,7 +15,7 @@ import { CommittedPatchDiff } from "./CommittedPatchDiff";
 import { FileMarkdownBody } from "./FileMarkdownBody";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import { DelimitedTable } from "./DelimitedTable";
-import { NotebookReviewPanel } from "./NotebookReviewPanel";
+import { notebookStepPrompt } from "@/lib/notebook-step-context";
 import { NotebookPaneDivider, NOTEBOOK_DEFAULT_SHARE } from "./NotebookPaneDivider";
 import { useI18n } from "@/hooks/useI18n";
 import type { EvidenceSelection, ReviewBatchDraft, ReviewChatDestination } from "@/lib/review-handoff";
@@ -42,13 +42,18 @@ export function GuidedReviewEntry({ markdown, ...props }: {
     try { return { index: parseNotebookIndex(markdown), error: null }; }
     catch (error) { return { index: null, error: error instanceof Error ? error.message : "Invalid notebook" }; }
   }, [markdown]);
-  if (!parsed.index) return <>{parsed.error && <p role="note">Guided reading unavailable: {parsed.error}</p>}{props.children}</>;
-  return <Entry key={`${props.filePath}:${markdown}`} {...props} />;
+  // Passive file polling may see an unfinished edit. Admission gates Start, not
+  // the lifetime of a guide already loaded through the explicit reader API.
+  return <Entry key={`${props.filePath}:${props.cwd ?? ""}`} {...props} canStart={!!parsed.index} admissionError={parsed.error} />;
 }
-function Entry({ filePath, cwd, onOpenFile, children, onWork, ...chat }: { filePath: string; cwd?: string; onOpenFile?: OpenFileLink; children: ReactNode; onWork?: WorkObserver } & NotebookChatProps) {
+function Entry({ filePath, cwd, onOpenFile, children, onWork, canStart, admissionError, ...chat }: {
+  filePath: string; cwd?: string; onOpenFile?: OpenFileLink; children: ReactNode; onWork?: WorkObserver;
+  canStart: boolean; admissionError: string | null;
+} & NotebookChatProps) {
   const [active, setActive] = useState(false), trigger = useRef<HTMLButtonElement>(null);
   return <>
-    {!active && <button ref={trigger} type="button" className="git-diff-control" onClick={() => setActive(true)}>Start guided reading</button>}
+    {!active && admissionError && <p role="note">Guided reading unavailable: {admissionError}</p>}
+    {!active && canStart && <button ref={trigger} type="button" className="git-diff-control" onClick={() => setActive(true)}>Start guided reading</button>}
     {active ? <GuidedReviewReader indexPath={filePath} cwd={cwd} onOpenFile={onOpenFile} onWork={onWork} {...chat} onClose={() => {
       setActive(false); queueMicrotask(() => trigger.current?.focus());
     }} /> : children}
@@ -59,73 +64,98 @@ type ReaderProps = { indexPath: string; cwd?: string; onClose: () => void; onOpe
 export function GuidedReviewReader(props: ReaderProps) {
   return <ActiveGuidedReviewReader key={JSON.stringify([props.indexPath, props.cwd])} {...props} />;
 }
-function ActiveGuidedReviewReader({ indexPath, cwd, onClose, onOpenFile, onWork, reviewDestination, onReviewBatchDraft, reviewDraftOwner }: ReaderProps) {
+function ActiveGuidedReviewReader({ indexPath, cwd, onClose, onOpenFile, onWork, reviewDestination, onReviewBatchDraft }: ReaderProps) {
   const [notebook, setNotebook] = useState<GuidedNotebook | null>(null), [error, setError] = useState<string | null>(null);
-  const [position, setPosition] = useState(0), [retry, setRetry] = useState(0);
+  const [position, setPosition] = useState(0), [retry, setRetry] = useState(0), [generation, setGeneration] = useState(0);
+  const [loading, setLoading] = useState(true), [preparing, setPreparing] = useState(false), [notice, setNotice] = useState("");
   const { t } = useI18n(), layoutId = useId();
   const [panes, setPanes] = useState({ outline: true, explanation: true, evidence: true });
   const [share, setShare] = useState(NOTEBOOK_DEFAULT_SHARE);
   const revealEvidence = () => setPanes(p => p.evidence ? p : { ...p, evidence: true });
   const [readingState, setReadingState] = useState(() => new GuidedReaderState());
   const workObserver = useRef(onWork); workObserver.current = onWork;
+  const latest = useRef({ notebookId: "", stepId: "", destination: reviewDestination });
+  const epoch = useRef(0), alive = useRef(false), handoffPending = useRef(false);
+  const handoffAvailable = !!onReviewBatchDraft;
+  // Observe every committed transition, including A → missing/B → A. A final-ID
+  // comparison alone must not resurrect work after leaving its destination.
+  useLayoutEffect(() => { ++epoch.current; }, [reviewDestination?.id, handoffAvailable]);
+  useEffect(() => { const lifetime = epoch; alive.current = true; return () => { alive.current = false; ++lifetime.current; }; }, []);
   useEffect(() => {
-    const controller = new AbortController();
-    setNotebook(null); setError(null); setPosition(0);
+    const controller = new AbortController(), previous = latest.current;
+    ++epoch.current; setLoading(true); setError(null); setNotice("");
     const work = read<GuidedNotebook>(`/api/review-notebook?${new URLSearchParams({ index: indexPath })}`, controller.signal)
-      .then(value => { if (!controller.signal.aborted) setNotebook(value); })
-      .catch(error => { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Notebook unavailable"); });
+      .then(value => {
+        if (controller.signal.aborted) return;
+        const next = value.chapters.flatMap(chapter => chapter.steps);
+        const retained = previous.notebookId === value.index.id ? next.findIndex(step => step.id === previous.stepId) : -1;
+        setNotebook(value); setPosition(Math.max(0, retained));
+        setReadingState(new GuidedReaderState()); setGeneration(value => value + 1);
+        if (previous.stepId && retained < 0) setNotice(t("notebook.stepRemoved"));
+      })
+      .catch(error => { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : t("notebook.unavailable")); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     workObserver.current?.(work);
     return () => controller.abort();
-  }, [indexPath, cwd, retry]);
+  }, [indexPath, cwd, retry, t]);
   const steps = useMemo(() => notebook?.chapters.flatMap(chapter => chapter.steps.map(step => ({ chapter, step }))) ?? [], [notebook]);
   const current = steps[position];
-  const [selection, setSelection] = useState<{ stepId: string; target?: Evidence; selection?: EvidenceSelection } | null>(null);
-  const [displayed, setDisplayed] = useState<{ stepId: string; assets: { target: Evidence; contentDigest: string | null }[] } | null>(null);
-  const onDisplayed = useCallback((stepId: string, assets: { target: Evidence; contentDigest: string | null }[]) => {
-    setDisplayed({ stepId, assets });
-    // A text quote belongs to the old displayed snapshot, not just its authored
-    // file target. Keep the target-level fallback but require a fresh selection
-    // after a body/generation change rather than rebinding old text to new bytes.
-    setSelection(current => current?.stepId === stepId && current.target?.kind === "file" && current.selection
-      ? { stepId, target: current.target } : current);
-  }, []);
-  const onSelection = useCallback((stepId: string, target?: Evidence, selection?: EvidenceSelection) => setSelection({ stepId, target, selection }), []);
+  latest.current = { notebookId: notebook?.index.id ?? "", stepId: current?.step.id ?? "", destination: reviewDestination };
+  const move = (next: number) => { ++epoch.current; setNotice(""); setPosition(next); };
+  const reload = () => { ++epoch.current; setRetry(value => value + 1); };
+  const ask = () => {
+    if (!current || !notebook || !reviewDestination || !onReviewBatchDraft || loading || handoffPending.current) return;
+    const captured = epoch.current, destination = reviewDestination;
+    handoffPending.current = true; setPreparing(true); setNotice("");
+    const work = notebookStepPrompt({ indexPath, notebookId: notebook.index.id, chapterPath: current.chapter.path, step: current.step })
+      .then(text => {
+        if (!alive.current) return;
+        if (epoch.current !== captured || latest.current.destination?.id !== destination.id) { setNotice(t("notebook.contextChanged")); return; }
+        onReviewBatchDraft(destination, text);
+        setNotice(t("notebook.contextAdded", { name: destination.label }));
+      })
+      .catch(error => { if (alive.current && epoch.current === captured) setNotice(error instanceof Error ? error.message : t("notebook.handoffFailed")); })
+      .finally(() => { handoffPending.current = false; if (alive.current) setPreparing(false); });
+    workObserver.current?.(work);
+  };
   return <section className="guided-reader" aria-label="Guided reading">
     <div className="guided-reader-toolbar">
       <button type="button" className="git-diff-control" onClick={onClose}>Return to document</button>
       {notebook && <strong>{notebook.index.title}</strong>}
-      <button type="button" className="git-diff-control" disabled={!current || position === 0} onClick={() => setPosition(p => p - 1)}>Back</button>
+      <button type="button" className="git-diff-control" disabled={loading || !current || position === 0} onClick={() => move(position - 1)}>Back</button>
       <span>{current ? `${position + 1} / ${steps.length}` : ""}</span>
-      <button type="button" className="git-diff-control" disabled={!current || position === steps.length - 1} onClick={() => setPosition(p => p + 1)}>Next</button>
+      <button type="button" className="git-diff-control" disabled={loading || !current || position === steps.length - 1} onClick={() => move(position + 1)}>Next</button>
+      <button type="button" className="git-diff-control" disabled={loading} onClick={reload}>{t("notebook.reload")}</button>
+      <button type="button" className="git-diff-control" disabled={loading || preparing || !current || !reviewDestination || !onReviewBatchDraft} title={t("notebook.askHint")} onClick={ask}>{t("notebook.ask")}</button>
     </div>
+    {notice && <p role="status">{notice}</p>}
+    {loading && <p role="status">{t(notebook ? "notebook.reloading" : "notebook.loading")}</p>}
+    {error && <p role="alert">{error} <button type="button" disabled={loading} onClick={reload}>{t("notebook.retry")}</button></p>}
     {notebook && <div className="guided-layout-controls" role="group" aria-label={t("notebook.layout")}>
       {(["outline", "explanation", "evidence"] as const).map(pane => <button key={pane} type="button" className="git-diff-control"
         aria-pressed={panes[pane]} aria-controls={`${layoutId}-${pane}`} onClick={() => setPanes(p => ({ ...p, [pane]: !p[pane] }))}>{t(`notebook.${pane}`)}</button>)}
       <button type="button" className="git-diff-control" onClick={() => { setPanes({ outline: true, explanation: true, evidence: true }); setShare(NOTEBOOK_DEFAULT_SHARE); }}>{t("notebook.resetLayout")}</button>
     </div>}
-    {error ? <p role="alert">{error} <button type="button" onClick={() => { setReadingState(new GuidedReaderState()); setRetry(p => p + 1); }}>Retry</button></p> : !notebook ? <p role="status">Loading declared chapters…</p> : <div className={`guided-reader-layout${panes.outline ? "" : " is-outline-hidden"}`}>
+    {notebook && <div className={`guided-reader-layout${panes.outline ? "" : " is-outline-hidden"}`}>
       <nav id={`${layoutId}-outline`} hidden={!panes.outline} aria-label="Chapters and steps" className="guided-outline">{notebook.chapters.map(chapter => <div key={chapter.id}>
-        <strong>{chapter.title}</strong><ol>{chapter.steps.map(step => <li key={step.id}><button type="button"
-          aria-current={step.id === current?.step.id ? "step" : undefined} onClick={() => setPosition(steps.findIndex(item => item.step.id === step.id))}>{step.title}</button></li>)}</ol>
+        <strong>{chapter.title}</strong><ol>{chapter.steps.map(step => <li key={step.id}><button type="button" disabled={loading}
+          aria-current={step.id === current?.step.id ? "step" : undefined} onClick={() => move(steps.findIndex(item => item.step.id === step.id))}>{step.title}</button></li>)}</ol>
       </div>)}</nav>
-      {current && <StepReader key={`${indexPath}:${current.step.id}`} indexPath={indexPath} chapterPath={current.chapter.path} step={current.step}
-        cwd={cwd} onOpenFile={onOpenFile} onWork={onWork} readingState={readingState} onSelection={onSelection} onDisplayed={onDisplayed}
+      {current && <StepReader key={`${indexPath}:${generation}:${current.step.id}`} indexPath={indexPath} chapterPath={current.chapter.path} step={current.step}
+        cwd={cwd} onOpenFile={onOpenFile} onWork={onWork} readingState={readingState}
         layout={{ id: layoutId, ...panes, share, setShare, revealEvidence }} />}
     </div>}
-    {current && <NotebookReviewPanel draftOwner={reviewDraftOwner} displayedAssets={displayed?.stepId === current.step.id ? displayed.assets : current.step.targets.filter(t => t.kind === "file").map(target => ({ target, contentDigest: null }))} onStepAnchor={() => onSelection(current.step.id)} indexPath={indexPath} step={current.step} selection={selection?.stepId === current.step.id ? selection : null} destination={reviewDestination} onDraftBatch={onReviewBatchDraft} onWork={onWork} knownSteps={steps.map(s => ({ id: s.step.id, targets: s.step.targets.map(t => t.id) }))}
-      onResume={stepId => { const p = steps.findIndex(s => s.step.id === stepId); if (p >= 0) setPosition(p); }} />}
   </section>;
 }
 type NotebookLayout = { id: string; explanation: boolean; evidence: boolean; share: number; setShare: (value: number) => void; revealEvidence: () => void };
-function StepReader({ indexPath, chapterPath, step, cwd, onOpenFile, onWork, readingState, onSelection, onDisplayed, layout }: {
-  indexPath: string; chapterPath: string; step: GuidedStep; cwd?: string; onOpenFile?: OpenFileLink; onWork?: WorkObserver; readingState: GuidedReaderState; onSelection: (stepId: string, target?: Evidence, selection?: EvidenceSelection) => void;
-  onDisplayed: (stepId: string, assets: { target: Evidence; contentDigest: string | null }[]) => void;
+function StepReader({ indexPath, chapterPath, step, cwd, onOpenFile, onWork, readingState, layout }: {
+  indexPath: string; chapterPath: string; step: GuidedStep; cwd?: string; onOpenFile?: OpenFileLink; onWork?: WorkObserver; readingState: GuidedReaderState;
   layout: NotebookLayout;
 }) {
   const { t } = useI18n();
   const savedStep = readingState.step(step.id, step.targets[0]?.id ?? "");
   const [primary, setPrimary] = useState(savedStep.primary), [secondary, setSecondary] = useState(savedStep.secondary);
-  const [snapshots, setSnapshots] = useState<{ key: string; contentDigest: string | null }[]>([]), [evidenceRevision, setEvidenceRevision] = useState(0);
+  const [evidenceRevision, setEvidenceRevision] = useState(0);
   const [exploration, setExploration] = useState<Evidence | null>(null), heading = useRef<HTMLHeadingElement>(null);
   const stepRoot = useRef<HTMLDivElement>(null), initialExplanation = useRef(layout.explanation);
   useEffect(() => { (initialExplanation.current ? heading.current : stepRoot.current)?.focus(); }, []);
@@ -138,17 +168,7 @@ function StepReader({ indexPath, chapterPath, step, cwd, onOpenFile, onWork, rea
     else onOpenFile?.(path, ...args);
   };
   const target = (id: string) => step.targets.find(target => target.id === id);
-  useEffect(() => { onSelection(step.id, step.targets.find(t => t.id === primary)); }, [step, primary, onSelection]);
-  const captureText = (element: HTMLElement, target?: Evidence) => {
-    const selected = window.getSelection();
-    if (!selected?.rangeCount || !element.contains(selected.anchorNode) || !element.contains(selected.focusNode)) return;
-    const quote = selected.toString().slice(0, 8000);
-    if (quote) onSelection(step.id, target, { quote, context: element.textContent?.slice(0, 8000) ?? "" });
-  };
   const visibleEvidence = [exploration ?? target(primary), target(secondary)].filter((t): t is Evidence => !!t);
-  const assets = visibleEvidence.filter(t => t.kind === "file").map(t => ({ generation: evidenceRevision, target: t, contentDigest: snapshots.find(s => s.key === `${evidenceRevision}:${JSON.stringify(t)}`)?.contentDigest ?? null }));
-  const assetsKey = JSON.stringify(assets);
-  useEffect(() => { onDisplayed(step.id, JSON.parse(assetsKey)); }, [step.id, assetsKey, onDisplayed]);
   return <div className="guided-step-container">
     <div className="guided-split-controls" hidden={!layout.explanation || !layout.evidence} role="group" aria-label={t("notebook.resize")}>
       <button type="button" className="git-diff-control" disabled={layout.share <= 20} onClick={() => layout.setShare(Math.max(20, layout.share - 10))}>{t("notebook.moreEvidence")}</button>
@@ -157,10 +177,16 @@ function StepReader({ indexPath, chapterPath, step, cwd, onOpenFile, onWork, rea
     <div ref={stepRoot} tabIndex={-1} aria-label={step.title} className="guided-step" data-split={layout.explanation && layout.evidence}
       style={{ "--guided-prose-share": `${layout.share}fr`, "--guided-evidence-share": `${100 - layout.share}fr` } as CSSProperties}>
     {!layout.explanation && !layout.evidence && <p role="status">{t("notebook.hiddenPanes")}</p>}
-    <article id={`${layout.id}-explanation`} hidden={!layout.explanation} className="guided-prose markdown-body" onMouseUp={event => captureText(event.currentTarget)} onKeyUp={event => captureText(event.currentTarget)}>
+    <article id={`${layout.id}-explanation`} hidden={!layout.explanation} className="guided-prose markdown-body">
       <h2 ref={heading} tabIndex={-1}>{step.title}</h2>
       <FileMarkdownBody markdown={stepProse(step.markdown)} baseDir={chapterDirectory} relativeRoot={cwd ?? folder} onOpenFile={explore} images={false} reviewCards={false} onWork={onWork} />
-      <button type="button" onMouseDown={event => event.preventDefault()} onClick={event => captureText(event.currentTarget.parentElement!)}>Anchor selected prose text</button>
+      {!!step.questions?.length && <details className="notebook-author-guidance"><summary>{t("notebook.authorGuidance")}</summary>
+        {step.questions.map(question => <section key={question.id}><h3>{question.question}</h3>
+          {question.context && <FileMarkdownBody markdown={question.context} images={false} reviewCards={false} onWork={onWork} />}
+          {question.options && <ul>{question.options.map(option => <li key={option.id}><strong>{option.title}</strong>{option.description && <FileMarkdownBody markdown={option.description} images={false} reviewCards={false} onWork={onWork} />}</li>)}</ul>}
+          {question.explanation && <FileMarkdownBody markdown={question.explanation} images={false} reviewCards={false} onWork={onWork} />}
+        </section>)}
+      </details>}
       <button type="button" className="git-diff-control" onClick={() => { setExploration(null); heading.current?.focus(); }}>Return to current step</button>
     </article>
     <NotebookPaneDivider value={layout.share} onChange={layout.setShare} hidden={!layout.explanation || !layout.evidence}
@@ -177,10 +203,8 @@ function StepReader({ indexPath, chapterPath, step, cwd, onOpenFile, onWork, rea
       </div>
       <div className="guided-evidence-panes">
         {visibleEvidence.map((evidence, i) => <section key={`${evidenceRevision}:${i}:${JSON.stringify(evidence)}`}  className="guided-evidence" aria-label={`${i ? "Second" : "Primary"} evidence: ${evidence.title}`}>
-          <h3>{evidence.title}</h3><div onMouseUp={event => { if (evidence.kind === "file" && !notebookAssetMime(evidence.path)) captureText(event.currentTarget, evidence); }}>
-            <button type="button" onClick={() => onSelection(step.id, evidence)}>Anchor feedback to this target</button>
-            <EvidenceReader target={evidence} indexPath={indexPath} onWork={onWork} onSnapshot={contentDigest => { const key = `${evidenceRevision}:${JSON.stringify(evidence)}`; setSnapshots(s => [...s.filter(e => e.key !== key), { key, contentDigest }].slice(-4)); }} readerState={readingState.target(JSON.stringify(evidence))} onReviewSelection={value => onSelection(step.id, evidence, value ?? undefined)} />
-          </div>
+          <h3>{evidence.title}</h3>
+          <EvidenceReader target={evidence} indexPath={indexPath} onWork={onWork} readerState={readingState.target(JSON.stringify(evidence))} />
         </section>)}
       </div>
     </div>
