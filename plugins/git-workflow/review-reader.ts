@@ -4,6 +4,7 @@ import { isAbsolute } from "node:path";
 import { devNull } from "node:os";
 import { samePath, toNativePath } from "../../lib/paths";
 import { readGitFileContext } from "../../lib/git-file-context";
+import { GIT_RENAME_ARGS, gitFilePathspecs, isGitRenameStatus, nestedRenameRoot } from "../../lib/git-rename";
 import { directoryIdentity } from "./checkout-safety";
 import { gitOutput, gitText } from "./process";
 import { isCapturedGitReview, isGitReviewComparison, isGitReviewOid, type CapturedGitReview, type GitReviewComparison, type GitReviewRelation } from "./review-data";
@@ -17,14 +18,14 @@ export class GitReviewReadError extends Error {
  * Saved repository metadata and object IDs alone grant no filesystem access. */
 export interface GitReviewAccess { assertAllowed(checkout: string): Promise<void> }
 export interface GitReviewFile {
-  id: number; path: string; status: string;
+  id: number; path: string; previousPath?: string; status: string;
   oldMode: string; newMode: string; oldOid: string; newOid: string;
 }
 const invalid = () => new GitReviewReadError("INVALID", "Invalid saved Git review or file selection.");
 const unavailable = () => new GitReviewReadError("UNAVAILABLE", "The captured repository or Git objects are unavailable.");
-// One explicit policy for inventory, relation, previews and downloads. Never
-// recurse into submodules or let user diff drivers, prefixes or rename config
-// change the file-version comparison. Renames are represented as delete/add.
+// Canonical path/version equality stays delete/add, independent of presentation.
+// Never recurse into submodules or let external drivers/config change the read.
+// Display inventories and downloads add the explicit bounded rename policy.
 const policy = [`-O${devNull}`, "--no-ext-diff", "--no-textconv", "--no-renames", "--no-relative", "--ignore-submodules=none", "--submodule=short"];
 const patchPolicy = [...policy, "--binary", "--full-index", "--no-color", "--diff-algorithm=myers", "--no-indent-heuristic",
   "--src-prefix=a/", "--dst-prefix=b/", "--unified=3"];
@@ -98,7 +99,16 @@ export async function assertGitReviewAvailable(captured: CapturedGitReview, acce
   await assertChangedBlobs(cwd, captured, signal);
   // Download admission must validate the SAME native selection before headers;
   // gitReviewPatch repeats selection/guards at streaming time, without a cache.
-  if (fileId !== undefined) await selected(cwd, captured, fileId, signal);
+  if (fileId !== undefined) {
+    const file = await selected(cwd, captured, fileId, signal);
+    if (nestedRenameRoot(file)) {
+      // Nested exclusions can reach native argv limits. Exercise the exact command
+      // (with content output disabled) before headers, never truncate exclusions.
+      const args = await patchArgs(cwd, captured, file, signal);
+      args.splice(args.indexOf("--"), 0, "--no-patch");
+      await gitText(cwd, args, undefined, undefined, signal);
+    }
+  }
   await guard(cwd, captured, access, signal);
 }
 async function* framedRecords(source: AsyncIterable<Uint8Array>, delimiter = 0) {
@@ -115,22 +125,34 @@ async function* framedRecords(source: AsyncIterable<Uint8Array>, delimiter = 0) 
   }
   if (pending.length) throw unavailable(); // Never accept a truncated final record.
 }
-async function* inventory(cwd: string, captured: CapturedGitReview, signal?: AbortSignal): AsyncGenerator<GitReviewFile> {
-  const source = framedRecords(gitOutput(cwd, ["diff", ...policy, "--raw", "--no-abbrev", "-z", captured.trees.before, captured.trees.after, "--"], { signal }));
-  let header: string | undefined, id = 0;
-  for await (const part of source) {
+async function* inventory(cwd: string, captured: CapturedGitReview, signal?: AbortSignal, renames = true): AsyncGenerator<GitReviewFile> {
+  const source = gitOutput(cwd, ["diff", ...policy, ...(renames ? GIT_RENAME_ARGS : []),
+    "--raw", "--no-abbrev", "-z", captured.trees.before, captured.trees.after, "--"], { signal });
+  yield* parseGitReviewInventory(source, captured.trees.before.length, renames);
+}
+/** The raw stream has a header plus one path, or a scored rename's two paths. */
+export async function* parseGitReviewInventory(source: AsyncIterable<Uint8Array>, oidLength: number, renames = true): AsyncGenerator<GitReviewFile> {
+  let header: string | undefined, previousPath: string | undefined, id = 0;
+  for await (const part of framedRecords(source)) {
     if (header === undefined) { header = part; continue; }
-    const match = /^:([0-7]{6}) ([0-7]{6}) ([a-f0-9]{40}|[a-f0-9]{64}) ([a-f0-9]{40}|[a-f0-9]{64}) ([AMDTC])$/.exec(header);
-    if (!match || !part || part.includes("\0") || match[3].length !== captured.trees.before.length || match[4].length !== match[3].length) throw unavailable();
-    yield { id: id++, path: part, status: match[5], oldMode: match[1], newMode: match[2], oldOid: match[3], newOid: match[4] };
-    header = undefined;
+    const match = /^:([0-7]{6}) ([0-7]{6}) ([a-f0-9]{40}|[a-f0-9]{64}) ([a-f0-9]{40}|[a-f0-9]{64}) ([AMDTC]|R\d{3})$/.exec(header);
+    if (!match || match[0] !== header || !part || part.includes("\0") || match[3].length !== oidLength || match[4].length !== match[3].length) throw unavailable();
+    const rename = match[5].startsWith("R");
+    if (rename) {
+      if (!renames || !isGitRenameStatus(match[5])) throw unavailable();
+      if (previousPath === undefined) { previousPath = part; continue; }
+      if (previousPath === part) throw unavailable();
+    }
+    yield { id: id++, path: part, status: rename ? "R" : match[5], ...(rename ? { previousPath } : {}),
+      oldMode: match[1], newMode: match[2], oldOid: match[3], newOid: match[4] };
+    header = undefined; previousPath = undefined;
   }
   if (header !== undefined) throw unavailable();
 }
 async function assertChangedBlobs(cwd: string, captured: CapturedGitReview, signal?: AbortSignal) {
   let sent = 0, received = 0;
   async function* input() {
-    for await (const file of inventory(cwd, captured, signal)) {
+    for await (const file of inventory(cwd, captured, signal, false)) {
       for (const [mode, oid] of [[file.oldMode, file.oldOid], [file.newMode, file.newOid]]) {
         // Gitlinks refer to another repository: never fetch/check their target here.
         if (mode === "000000" || mode === "160000") continue;
@@ -166,17 +188,20 @@ async function selected(cwd: string, captured: CapturedGitReview, id: number, si
   if (!found) throw invalid();
   return found;
 }
+async function patchArgs(cwd: string, captured: CapturedGitReview, file?: GitReviewFile, signal?: AbortSignal): Promise<string[]> {
+  const paths = file ? await gitFilePathspecs(file, inventory(cwd, captured, signal)) : [];
+  // Never discover a different pair by re-running detection on a globally unpaired entry.
+  const renames = !file || file.previousPath ? GIT_RENAME_ARGS : [];
+  return [...(file ? ["--no-literal-pathspecs"] : []), "diff", ...patchPolicy, ...renames,
+    captured.trees.before, captured.trees.after, "--", ...paths];
+}
 /** Exact bytes from immutable trees. No aggregate buffer, persisted cache or
  * operation-size ceiling; early return/cancellation joins the native read child. */
 export async function* gitReviewPatch(captured: CapturedGitReview, access: GitReviewAccess, fileId?: number, signal?: AbortSignal): AsyncGenerator<Buffer> {
   const cwd = await checkout(captured, access, signal);
   const file = fileId === undefined ? undefined : await selected(cwd, captured, fileId, signal);
   await guard(cwd, captured, access, signal);
-  // Literal pathspecs still match a directory's descendants. Explicitly exclude
-  // descendants so a file<->directory transition cannot broaden one selected entry.
-  const paths = file ? [`:(literal)${file.path}`, `:(exclude,literal)${file.path}/`] : [];
-  yield* gitOutput(cwd, [...(file ? ["--no-literal-pathspecs"] : []), "diff", ...patchPolicy,
-    captured.trees.before, captured.trees.after, "--", ...paths], { signal });
+  yield* gitOutput(cwd, await patchArgs(cwd, captured, file, signal), { signal });
   await guard(cwd, captured, access, signal);
 }
 export async function gitReviewPreview(captured: CapturedGitReview, access: GitReviewAccess, fileId: number, offset = 0, signal?: AbortSignal) {
@@ -196,14 +221,14 @@ export async function gitReviewPreview(captured: CapturedGitReview, access: GitR
 export async function gitReviewContext(captured: CapturedGitReview, access: GitReviewAccess, fileId: number, signal?: AbortSignal) {
   const cwd = await checkout(captured, access, signal), file = await selected(cwd, captured, fileId, signal);
   await guard(cwd, captured, access, signal);
-  const context = await readGitFileContext(cwd, captured.trees.before, captured.trees.after, file.path, file.path, signal);
+  const context = await readGitFileContext(cwd, captured.trees.before, captured.trees.after, file.path, file.previousPath, signal);
   await guard(cwd, captured, access, signal);
   return context;
 }
 async function changeDigest(captured: CapturedGitReview, access: GitReviewAccess, signal?: AbortSignal) {
   const cwd = await checkout(captured, access, signal), hash = createHash("sha256");
   await assertChangedBlobs(cwd, captured, signal);
-  for await (const { path, status, oldMode, newMode, oldOid, newOid } of inventory(cwd, captured, signal)) {
+  for await (const { path, status, oldMode, newMode, oldOid, newOid } of inventory(cwd, captured, signal, false)) {
     hash.update(JSON.stringify([path, status, oldMode, newMode, oldOid, newOid]) + "\n");
   }
   await guard(cwd, captured, access, signal);

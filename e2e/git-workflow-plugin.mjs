@@ -860,7 +860,9 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
   const baseline = Array.from({ length: 100 }, (_, index) => `Line ${index + 1}\n`);
   writeFileSync(join(resultRepo, "file.txt"), baseline.join("")); resultGit("add", "."); resultGit("commit", "-qm", "base");
   resultGit("worktree", "add", "-b", "review-feature", featurePath);
-  const feature = [...baseline]; feature[4] = "feature change\n"; writeFileSync(join(featurePath, "file.txt"), feature.join(""));
+  const feature = [...baseline]; feature[4] = "feature change\n";
+  execFileSync("git", ["-C", featurePath, "mv", "file.txt", "renamed.txt"]);
+  writeFileSync(join(featurePath, "renamed.txt"), feature.join(""));
   execFileSync("git", ["-C", featurePath, "-c", "commit.gpgsign=false", "commit", "-am", "feature"]);
   const target = [...baseline]; target[89] = "target change\n"; writeFileSync(join(resultRepo, "file.txt"), target.join("")); resultGit("commit", "-am", "target");
   assert.ok((await page.request.post(`${base}/api/cwd/validate`, { data: { cwd: resultRepo } })).ok());
@@ -874,6 +876,11 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
   await resultCard.getByText("Actual result", { exact: true }).waitFor();
   const actualDownload = await page.request.get(new URL(await resultCard.getByRole("link", { name: "Download complete actual result patch", exact: true }).getAttribute("href"), base).href);
   const actual = await actualDownload.text(); assert.equal(actualDownload.status(), 200);
+  assert.match(actual, /rename from file.txt\nrename to renamed.txt/);
+  await resultCard.getByText("Renamed", { exact: true }).waitFor();
+  await openFile(resultCard, "file.txt → renamed.txt");
+  const selectedDownload = await page.request.get(new URL(await resultCard.getByRole("link", { name: "Download complete file patch", exact: true }).getAttribute("href"), base).href);
+  assert.equal(selectedDownload.status(), 200); assert.equal(await selectedDownload.text(), actual);
   await resultCard.getByRole("button", { name: "View original proposal", exact: true }).click();
   const proposalDownload = await page.request.get(new URL(await fullPatchLink(resultCard).getAttribute("href"), base).href);
   const original = await proposalDownload.text(); assert.equal(proposalDownload.status(), 200); assert.notEqual(actual, original);

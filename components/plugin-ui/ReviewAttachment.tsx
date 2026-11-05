@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReviewFileBrowser } from "../ReviewFileBrowser";
+import { useI18n } from "@/hooks/useI18n";
 import { CommittedPatchDiff } from "../CommittedPatchDiff";
 import { createDiffReview } from "@/lib/git-diff-review";
 import { ReviewNavigationState } from "@/lib/operation-review-state";
@@ -33,6 +34,7 @@ function SelectedFile({ id, path, status, url, source, preferences, navigation, 
   id: number; path: string; status?: string; url: string; source: ReviewAvailability; preferences: GitDiffPreferences;
   navigation: ReviewNavigationState; observe: Observe;
 }) {
+  const { t } = useI18n();
   const key = `${source.view}:${id}`;
   const [offset, updateOffset] = useState(() => navigation.offset(key));
   const setOffset = (value: number) => { navigation.saveOffset(key, value); updateOffset(value); };
@@ -49,7 +51,7 @@ function SelectedFile({ id, path, status, url, source, preferences, navigation, 
     return body;
   }, [base]);
   return <section aria-label={`File changes: ${path}`} className="min-w-0 space-y-2 p-2">
-    <p>{({ A: "Added", D: "Deleted", M: "Modified", T: "Type changed", C: "Copied" } as Record<string, string>)[status ?? ""] ?? "File change"}</p>
+    <p>{status === "R" ? t("files.renamed") : ({ A: "Added", D: "Deleted", M: "Modified", T: "Type changed", C: "Copied" } as Record<string, string>)[status ?? ""] ?? "File change"}</p>
     <a className="text-accent underline" href={`${base}&op=patch`}>Download complete file patch</a>
     {read.error && <p role="alert">{read.error} <button type="button" onClick={read.retry}>Retry content</button></p>}
     {!read.body && !read.error && <p role="status">Loading review…</p>}
@@ -74,7 +76,7 @@ function Files({ url, source, observe, navigation }: { url: string; source: Revi
     {!read.body && !read.error && <p role="status">Loading files…</p>}
     {read.body && (read.body.total === 0 ? <p>No file changes in this comparison.</p> : <>
       <p>Showing files {start + 1}–{start + read.body.files.length} of {read.body.total}.</p>
-      <ReviewFileBrowser paged files={read.body.files.map(file => ({ id: String(file.id), label: file.path, description: file.status }))}
+      <ReviewFileBrowser paged files={read.body.files.map(file => ({ id: String(file.id), label: file.previousPath ? `${file.previousPath} → ${file.path}` : file.path, description: file.status }))}
         pagination={<>
           {start > 0 && <button type="button" onClick={() => setStart(Math.max(0, start - 40))}>Previous files</button>}
           {read.body.next !== null && <button type="button" onClick={() => setStart(read.body!.next!)}>Next files</button>}

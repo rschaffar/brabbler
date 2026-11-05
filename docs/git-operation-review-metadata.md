@@ -152,6 +152,23 @@ and stream cancellation terminate/join the owned iterator/native child. Mid-stre
 failure errors the body, never reports a complete successful partial download.
 There is no lazy fetch, content/index cache, patch file or retention ref.
 
+Generated pages normalize detected renames to status `R`, destination `path` and
+`previousPath`. Native presentation detection is pinned to 50% similarity,
+empty-source matching and 1,000 exhaustive inexact candidates, without copies or
+rewrite breaking; ambient rename settings do not change it. Unmatched changes stay
+add/delete. Selected previews/downloads use the globally detected pair, not a new
+pair inferred from a destination-only subset. Literal exclusions prevent unrelated
+descendants entering a selected patch. Nested moves derive sibling exclusions from
+the same complete inventory; download admission exercises their exact native command
+with content output disabled before headers, so platform argument limits refuse
+rather than truncate exclusions. Whole downloads and approval scope have no new
+aggregate limit. Context reads the original path before and destination after.
+
+Rename grouping is generated presentation, not persisted review identity. Existing
+metadata and outcomes are not migrated or rewritten. Historical reads keep the
+recorded settlement relation; new equality observations retain the canonical
+no-renames path/status/version/mode digest, independent of heuristic pairing.
+
 Settled trustworthy results default to **Actual result** (or **Rebased feature
 changes**). Explicit pre-effect false facts may default to **Original proposal**;
 absence/unknown is not false. Missing actual remains unavailable even if proposal

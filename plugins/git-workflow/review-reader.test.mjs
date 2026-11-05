@@ -8,7 +8,7 @@ import test from 'node:test';
 import { createJiti } from 'jiti';
 const jiti = createJiti(import.meta.url, { fsCache: false });
 const { captureGitReview, assertGitReviewAvailable, gitReviewPage, gitReviewPatch, gitReviewPreview, gitReviewContext,
-  gitReviewRelation, GIT_REVIEW_PREVIEW_BYTES } = await jiti.import('./review-reader.ts');
+  gitReviewRelation, GIT_REVIEW_PREVIEW_BYTES, parseGitReviewInventory } = await jiti.import('./review-reader.ts');
 const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, '-c', 'commit.gpgSign=false', ...args], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).trimEnd();
 function fixture(t, objectFormat) {
   const root = mkdtempSync(join(tmpdir(), 'brabbler-git-review-reader-'));
@@ -35,6 +35,88 @@ function candidate(repo, name = 'file.txt', contents = 'candidate\n') {
 }
 const collect = async source => { const chunks = []; for await (const chunk of source) chunks.push(chunk); return Buffer.concat(chunks); };
 const captured = async f => captureGitReview(f.repo, { before: f.before, after: candidate(f.repo) });
+test('rename-aware pages, selected downloads and contexts preserve global pairs and canonical relation', async t => {
+  const f = fixture(t), body = Array.from({ length: 80 }, (_, i) => `stable line ${i}\n`).join('');
+  writeFileSync(join(f.repo, 'file.txt'), body);
+  writeFileSync(join(f.repo, 'ambiguous-a'), body); writeFileSync(join(f.repo, 'ambiguous-b'), body);
+  writeFileSync(join(f.repo, 'empty'), ''); writeFileSync(join(f.repo, 'binary'), Buffer.from([0, 1, 2, 3]));
+  writeFileSync(join(f.repo, 'mode'), 'executable\n'.repeat(60));
+  git(f.repo, 'add', '.'); git(f.repo, 'commit', '-qm', 'rename sources');
+  const before = git(f.repo, 'rev-parse', 'HEAD');
+  rmSync(join(f.repo, 'file.txt')); mkdirSync(join(f.repo, 'file.txt'));
+  const destination = 'file.txt/新\t\n[*]';
+  writeFileSync(join(f.repo, destination), body.replace('line 40', 'edited 40'));
+  writeFileSync(join(f.repo, 'file.txt/sibling'), 'unrelated\n');
+  renameSync(join(f.repo, 'ambiguous-a'), join(f.repo, 'file.txt/ambiguous-c'));
+  renameSync(join(f.repo, 'ambiguous-b'), join(f.repo, 'ambiguous-d'));
+  renameSync(join(f.repo, 'empty'), join(f.repo, 'empty-new'));
+  renameSync(join(f.repo, 'binary'), join(f.repo, 'binary-new'));
+  renameSync(join(f.repo, 'mode'), join(f.repo, 'mode-new')); chmodSync(join(f.repo, 'mode-new'), 0o755);
+  git(f.repo, 'add', '.'); const after = git(f.repo, 'write-tree');
+  git(f.repo, 'config', 'diff.renames', 'copies'); git(f.repo, 'config', 'diff.renameLimit', '1');
+  for (const comparison of [{ before, after }, { before: after, after: before }]) {
+    const review = await captureGitReview(f.repo, comparison), page = await gitReviewPage(review, f.access);
+    assert.equal(page.total, 7); assert.equal(page.files.filter(file => file.status === 'R').length, 6);
+    const full = (await collect(gitReviewPatch(review, f.access))).toString();
+    const blocks = full.split(/(?=^diff --git )/m).filter(Boolean);
+    for (const file of page.files) {
+      await assertGitReviewAvailable(review, f.access, undefined, file.id);
+      const patch = (await collect(gitReviewPatch(review, f.access, file.id))).toString();
+      assert.ok(blocks.includes(patch), file.path);
+      assert.equal((await gitReviewPreview(review, f.access, file.id)).text, patch);
+      if (file.status === 'R') assert.match(patch, /rename from /);
+      if (file.path.startsWith('binary')) {
+        await assert.rejects(gitReviewContext(review, f.access, file.id), /binary/); continue;
+      }
+      const context = await gitReviewContext(review, f.access, file.id);
+      if (file.status === 'R') {
+        assert.equal(context.oldFile.name, file.previousPath); assert.equal(context.newFile.name, file.path);
+        assert.equal(context.oldFile.contents, execFileSync('git', ['-C', f.repo, 'show', `${comparison.before}:${file.previousPath}`], { encoding: 'utf8' }));
+        assert.equal(context.newFile.contents, execFileSync('git', ['-C', f.repo, 'show', `${comparison.after}:${file.path}`], { encoding: 'utf8' }));
+      }
+    }
+    assert.equal(await gitReviewRelation(review, structuredClone(review), f.access), 'same');
+    assert.equal(await gitReviewRelation(review, await captureGitReview(f.repo, { before, after: before }), f.access), 'different');
+  }
+  // Reopen original metadata after live worktree drift: endpoint identity and old/new bytes survive.
+  const saved = JSON.parse(JSON.stringify(await captureGitReview(f.repo, { before, after })));
+  writeFileSync(join(f.repo, destination), 'dirty replacement\n');
+  const file = (await gitReviewPage(saved, f.access)).files.find(file => file.path === destination);
+  assert.equal((await gitReviewContext(saved, f.access, file.id)).newFile.contents, body.replace('line 40', 'edited 40'));
+});
+
+test('raw rename framing accepts chunk-split UTF8 and refuses missing fields, scores and termination', async () => {
+  const header = `:100644 100755 ${'a'.repeat(40)} ${'b'.repeat(40)} `;
+  const raw = Buffer.from(`${header}R098\0old\n\t[*]\0新\n\t.txt\0`);
+  async function* chunks(bytes) { for (const byte of bytes) yield Buffer.from([byte]); }
+  const records = await Array.fromAsync(parseGitReviewInventory(chunks(raw), 40));
+  assert.deepEqual(records, [{ id: 0, status: 'R', previousPath: 'old\n\t[*]', path: '新\n\t.txt',
+    oldMode: '100644', newMode: '100755', oldOid: 'a'.repeat(40), newOid: 'b'.repeat(40) }]);
+  for (const text of [`${header}R100\n\0old\0new\0`, `${header}R098\0old\0`, `${header}R098\0old\0new`, `${header}R101\0old\0new\0`, `${header}C100\0old\0new\0`, `${header}R100\0same\0same\0`, `${header}R100\0\0new\0`]) {
+    await assert.rejects(Array.fromAsync(parseGitReviewInventory(chunks(Buffer.from(text)), 40)), error => error.code === 'UNAVAILABLE');
+  }
+  await assert.rejects(Array.fromAsync(parseGitReviewInventory(chunks(raw), 40, false)), error => error.code === 'UNAVAILABLE');
+  await assert.rejects(Array.fromAsync(parseGitReviewInventory(chunks(raw), 64)), error => error.code === 'UNAVAILABLE');
+});
+
+test('renamed symlinks and gitlinks stay descriptive and refuse regular-file context', async t => {
+  const f = fixture(t);
+  symlinkSync('nonexistent-target', join(f.repo, 'old-link'));
+  git(f.repo, 'add', '.'); git(f.repo, 'update-index', '--add', '--cacheinfo', `160000,${'e'.repeat(40)},old-submodule`);
+  const before = git(f.repo, 'write-tree');
+  renameSync(join(f.repo, 'old-link'), join(f.repo, 'new-link')); git(f.repo, 'add', '-A');
+  git(f.repo, 'update-index', '--force-remove', 'old-submodule');
+  git(f.repo, 'update-index', '--add', '--cacheinfo', `160000,${'e'.repeat(40)},new-submodule`);
+  const review = await captureGitReview(f.repo, { before, after: git(f.repo, 'write-tree') });
+  const page = await gitReviewPage(review, f.access); assert.equal(page.total, 2);
+  await assertGitReviewAvailable(review, f.access);
+  for (const file of page.files) {
+    assert.equal(file.status, 'R');
+    assert.match((await collect(gitReviewPatch(review, f.access, file.id))).toString(), /similarity index 100%/);
+    await assert.rejects(gitReviewContext(review, f.access, file.id), /regular text files/);
+  }
+});
+
 const unavailable = error => error.code === 'UNAVAILABLE';
 const denied = error => error.code === 'ACCESS_DENIED';
 function paths(root) {
@@ -155,7 +237,7 @@ test('ambient ext-diff, textconv and fsmonitor do not execute; gitlinks remain d
   assert.ok(after);
 });
 
-test('rename chains/path reuse have explicit delete/add semantics and modes/symlinks remain inspectable', async t => {
+test('path reuse stays modified/add without rewrite breaking and modes/symlinks remain inspectable', async t => {
   const f = fixture(t); renameSync(join(f.repo, 'file.txt'), join(f.repo, 'renamed.txt'));
   writeFileSync(join(f.repo, 'file.txt'), 'different replacement\n'); chmodSync(join(f.repo, 'file.txt'), 0o755);
   symlinkSync('renamed.txt', join(f.repo, 'link')); git(f.repo, 'add', '.');

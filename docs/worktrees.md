@@ -55,6 +55,14 @@ at once, with per-file loading/error/retry state and caching for that captured c
 view only. Collapsed renderers unmount; other expanded files defer loading/rendering
 until scrolled near. Changing commit, branch or checkout cancels old reads.
 
+Detected renames appear once as **Renamed**, with **old path → new path**. The
+patch shows actual edits; pure renames retain their metadata even without text
+hunks. Before/After context reads each side's original filename, never working
+files. Detection uses native Git at 50% similarity (including empty files), with
+an explicit 1,000-candidate limit on exhaustive inexact matching. Copies and rewrite
+breaking are disabled; unmatched moves can still appear as add/delete, especially
+above that limit. Repository rename settings do not override this display policy.
+
 Patches and full context compare immutable commit objects against the commit's
 **first parent** (or the empty tree for a root commit), revalidating the captured
 local branch tip after context reads too. **Refresh** captures the branch's current
@@ -82,7 +90,10 @@ base/candidate endpoint trees under one captured local branch tip. Both endpoint
 must be reachable and base must be an ancestor of candidate; divergent ranges
 refuse. An opaque physical repository incarnation is rechecked for patch/context,
 never treated as permission. Unchanged files remain pinned source context. These
-operations do not change Explorer's first-parent commit semantics; see the
+authored comparisons deliberately retain single-path add/delete semantics, unlike
+rename-aware commit browsing: old-path deletion and new-path addition evidence
+keep their original meaning and saved review identity. These operations do not
+change Explorer's first-parent commit semantics; see the
 [authoring contract and current reader limits](review-notebooks.md#guided-folders-reader-slice).
 
 #### Full-file diff review

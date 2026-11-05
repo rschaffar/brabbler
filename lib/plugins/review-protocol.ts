@@ -13,7 +13,7 @@ export interface ReviewOverview {
   hasFiles: boolean; details: boolean;
 }
 export interface ReviewPage {
-  files: Array<{ id: number; path: string; status: string }>;
+  files: Array<{ id: number; path: string; previousPath?: string; status: string }>;
   total: number; next: number | null;
 }
 export interface ReviewPreview { text: string; bytes: number; offset: number; next: number | null; complete: boolean }

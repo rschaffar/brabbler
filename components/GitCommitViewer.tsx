@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { useI18n } from "@/hooks/useI18n";
 import type { ExplorerFile } from "@/lib/git-explorer";
 import { copyText } from "@/lib/clipboard";
 import type { DiffContext } from "@/lib/diff-context";
@@ -46,12 +47,13 @@ export function GitCommitViewer({ cwd, branch, head, oid, onReadWork, getReviewM
   getReviewModel?: (path: string, patch: string) => DiffReviewModel;
   onReviewSelection?: (selection: EvidenceSelection | null) => void;
 }) {
+  const { t } = useI18n();
   const readObserver = useRef(onReadWork);
   readObserver.current = onReadWork;
   const observeRead = useCallback((work: Promise<void>) => { readObserver.current?.(work); }, []);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
-  const files = useMemo(() => detail?.files.map((file) => ({ id: file.path, path: file.path, status: FILE_STATUS[file.status] ?? file.status })) ?? [], [detail]);
+  const files = useMemo(() => detail?.files.map((file) => ({ id: file.path, path: file.path, previousPath: file.previousPath, status: file.status === "R" ? t("files.renamed") : FILE_STATUS[file.status] ?? file.status })) ?? [], [detail, t]);
   const loadPatch = useCallback((path: string, signal: AbortSignal) =>
     load<Patch>(url(cwd, "patch", { branch, head, oid, path }), signal), [cwd, branch, head, oid]);
   const loadContext = useCallback((path: string, signal: AbortSignal) =>

@@ -14,6 +14,36 @@ async function card(t) {
   await h.render(createElement(BlockingRequestCard, { request, sessionId: 'current', onReadWork: h.onReadWork, onRespond: () => assert.fail('reading is not authority') }));
   return { ...h, BlockingRequestCard, request };
 }
+test('renamed review navigation retains the numeric selection and renders a pure rename without hunks', async t => {
+  const h = await card(t), root = h.view.container;
+  await deliver(h, 'overview', overview(true, 'same'));
+  await deliver(h, 'page', { files: [{ id: 0, path: 'new.txt', previousPath: 'old.txt', status: 'R' }], total: 1, next: null });
+  assert.match(root.textContent, /old.txt → new.txt/); assert.match(root.textContent, /Renamed/);
+  const request = live(h, 'preview'); assert.equal(request.url.searchParams.get('file'), '0');
+  assert.equal(request.url.searchParams.has('path'), false); assert.equal(request.url.searchParams.has('previousPath'), false);
+  const rename = 'diff --git a/old.txt b/new.txt\nsimilarity index 100%\nrename from old.txt\nrename to new.txt\n';
+  await deliver(h, 'preview', preview(rename)); await h.settle();
+  assert.match(root.textContent, /No text hunks in this patch/);
+  await click(h.view, textButton(root, 'Before'));
+  await body(h, live(h, 'context'), { oldFile: { name: 'old.txt', contents: 'same\n', cacheKey: 'old' },
+    newFile: { name: 'new.txt', contents: 'same\n', cacheKey: 'new' } });
+  await h.settle(); assert.ok(root.querySelector('[aria-label="Before file"]'));
+  assert.ok(textButton(root, 'Approve commit'), 'viewing a rename does not decide the approval');
+});
+
+test('binary rename review retains both names and exact raw metadata without text controls', async t => {
+  const h = await card(t), root = h.view.container;
+  await deliver(h, 'overview', overview(true, 'same'));
+  await deliver(h, 'page', { files: [{ id: 0, path: 'new.bin', previousPath: 'old.bin', status: 'R' }], total: 1, next: null });
+  const raw = 'diff --git a/old.bin b/new.bin\nsimilarity index 98%\nrename from old.bin\nrename to new.bin\nBinary files a/old.bin and b/new.bin differ\n';
+  await deliver(h, 'preview', preview(raw)); await h.settle();
+  assert.match(root.textContent, /old.bin → new.bin/); assert.match(root.textContent, /Renamed/);
+  assert.match(root.textContent, /Binary changes are summarized/);
+  assert.equal(root.querySelector('[aria-label="File version"]'), null);
+  assert.equal(root.querySelector('[aria-label="Raw patch"]').textContent, raw);
+  assert.equal(h.requests.some(request => request.url.searchParams.get('op') === 'context'), false);
+});
+
 test('actual result defaults in the real card; same-view proposal switch cancels ignored-abort reads and labels come from selected metadata', async t => {
   const h = await card(t), root = h.view.container;
   await deliver(h, 'overview', overview(true, 'different'));

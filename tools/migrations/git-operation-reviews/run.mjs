@@ -15,7 +15,7 @@ export const LOCAL_HELPERS = Object.freeze([
   'lib/plugins/review-metadata.ts', 'lib/plugins/review-reference.ts', 'lib/plugins/ui.ts', 'lib/operation-receipts.ts', 'lib/interaction-receipts.ts',
   'lib/plugins/project-operation-store.ts', 'lib/plugins/project-acknowledgment.ts', 'plugins/git-workflow/review-data.ts', 'plugins/git-workflow/review-reader.ts',
   'plugins/git-workflow/process.ts', 'lib/git-exec.ts', 'bin/command-env.js', 'lib/paths.ts', 'plugins/git-workflow/checkout-safety.ts',
-  'lib/git-file-context.ts', 'lib/diff-context.ts', 'lib/ask-user.ts', 'lib/question-set.ts', 'lib/atomic-file.ts',
+  'lib/git-file-context.ts', 'lib/git-rename.ts', 'lib/diff-context.ts', 'lib/ask-user.ts', 'lib/question-set.ts', 'lib/atomic-file.ts',
 ]);
 export function toolIdentity() {
   const files = fs.readdirSync(base).filter(n => /\.(mjs|ts)$/.test(n) && !/\.(test|fixture)\./.test(n)).sort().map(n => [n, sha(fs.readFileSync(join(base, n)))]);
