@@ -1,11 +1,13 @@
 # Guided reading and native notebook authoring
 
-**Status:** P0–P2 complete with independent checkpoint reviews and focused
-verification. Reader simplification and native inspect/update tools are implemented;
-reference maintenance (P3) is next. Complete acceptance and integration remain P4
-work. Implementation remains authorized.
-**Workspace:** `feat/notebook-authoring`, based on local `main` at
-`14d60757535e0ed78ff3753fda1372b0e4c47bbb`. One receiving worktree and one repository
+**Status:** P0–P3 complete with independent checkpoint reviews and focused
+verification. Reader simplification, native inspect/update and explicit reference
+maintenance are implemented. Overall review, complete acceptance and integration
+remain P4 work. Implementation remains authorized.
+**Workspace:** `feat/notebook-authoring`, originally based on local `main` at
+`14d60757535e0ed78ff3753fda1372b0e4c47bbb`, subsequently rebased onto
+`b5696cd4cfb935b9bdc3f8d7918bbd41da419286` with approved conflict resolutions.
+One receiving worktree and one repository
 writer; independent reviewers do not edit it. Nothing here authorizes deployment,
 publication, Git history rewriting or deleting saved user data.
 
@@ -282,21 +284,59 @@ P2 checkpoint evidence (2026-11-05):
   Requested/effective file workers **4/4**, E owners exclusive. Whole command about
   **64 s**, about **37 s** preparation before the **27.135 s** file-execution window.
   Subsequent plan/index status edits are not relabelled as a new application run.
-- Earlier failures and reviewer reports remain in private task evidence. Native
-  reference maintenance, full acceptance, rebase and integration are still pending.
+- Earlier failures and reviewer reports remain in private task evidence. These are
+  pre-rebase P2 results, not reference-maintenance or complete-acceptance evidence.
+  The later approved rebase onto `b5696cd4` preserved main's rename/BTW coverage and
+  retired only the new recording-specific saved-answer assertion, with an explicit
+  disposition. Independent range-diff review closed at `a73be89b`. Eleven affected
+  files then passed **232/232** focused tests; export
+  `5aafa22b6ad99859db6bf66ebf08f5043d4f40baa78932a68c742c9240ae8e72`, artifact
+  `/nix/store/p33i74gbg3mf470pv1p50674gbsd38yq-brabbler-core-checks`.
 
 ### P3 — Git-reference maintenance
 
-- [ ] Implement bounded analysis and explicit application of full-OID mappings.
+- [x] Implement bounded analysis and explicit application of full-OID mappings.
   Native fixtures cover same-content rebases, changed base/lines, repeated patches,
   missing versus unreachable objects, changed first-parent diffs, comparisons,
   mixed resolvable/unresolved mappings and cancellation. Include same OIDs in
   different checkouts, repository replacement and branch movement before apply.
-- [ ] Exercise complete inspect → targeted edit → refresh workflows on synthetic
+- [x] Exercise complete inspect → targeted edit → refresh workflows on synthetic
   multi-chapter notebooks; prove no repository/ref writes and precise per-file
   partial-failure reports (first save succeeds, second conflicts, later files stay
   untouched). Missing acknowledgement requires rereading before retry, never replay
   or invented rollback. Keep unsupported history transformations explicit.
+
+P3 checkpoint evidence (2026-11-05, x86_64-linux ordinary Nix sandboxes):
+
+- Thin native analyze/apply adapter, bounded immutable Git readers and per-file
+  metadata saves are implemented. Independent Git-owner/evidence and orchestrator/
+  adapter reviewers closed their scoped findings. Corrected order-file helper
+  suppression, checkout-wide mapping ambiguity, combined-package preflight and
+  native SIGTERM readiness. SDK partial-error results retain structured completed/
+  unknown/unattempted outcomes without replay or rollback.
+- Focused `nix run --no-write-lock-file .#test -- core --jobs 4` selected
+  `lib/git-read-scope.test.mjs`, `lib/notebook-reference-refresh.test.mjs`,
+  `lib/notebook-authoring-sdk.test.mjs`, `lib/git-explorer.test.mjs`,
+  `lib/git-file-context.test.mjs` and `lib/git-file-context-lifecycle.test.mjs`:
+  **113/113 tests, 6/6 files pass**; static checks pass with eight existing warnings.
+  Source export:
+  `8fba83cd20a8f88a51d64e88a00b5a07e933f46c91d8cc392b01e0df5d24d075`.
+  Artifact: `/nix/store/lizdk5bzg5a0mg38h62nmfma22dar2ch-brabbler-core-checks`.
+  Requested/effective core workers **4/4**; conservative E holds remain exclusive.
+  Whole command approximately **97 s**, approximately **39.4 s** before execution,
+  **57.642 s** test-file window. Subsequent documentation/status corrections are
+  not relabelled as new application execution.
+- The first broader run exposed the order-file defect; later one opaque blob-read
+  failure was retained but its cause was not captured. Subsequent diagnostic,
+  lifecycle and full focused selections passed; this does not prove that earlier
+  failure's cause. A later offline frontend cache miss failed before tests; normal
+  pinned Nix realization succeeded without changed inputs or acceptance fallback.
+- Actual native fixtures cover cumulative size refusal with zero writes, explicit
+  local rebase correspondence, ambiguous and independent mappings, complete merge
+  inventory bounds, second-save lost acknowledgement, late branch/repository/grant
+  changes, and multi-chapter fence/prose preservation. SDK grant/selection and
+  partial-error results are actual session effects, not source-text assertions.
+  Full inventory, installed browser/terminal and genuine deployment remain P4.
 
 ### P4 — Delivery and acceptance
 
@@ -336,7 +376,7 @@ logs and raw reviewer/test evidence stay outside tracked files.
   is explicitly unchecked.
 - [x] Reader usable without recording/forms; simple chat handoff and stable reload work.
 - [x] Saved reviewer files/browser drafts remain untouched; recovery is documented.
-- [ ] Native inspect/update/refresh tools work without browser state or widened grants.
-- [ ] Reference updates are scoped, validated and explicit; ambiguity remains visible.
+- [x] Native inspect/update/refresh tools work without browser state or widened grants.
+- [x] Reference updates are scoped, validated and explicit; ambiguity remains visible.
 - [ ] Required independent review and complete Nix acceptance pass at the candidate.
 - [ ] Maintained guides/ADR updated and public-safe; exact local integration handled.

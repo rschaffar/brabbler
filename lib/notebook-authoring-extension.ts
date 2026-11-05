@@ -3,7 +3,9 @@ import { defineTool, type InlineExtension } from "@earendil-works/pi-coding-agen
 import { getAllowedFileRoots } from "./file-access";
 import { inspectNotebook, updateNotebookStep } from "./notebook-authoring";
 import { filterNotebookTools } from "./notebook-tool-policy";
+import { analyzeNotebookReferences, applyNotebookReferences } from "./notebook-reference-refresh";
 
+type RefreshResult = Awaited<ReturnType<typeof analyzeNotebookReferences>> | Awaited<ReturnType<typeof applyNotebookReferences>>;
 const filePath = () => Type.String({ minLength: 1, maxLength: 4096, description: "Explicit absolute physical path; does not grant file access" });
 const stableId = () => Type.String({ pattern: "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$" });
 const revision = () => Type.String({ pattern: "^[a-f0-9]{64}$" });
@@ -38,6 +40,31 @@ export function createNotebookAuthoringExtension(roots: () => Promise<Set<string
         const check = () => assertGrant("notebook_inspect", false, signal);
         check(); const admitted = await roots(); check();
         return result(inspectNotebook(params.indexPath, admitted, params.stepId));
+      },
+    }));
+    pi.registerTool(defineTool({
+      name: "notebook_refresh_references", label: "Refresh notebook references", exposure: "direct", executionMode: "sequential",
+      description: "Analyze explicit repository-scoped one-to-one full-OID mappings for named notebook targets. Returns conservative metadata proposals, unresolved cases and a binding; never infers commit correspondence or changes Git. Then explicitly apply acceptedTargets with the same mappings/binding after inspecting affected prose. Analyze needs read; apply additionally needs edit and revalidates evidence, repository/branch identities and notebook revisions. Equal excerpts/patches never upgrade old test claims. Partial file results stop without rollback; reread before any retry.",
+      parameters: Type.Object({
+        mode: Type.Union([Type.Literal("analyze"), Type.Literal("apply")]), indexPath: filePath(),
+        mappings: Type.Array(Type.Object({ cwd: filePath(), targetIds: Type.Array(stableId(), { minItems: 1, maxItems: 32 }),
+          pairs: Type.Array(Type.Object({ oldOid: Type.String({ pattern: "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" }), newOid: Type.String({ pattern: "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" }) }, { additionalProperties: false }), { minItems: 1, maxItems: 64 }),
+        }, { additionalProperties: false }), { minItems: 1, maxItems: 8 }),
+        binding: Type.Optional(Type.Object({ version: Type.Literal(1), digest: revision() }, { additionalProperties: false })),
+        acceptedTargets: Type.Optional(Type.Array(stableId(), { minItems: 1, maxItems: 32 })),
+      }, { additionalProperties: false }),
+      async execute(_id, params, signal) {
+        const apply = params.mode === "apply";
+        if (params.mode !== "analyze" && !apply) throw new Error("Unknown reference refresh mode");
+        if (apply ? !params.binding || !params.acceptedTargets : params.binding !== undefined || params.acceptedTargets !== undefined) throw new Error("Analyze takes mappings only; apply requires its binding and explicit accepted targets");
+        const read = () => assertGrant("notebook_refresh_references", false, signal);
+        const write = () => assertGrant("notebook_refresh_references", true, signal);
+        const check = apply ? write : read;
+        check(); const admitted = await roots(); check();
+        const access = { roots: admitted, assertRead: read, assertWrite: write, signal };
+        if (!apply) return result<RefreshResult>(await analyzeNotebookReferences(params.indexPath, params.mappings, access));
+        const applied = await applyNotebookReferences(params.indexPath, params.mappings, params.binding!, params.acceptedTargets!, access);
+        return { ...result<RefreshResult>(applied), ...(applied.status === "applied" ? {} : { isError: true }) };
       },
     }));
     pi.registerTool(defineTool({

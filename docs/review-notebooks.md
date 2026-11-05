@@ -396,9 +396,8 @@ history and evidence. Equivalent patches do not establish equivalent source rang
 first-parent diffs, prose or test results. Do not substitute branch tip, match solely
 by subject, fetch objects or mutate Git as a side effect of editing a notebook.
 Unclear mappings should remain explicit unresolved cases, not guessed references.
-Reference-refresh tooling is the next implementation slice. Ordinary read/edit
-tools remain usable; the native inspect/update tools below need no browser pane
-or original conversation.
+Ordinary read/edit tools remain usable; native inspect/update/reference-refresh
+operations below need no browser pane or original conversation.
 
 ### Native inspect and step update
 
@@ -426,6 +425,65 @@ or original conversation.
 These tools neither send chat messages nor run Git operations/tests. Schema and
 reference inspection do not prove that the prose is correct or that a candidate
 passed tests. Ask the reader to **Reload guide** after an explicit saved revision.
+
+### Refresh pinned references after rewritten history
+
+Use `notebook_refresh_references` in two explicit phases. First supply
+`mode: "analyze"`, `indexPath` and `mappings`: one entry per physical checkout,
+with its `cwd`, named `targetIds`, and `pairs` of full `oldOid`/`newOid` values.
+For a comparison, map **both** endpoints; an unchanged endpoint uses an explicit
+identity pair. The agent must first establish correspondence through authorized
+local Git inspection. Subjects, similar patches and branch tips are not mappings.
+
+Analysis returns each original/proposed target, separate byte-evidence axes,
+unresolved cases, and an opaque `binding`. It reads explicit locally present old
+objects even when unreachable, while new references must satisfy normal reader
+admission. It never infers checkout, branch or path changes. Multiple entries for the same checkout,
+repeated/split/squashed mappings, missing objects, invalid destinations,
+ambiguous relocation and incomplete/unsupported evidence remain unresolved. Other
+independently valid targets remain available.
+
+- Source results distinguish exact excerpt bytes, location, surrounding-file
+  identity and that file's first-parent material. `unchanged` for a source means
+  the **excerpt at the same coordinates**, not equivalent behavior or an unchanged
+  surrounding file. Only a unique complete multi-line byte span can propose new
+  coordinates; a single-line match cannot relocate a reference.
+- Commit equality requires the complete bounded canonical changed-file inventory,
+  both versions/modes and available blob bytes, using the first parent or empty
+  tree. Rename-aware reader presentation is not equivalence evidence.
+- Comparisons retain explicit endpoint-tree and delete/add semantics. Both new
+  endpoints must be reachable, ordered by ancestry, and the path must change.
+- `proseReviewRequired` highlights changed evidence/context. Even exact bytes do
+  not prove semantic equivalence or rerun tests. Old test claims remain pinned to
+  their original candidate; no tool rewrites those claims automatically.
+
+After inspecting the affected prose and proposals, invoke `mode: "apply"` with the
+**same** `indexPath` and `mappings`, the returned `binding`, and explicit
+`acceptedTargets`. Only validated targets can be accepted; the binding itself is
+not authority. Analyze requires `read`; apply also requires `edit`, with the tool's
+own name active. Current grants/cancellation, package revisions, physical checkout/
+Git-directory identities and captured local branch tips are rechecked. A stale
+proposal requires fresh analysis, never automatic rebinding.
+
+Apply changes only selected metadata fences, preserving outside-fence bytes,
+prose, stable IDs and unselected references. It validates the combined projected
+package before the first save, then uses ordinary per-file revision-checked saves.
+This is **not a transaction**: results distinguish completed files/revisions,
+not-written failures, attempted-but-unknown outcomes and unattempted files. Stop
+on partial/uncertain results, reread, and analyze anew. Never replay a possibly
+completed save or roll back over newer changes. Use **Reload guide** after saving.
+
+Bounds are intentionally conservative: at most 8 checkout mappings, 32 named
+targets total and 64 OID pairs per mapping; existing notebook limits still apply.
+Git analysis/application shares a 60-second, 2,048-process, 32-MiB aggregate output
+budget, with joined cancellation and per-read limits. Commit metadata is capped
+at 64 KiB/16 parents, complete commit inventories at 256 changed paths, and each
+blob at 1 MiB; text readers retain their line/type limits. Unsupported submodule
+objects cannot establish whole-commit equality. Bound exhaustion never counts as
+partial equality. Operations disable helpers/lazy fetch and write only selected
+chapter metadata. They execute no Git mutations or tests; reviewer history and
+browser recovery are neither read nor written. There is no CLI, automatic
+correspondence discovery or background repair.
 
 ### Contextual authoring example
 

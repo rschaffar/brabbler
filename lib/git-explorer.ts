@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 import { realpathSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
+// @ts-expect-error Native Node tests require the .ts suffix.
+import { hasGitReadScope, scopedGitRead } from "./git-read-scope.ts";
 // @ts-expect-error Native Node tests require the .ts suffix; Next resolves it too.
 import { gitExecEnv } from "./git-exec.ts";
 // @ts-expect-error Native Node tests require the .ts suffix; Next resolves it too.
@@ -49,6 +51,7 @@ function requireOid(oid: string): string {
 
 async function git(cwd: string, args: string[], limit = MAX_META_BYTES): Promise<string> {
   try {
+    if (hasGitReadScope()) return (await scopedGitRead(cwd, args, limit)).toString("utf8");
     const { stdout } = await exec("git", ["-C", cwd, "--no-pager", ...args], {
       env: { ...gitExecEnv(), GIT_OPTIONAL_LOCKS: "0", GIT_NO_REPLACE_OBJECTS: "1", GIT_LITERAL_PATHSPECS: "1", GIT_PAGER: "cat",
         // Missing partial-clone objects must fail locally, never trigger a fetch.
@@ -174,6 +177,7 @@ export async function explorerLog(cwd: string, skip = 0, expectedHead?: string, 
 }
 
 async function commitFiles(cwd: string, oid: string, parents: string[]): Promise<ExplorerFile[]> {
+  requireOid(oid); parents.forEach(requireOid);
   const args = parents.length
     ? ["diff", "--name-status", ...GIT_RENAME_ARGS, "-z", parents[0], oid, "--"]
     : ["diff-tree", "--root", "--no-commit-id", "--name-status", "-r", ...GIT_RENAME_ARGS, "-z", oid, "--"];
@@ -262,11 +266,22 @@ export async function explorerPatch(cwd: string, head: string, oid: string, path
 /** Opaque incarnation binding, NOT a capability. The route independently authorizes cwd. */
 async function comparisonIdentity(cwd: string): Promise<string> {
   const dirs = await git(cwd, ["rev-parse", "--absolute-git-dir", "--path-format=absolute", "--git-common-dir"]);
-  const entries = [cwd, ...dirs.trimEnd().split("\n")].map(directory => {
-    const physical = realpathSync(toNativePath(directory)), stat = statSync(physical);
-    return [physical, stat.dev, stat.ino];
+  const paths = dirs.trimEnd().split("\n");
+  if (paths.length !== 2) throw new GitExplorerError("UNAVAILABLE", "Invalid repository directories");
+  const entries = [cwd, ...paths].map(directory => {
+    const physical = realpathSync(toNativePath(directory)), stat = statSync(physical, { bigint: true });
+    if (!stat.isDirectory()) throw new GitExplorerError("UNAVAILABLE", "Repository directory unavailable");
+    return [physical, String(stat.dev), String(stat.ino)];
   });
   return createHash("sha256").update(JSON.stringify(entries)).digest("hex");
+}
+
+/** Internal authoring reads independently admit the checkout. These primitives
+ * grant no roots or reachability; routes continue using the guarded readers. */
+export { comparisonIdentity as explorerCheckoutIdentity, commitFiles as explorerObjectCommitFiles };
+export async function explorerBranchTip(cwd: string, branch: string, expectedHead?: string) {
+  await explorerCheckout(cwd);
+  return branchTip(cwd, branch, expectedHead);
 }
 
 async function comparisonGuard(cwd: string, head: string, base: string, candidate: string, branch: string, expectedIdentity?: string) {

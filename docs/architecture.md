@@ -145,6 +145,12 @@ lib/
   guided-review-assets.ts fixed local raster/PDF MIME/signature/byte admission policy
   guided-reader-state.ts activation-local target/step state and bounded exact per-file DiffReviewModel retention
   notebook-step-context.ts bounded explicit step/reference chat context, displayed-definition SHA-256
+  notebook-authoring.ts bounded outline/step reads and destination-bound synchronous step saves
+  notebook-authoring-extension.ts direct native inspect/update/reference tools with live grant checks
+  notebook-tool-policy.ts removal-only read/edit projection for ordinary/child/saved tool selections
+  notebook-reference-refresh.ts explicit-map proposals, combined preflight and per-file metadata writes
+  notebook-reference-git.ts immutable excerpt/first-parent/endpoint/complete-inventory evidence axes
+  git-read-scope.ts    opt-in aggregate read budgets, helper suppression and joined cancellation
   review-handoff.ts    current existing-session composer contract; no session start/send API
   git-graph-layout.ts   adapted MIT active-lane graph layout (see git-graph-layout.LICENSE)
 

@@ -97,14 +97,15 @@ On mobile, New closes covering Activity/Starred/Git overviews and reveals chat i
 
 `lib/draft-store.ts` keeps text and image drafts in page memory and mirrors **text only** to per-draft versioned browser `localStorage` keys after edits. Reload/browser restart can restore literal unsent text for that session in the same browser profile/origin. Rekey, clear-on-send and rejected-submission restoration update storage too. Images remain memory-only. Storage corruption, privacy restrictions or quota failures fall back to in-page drafts; persistence is best-effort, not a server save or cross-device synchronization. Other open tabs are independent editors, not live-synchronized drafts; their last successful stored edit is what a new page can restore. Failed writes/removes cannot resurrect old stored text within the current page. Passive welcome drafts keep their existing project parking lifecycle.
 
-Guided-review batches use the existing selected chat only. FileWorkspace scopes
-its optional handoff callback to the visible active view; AppShell validates the
-preview's captured destination against its latest selected session and mounted
-composer. `insertText(text, {atEnd:true})` appends the exact delimited batch without
-replacing a cursor selection or changing attachments. It rejects an absent textarea.
-Other insertion callers retain their cursor semantics. Preparing/drafting does not
-create a session, start an agent, submit text or approve tests/fixes/Git. Normal Send
-is a second action; the notebook persists Prepared/Drafted, not a sent receipt.
+Notebook **Ask about this step** uses the existing selected chat only. FileWorkspace
+scopes its optional handoff callback to the visible active view; AppShell validates
+the preview's captured destination against its latest selected session and mounted
+composer. `insertText(text, {atEnd:true})` appends bounded step/reference context
+without replacing a cursor selection or changing attachments. It rejects an absent
+textarea. Other insertion callers retain their cursor semantics. Handoff never
+creates a session, starts an agent, submits text or approves edits/tests/Git. Normal
+Send is a second action; there is no saved notebook batch or Prepared/Drafted state.
+The displayed-definition digest identifies context, not authority or currentness.
 
 ### Fresh composer and quote focus
 
@@ -318,7 +319,7 @@ Adapted from cached upstream `c5555cd8`, `fa0f1c6a`, `00156d5b`, `341ada57`, `d9
 
 `ext:` names resolve against loaded filename/parent/package aliases, including scoped and pinned npm sources. Extension names are case-insensitive; tool suffixes remain exact-case. Resolve the longest name before rejecting ambiguous grants; denials resolve across all claimants, so an ambiguous alias can narrow `ext:*` but never grant unrelated tools. Trailing `/` and `/*` mean the whole extension. Preserve authored grants and denials until spawn-time resolution, including deny-only and fully-denied profiles; do not turn an emptied allowlist into the legacy all-extension fallback. Saving preserves uppercase selectors and distinct tool suffixes such as `Search`/`search`.
 
-Native notebook authoring is a hidden inline extension, not an optional Git plugin or MCP/Code-mode resource. Ordinary non-chat-only sessions install it; children install it only with their existing extension switch. `filterNotebookTools` only removes names: inspect requires `read`, update requires both `read` and `edit`. Apply it after ordinary/child tool composition and pinned tree restoration; saved child allowlists never gain missing names. Extension startup/pre-turn hooks prune direct-SDK/reload sets, and every operation checks its own live active name, required capabilities, cancellation and retirement before/after asynchronous preparation and before effects. Malformed/legacy child metadata must not acquire new notebook tools through ordinary-session fallback. See [native notebook operations](review-notebooks.md#native-inspect-and-step-update).
+Native notebook authoring is a hidden inline extension, not an optional Git plugin or MCP/Code-mode resource. Ordinary non-chat-only sessions install it; children install it only with their existing extension switch. `filterNotebookTools` only removes names: inspect/reference analysis require `read`, step update/reference application require both `read` and `edit`. The combined reference tool stays advertised to read-only sessions for analysis; its apply mode independently refuses without live `edit`. Apply it after ordinary/child tool composition and pinned tree restoration; saved child allowlists never gain missing names. Extension startup/pre-turn hooks prune direct-SDK/reload sets, and every operation checks its own live active name, required capabilities, cancellation and retirement before/after asynchronous preparation and before effects. Malformed/legacy child metadata must not acquire new notebook tools through ordinary-session fallback. See [native notebook operations](review-notebooks.md#native-inspect-and-step-update).
 
 Extension additions cannot reintroduce built-in profile-denied names (including PowerShell before shell mapping) or reserved subagent control tools. These name-selection rules do not sandbox extension code or uninstall replacement implementations. Ordinary-session sanitized Bash remains registered with `defaultActive: false`, so native `defaultTools`, explicit presets and reload—not extension registration—own activation. Native SDK regressions cover Bash-free startup/reload and explicit positive controls.
 

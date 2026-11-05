@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 // @ts-expect-error Native Node tests require the .ts suffix.
+import { hasGitReadScope, scopedGitRead } from "./git-read-scope.ts";
+// @ts-expect-error Native Node tests require the .ts suffix.
 import { gitExecEnv } from "./git-exec.ts";
 // @ts-expect-error Native Node tests require the .ts suffix.
 import { DiffContextError, MAX_DIFF_FILE_BYTES, MAX_DIFF_CONTEXT_LINES, countDiffTextLines, type DiffContext, type DiffFileContents } from "./diff-context.ts";
@@ -8,6 +10,9 @@ export { DiffContextError };
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 async function git(cwd: string, args: string[], limit = 64 * 1024, signal?: AbortSignal): Promise<Buffer> {
   signal?.throwIfAborted();
+  // Scoped authoring owns its diagnostics/budget; do not erase a joined native
+  // failure before it can be distinguished from missing evidence.
+  if (hasGitReadScope()) return scopedGitRead(cwd, args, limit, signal);
   try {
     // execFile's abort callback can precede child/pipe close. Wait for both the
     // bounded result and close, so callers never settle while an owned read runs.
