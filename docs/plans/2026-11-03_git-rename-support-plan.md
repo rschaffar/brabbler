@@ -187,7 +187,9 @@ Run focused files individually with `nix run .#test -- core --file <path>`, usin
 - `components/GitPatchStack.test.mjs`, `components/OperationReviewAttachment.test.mjs`,
   `components/ReviewAttachment.pagination.test.mjs`, `components/CommittedPatchDiff.test.mjs`,
   `components/GuidedReviewReader.diff.test.mjs`, `lib/notebook-review-store.test.mjs`
-  and affected existing route owners identified by the final diff.
+  and affected existing route owners identified by the final diff;
+- `lib/plugins/git-operation-review-migration.test.mjs` for the offline tool's
+  frozen transitive helper-identity and private source-copy checks.
 
 Focused browser: `nix run .#test -- e2e --group diff-context` and
 `nix run .#test -- e2e --group git-plugin`; use `markdown` if the guided reader changes.
@@ -245,8 +247,13 @@ passes native tests. A real oversized immutable tree proves native `E2BIG` refus
 before download headers while overview and the whole download remain available;
 no mocked subprocess or new operation-size ceiling is used. The mounted notebook
 commit-stop bridge and both installed-browser groups pass (including mobile).
-Focused checks cover the thirteen named core owners across corrected runs. Full
-acceptance remains required; source review alone is not execution evidence.
+Focused checks cover the original thirteen named core owners across corrected runs.
+Full acceptance identified one additional compatibility dependency: the offline
+converter's explicit frozen helper closure must include `lib/git-rename.ts`, now
+imported by its existing reader. Only that list is extended; conversion policy,
+state, formats and the separate migration workstream remain unchanged. Its existing
+closure/private-copy checks are the focused regression owner. Full acceptance
+remains required; source review alone is not execution evidence.
 
 ## Rollback / Recovery
 
