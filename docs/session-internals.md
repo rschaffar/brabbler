@@ -113,6 +113,10 @@ Markdown fences and Mermaid Source share the existing PrismLight renderer. Gramm
 
 Expanded thinking uses newline-aware 8,000-character pieces, hard-cut at about 16,000 without splitting surrogate pairs or losing blank lines. Ordinary answer copying is unchanged; native selection across hard-cut block boundaries may introduce line breaks. Stored/provider thinking is not rewritten. Individual pieces are not memoized, avoiding retained old sliced-string props. This bounds layout text nodes, not total loaded thinking or a measured RSS/time speedup.
 
+Deferred-history thinking shares a page-local LRU with at most 100 entries, an 8 MiB estimated UTF-16 key/text payload budget and a 1 MiB per-entry budget. Oversized results remain fully readable while open but are not cached. Collapsing releases the component's loaded body; reopening reuses the bounded cache or reads again. Eviction neither cancels shared reads nor limits admitted HTTP work, and late evicted success/failure cannot replace/remove a newer same-key entry. These payload bounds are not a browser-heap limit; expanded bodies and live transcript thinking have separate ownership.
+
+`MessageView` projects tool results to the message's own call IDs before its memoized child boundary. An unchanged child cannot retain an obsolete whole-transcript result map, and duration derivation visits only its own calls. Minimap dragging releases window listeners on replacement, mouse-up, blur, hiding and unmount, not only a successful mouse-up. Neither change evicts history or promises a measured whole-tab memory reduction.
+
 `lib/message-signatures.ts` removes only block-level `thinkingSignature`, `textSignature` and `thoughtSignature` from copy-on-write assistant display projections: history, navigation trees, SSE start/end/toolcall-end and reconnect snapshots. Tool arguments and user/custom data are not recursively filtered. Original SDK/provider state and persisted replay entries remain unchanged.
 
 ### SSE reconnect on page refresh mid-stream

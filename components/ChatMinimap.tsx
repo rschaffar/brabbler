@@ -569,7 +569,12 @@ export const ChatMinimap = memo(function ChatMinimap({
 
   useEffect(() => () => cancelPreviewHide(), [cancelPreviewHide]);
 
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+  // A drag can end without mouseup here: navigation/unmount, hiding, or blur.
+  useEffect(() => () => dragCleanupRef.current?.(), [visible]);
+
   const handleMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    dragCleanupRef.current?.();
     if (!visible) return;
 
     draggingRef.current = true;
@@ -594,9 +599,13 @@ export const ChatMinimap = memo(function ChatMinimap({
       draggingRef.current = false;
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
+      if (dragCleanupRef.current === onUp) dragCleanupRef.current = null;
     };
+    dragCleanupRef.current = onUp;
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
   }, [findNearestNode, scrollToNode, showPreview, visible]);
 
   const nearestNode = mouseYRatio === null ? null : findNearestNode(mouseYRatio);

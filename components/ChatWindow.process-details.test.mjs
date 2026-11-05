@@ -415,29 +415,40 @@ test('actual ChatWindow reads all three original deferred thinking bodies throug
     assert.deepEqual(buttons.map(node => node.getAttribute('aria-expanded')), ['false', 'false', 'false']);
     for (const button of buttons) await click(view, button);
     assert.equal(ports.length, 3, 'three original deferred GET admissions');
-    assert.equal(firstObserver.length, 3, 'three original full effect-tail observations');
+    const byBlock = (rows, expected) => rows.filter(row => row.sessionId === 'e2e-rich-session'
+      && row.entryId === expected.entryId && row.blockIndex === Number(expected.blockIndex));
+    const firstByBlock = richThinkingReads.map(expected => byBlock(firstObserver, expected));
+    // Expansion now mounts the body owner. Strict replay adds an independently
+    // owned effect tail, never a second HTTP/JSON read for the same block.
+    assert.equal(firstObserver.length, 6, 'three body mounts with Strict effect replay');
     for (let index = 0; index < 3; index++) {
-      const port = ports[index], observed = firstObserver[index], expected = richThinkingReads[index];
+      const port = ports[index], observations = firstByBlock[index];
       assert.equal(port.request.jsonCalls, 1, 'each original JSON body is actually entered');
-      assert.deepEqual([observed.sessionId, observed.entryId, observed.blockIndex], ['e2e-rich-session', expected.entryId, Number(expected.blockIndex)]);
-      assert.equal(observed.request === port.request.fetchWork, false, 'cached loader promise is not a fetch acknowledgement');
-      assert.equal(observed.tail === observed.request, false, 'full effect tail is separately owned');
-      assert.equal(originals.get(observed.request).settled, false, 'full request remains pending on original JSON');
-      assert.equal(originals.get(observed.tail).settled, false, 'effect tail remains pending on original JSON');
+      assert.equal(observations.length, 2, 'both Strict tails are bound to the original block identity');
+      assert.equal(new Set(observations.map(row => row.request)).size, 1, 'one shared original loader request per block');
+      assert.equal(new Set(observations.map(row => row.tail)).size, 2, 'every actual effect tail independently owned');
+      for (const observed of observations) {
+        assert.equal(observed.request === port.request.fetchWork, false, 'cached loader promise is not a fetch acknowledgement');
+        assert.equal(observed.tail === observed.request, false, 'full effect tail is separately owned');
+        assert.equal(originals.get(observed.request).settled, false, 'full request remains pending on original JSON');
+        assert.equal(originals.get(observed.tail).settled, false, 'effect tail remains pending on original JSON');
+      }
     }
     // Cancel one old effect while its real JSON is held. A callback-only change
     // must neither re-run the effect nor retain the old observer in memo props.
     await click(view, buttons[0]);
     props = { ...props, workObserver: observer(currentObserver) };
     await view.rerender(element());
-    assert.equal(firstObserver.length, 3);
+    assert.equal(firstObserver.length, 6);
     assert.equal(currentObserver.length, 0, 'observer replacement is not an effect dependency');
     await click(view, buttons[0]);
     assert.equal(ports.length, 3, 'three deferred GETs after cache re-expansion');
-    assert.equal(firstObserver.length, 3, 'obsolete observer receives no current effect');
-    assert.equal(currentObserver.length, 1, 'latest observer receives the current effect');
-    assert.equal(currentObserver[0].request === firstObserver[0].request, true, 'SAME original cached request across cancellation');
-    assert.equal(currentObserver[0].tail === firstObserver[0].tail, false, 'distinct original effect tails across cancellation');
+    assert.equal(firstObserver.length, 6, 'obsolete observer receives no current effect');
+    assert.equal(currentObserver.length, 2, 'latest observer receives both new body effect tails');
+    for (const observed of currentObserver) {
+      assert.equal(observed.request === firstByBlock[0][0].request, true, 'SAME original cached request across cancellation');
+      assert.equal(firstObserver.some(old => old.tail === observed.tail), false, 'distinct original effect tails across cancellation');
+    }
     await act(async () => {
       releaseBodies(); // ALL known original bodies before ANY original joins.
       await joinOriginals();
@@ -445,12 +456,13 @@ test('actual ChatWindow reads all three original deferred thinking bodies throug
     for (let index = 0; index < 3; index++) {
       assert.equal(buttons[index].nextElementSibling?.textContent, richThinkingReads[index].body.thinking,
         `full original thinking text ${richThinkingReads[index].entryId}:${richThinkingReads[index].blockIndex}`);
-      assert.equal(originals.get(firstObserver[index].request).value, richThinkingReads[index].body.thinking);
+      assert.equal(originals.get(firstByBlock[index][0].request).value, richThinkingReads[index].body.thinking);
       assert.equal(originals.get(ports[index].request.body.promise).value === richThinkingReads[index].body, true, 'same complete original JSON body value');
       assert.equal(ports[index].request.jsonCalls, 1);
     }
-    assert.equal(originals.get(firstObserver[0].tail).settled, true, 'cancelled original effect tail is joined, not abandoned');
-    assert.equal(originals.get(currentObserver[0].tail).settled, true, 'current original effect tail is joined');
+    for (const observed of [...firstObserver, ...currentObserver]) {
+      assert.equal(originals.get(observed.tail).settled, true, 'every cancelled, replayed and current effect tail is joined');
+    }
     const processText = process.parentElement.textContent;
     const ordered = ['E2E intermediate reasoning', 'echo E2E tool output', 'E2E follow-up reasoning', 'E2E process note', 'E2E final reasoning'];
     for (const text of ordered) assert.equal(processText.indexOf(text) >= 0, true, `original process contains ${text}`);
@@ -464,10 +476,15 @@ test('actual ChatWindow reads all three original deferred thinking bodies throug
     const reopened = fullThinkingButtons(view), previousCount = currentObserver.length;
     for (const button of reopened) await click(view, button);
     assert.equal(ports.length, 3, 'three deferred GETs after Process remount');
-    assert.equal(currentObserver.length, previousCount + 3);
+    assert.equal(currentObserver.length, previousCount + 6);
     await act(joinOriginals);
     for (let index = 0; index < 3; index++) {
-      assert.equal(currentObserver[previousCount + index].request === firstObserver[index].request, true, 'SAME cached original request after Process remount');
+      const observations = byBlock(currentObserver.slice(previousCount), richThinkingReads[index]);
+      assert.equal(observations.length, 2);
+      for (const observed of observations) {
+        assert.equal(observed.request === firstByBlock[index][0].request, true, 'SAME cached original request after Process remount');
+        assert.equal(originals.get(observed.tail).settled, true, 'remounted Strict tails joined');
+      }
       assert.equal(reopened[index].nextElementSibling?.textContent, richThinkingReads[index].body.thinking, 'cached full original thinking text after remount');
     }
     assert.equal(f.http.requests.length, 3, 'only the exact three current original GETs');
