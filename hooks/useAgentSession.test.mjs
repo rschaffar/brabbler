@@ -305,7 +305,7 @@ test("suppresses sounds and browser attention for the active subagent session", 
   match(chatWindowSource, /wrappedOnAgentEnd = useChatCompletionNotification\(session, soundEnabled, playDoneSound, onAgentEnd\)/, "default ChatWindow calls actual completion adapter");
   match(chatWindowSource, /useAgentSession\(\{ \.\.\.props, onAgentEnd: wrappedOnAgentEnd,/, "real hook uses returned completion callback");
   match(chatWindowSource, /!completionNotificationsEnabled[\s\S]*?!extensionDialog/);
-  match(completionSource, /selectedSession\?\.relation\?\.kind === "subagent"\) return/, "useShellNotifications completion family filter");
+  match(completionSource, /selectedSession\?\.relation\?\.kind === "subagent" \|\| selectedSession\?\.relation\?\.kind === "btw"\) return/, "useShellNotifications completion family filter");
   match(attentionSource, /selectedSession\?\.relation\?\.kind === "subagent"\) return/, "useShellNotifications attention family filter");
   match(appShellSource, /import \{ useShellNotifications \} from "\.\/useShellNotifications"/, "AppShell imports actual notification owner");
   match(appShellSource, /const \{ handleAgentEnd, handleAttentionNeeded \} = useShellNotifications\(\{\s*selectedSession, handleSelectSession, locale, handleSessionSettled,/, "AppShell receives actual selected-session notification callbacks");

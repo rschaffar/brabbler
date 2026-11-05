@@ -982,7 +982,7 @@ let nativeToolsFixture;
       await first.scrollIntoViewIfNeeded();
       await first.getByRole("checkbox").check();
       await page.getByRole("button", { name: "Delete", exact: true }).click();
-      await page.getByText("Permanently delete selected sessions (1) and their subagents? Forks will remain.").waitFor();
+      await page.getByText("Permanently delete selected sessions (1), their subagents and BTW conversations? Forks will remain.").waitFor();
       assert.ok((await api("/api/sessions?force=1")).sessions.some((s) => s.id === ids[0]), "Delete requires confirmation");
       await page.getByRole("button", { name: "Delete", exact: true }).last().click();
       await first.waitFor({ state: "detached" });
