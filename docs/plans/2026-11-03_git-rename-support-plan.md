@@ -10,7 +10,8 @@ diff renderer rather than inventing a rename detector.
 
 **Status / authority:** Implementation authorized by the user after independent
 plan review; work continues in the same feature worktree. Native pairing proof
-and implementation are complete; focused checks pass and full acceptance is pending. Verification is required before exact-state local integration;
+and implementation are complete. Full acceptance passed on the rebased candidate
+recorded below. Local integration uses separate exact-state native approval;
 deployment, publication and cleanup remain separately gated.
 
 ## Context
@@ -171,7 +172,7 @@ path/version/mode equality. This follow-up replaces the current delete/add
 - [x] Update maintained guides with presentation policy, limit and saved-review
   behavior. Independently review the settled implementation for paired-path
   authorization, selected/full consistency and accidental scope growth.
-- [ ] Run focused checks while editing, then complete the repository's acceptance
+- [x] Run focused checks while editing, then complete the repository's acceptance
   matrix once source/review fixes settle. Record exact candidate/source identity,
   commands, results, artifact paths, requested/effective widths and end-to-end versus
   preparation/execution time. Do not use the host service or an in-checkout build.
@@ -252,8 +253,34 @@ Full acceptance identified one additional compatibility dependency: the offline
 converter's explicit frozen helper closure must include `lib/git-rename.ts`, now
 imported by its existing reader. Only that list is extended; conversion policy,
 state, formats and the separate migration workstream remain unchanged. Its existing
-closure/private-copy checks are the focused regression owner. Full acceptance
-remains required; source review alone is not execution evidence.
+closure/private-copy checks are the focused regression owner and pass all 34 tests.
+
+### Settled acceptance
+
+- Candidate: `2d17b1a223a19a96eaf17d5ca4ef4f686f15b5c0`, rebased onto local main
+  `5dfe19eecb0e05cd1e8d2229c1184acde174517b`; range-diff confirmed all feature patches
+  unchanged. This status-only follow-up does not change application/test inputs.
+- `nix run .#test -- all --workers 4 --jobs 12` passed: **525 core files / 4,471
+  tests / 14 suites**, **26 browser/terminal groups / 58 receipts**, and the genuine
+  Home Manager deployment VM. No skipped/cancelled core cases. Requested/effective
+  core width was 12; browser width 4, with overlap admitted at 32 CPUs and sufficient
+  available memory.
+- Source export SHA256:
+  `40652de7d397342416f6b7bfe7119d55dc39313fdf0ff23eef3e56c03e46cfd3`.
+  Core artifact: `/nix/store/4gd1f07j5dwcmr5s7bj0l0fc81yhds6c-brabbler-core-checks`.
+  Full selection, level reports, logs and original failures are retained in the
+  private task evidence; no live state or private transcript is checked in.
+- End-to-end command: **440s**. Core pre-lifecycle realization **33.842s**, core
+  lifecycle **372.901s** (native test interval **371.693s**); browser preparation
+  **106.955s**, group execution interval **270.053s**; deployment outer interval
+  **57.533s**, VM driver test **20.65s**. Intervals overlap and are not additive.
+  Earlier focused runs warmed dependencies; the rebase required fresh application
+  realization. These are not cold-cache or warm-benchmark promises.
+- The earlier full run failed on the missing helper identity; the one-entry fix
+  was verified before this run. An intervening realization was deliberately stopped
+  for another task's concurrent 12-worker run; that evidence is not acceptance.
+  No deadline inflation, error suppression, pool promotion or automatic unchanged
+  failure retry was used.
 
 ## Rollback / Recovery
 
@@ -272,12 +299,14 @@ remain separately gated operations.
 - [x] Planning-only handoff prepared; no application code or tests changed.
 - [x] User greenlights implementation in this worktree.
 
-### Implementation (verification in progress)
+### Implementation (verified; native integration handoff)
 
 - [x] Explorer and operation review inventories, patches, contexts and labels agree
   on pure/edited renames, with paired-path isolation and regression evidence;
   authored endpoint-tree comparison semantics remain unchanged.
 - [x] Existing saved metadata/outcomes/relations and operation safeguards remain intact.
-- [ ] Maintained guides, independent implementation review and complete Nix acceptance pass.
-- [ ] Exact-state local integration is separately approved; no deployment, publication
-  or feature-resource cleanup is implied by this plan's completion.
+- [x] Maintained guides, independent implementation review and complete Nix acceptance pass.
+
+Exact-state local integration is governed by its separate native approval/receipt;
+no deployment, publication or feature-resource cleanup is implied by this plan's
+completion.
