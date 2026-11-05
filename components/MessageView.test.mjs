@@ -99,8 +99,52 @@ test("preserves the existing user message timestamp", () => {
 
 test("updates a reused message when its written files change", () => {
   const props = { message: { role: "assistant", content: [] } };
-  assert.equal(MessageView.compare(props, props), true);
-  assert.equal(MessageView.compare(props, { ...props, writtenFiles: [{ path: "/tmp/result.txt" }] }), false);
+  const { compare } = MessageView(props).type;
+  assert.equal(compare(props, props), true);
+  assert.equal(compare(props, { ...props, writtenFiles: [{ path: "/tmp/result.txt" }] }), false);
+});
+
+test("projects only a message's own results before the memoized boundary", () => {
+  const results = new Map(Array.from({ length: 2000 }, (_, i) => [String(i), {
+    role: 'toolResult', toolCallId: String(i), content: [{ type: 'text', text: `result ${i}` }],
+  }]));
+  let retainedEntries = 0;
+  for (let i = 0; i < results.size; i++) {
+    const message = { role: 'assistant', content: [{ type: 'toolCall', toolCallId: String(i), toolName: 'read', input: {} }] };
+    // This outer adapter is a pure element projection, not a fake hook mount.
+    const projected = MessageView({ message, toolResults: results });
+    assert.equal(projected.props.toolResults === results, false, 'memoized child cannot retain transcript map');
+    assert.equal(projected.props.toolResults.size, 1, 'one relevant result per child');
+    assert.equal(projected.props.toolResults.get(String(i)) === results.get(String(i)), true, 'no payload copy');
+    retainedEntries += projected.props.toolResults.size;
+  }
+  assert.equal(retainedEntries, 2000, 'linear retained result references across all children');
+  for (const message of [{ role: 'user', content: 'hello' }, { role: 'assistant', content: [{ type: 'text', text: 'done' }] }]) {
+    assert.equal(MessageView({ message, toolResults: results }).props.toolResults, undefined, 'non-tool message retains no result map');
+  }
+});
+
+test("message-local memoization still updates its own result but ignores unrelated changes", () => {
+  const message = { role: 'assistant', content: [{ type: 'toolCall', toolCallId: 'own', toolName: 'read', input: {} }] };
+  const result = { role: 'toolResult', toolCallId: 'own', content: [{ type: 'text', text: 'first' }] };
+  const source = new Map([['own', result]]);
+  const first = MessageView({ message, toolResults: source });
+  source.set('unrelated', { ...result, toolCallId: 'unrelated' });
+  const unrelated = MessageView({ message, toolResults: source });
+  assert.equal(first.type.compare(first.props, unrelated.props), true);
+  source.set('own', { ...result, content: [{ type: 'text', text: 'updated' }] });
+  const changed = MessageView({ message, toolResults: source });
+  assert.equal(first.type.compare(first.props, changed.props), false);
+  assert.equal(first.props.toolResults.get('own') === result, true, 'later source mutation cannot change retained projection');
+});
+
+test("does not scan unrelated tool results to render tool durations", () => {
+  class LookupOnlyResults extends Map {
+    [Symbol.iterator]() { assert.fail('whole-chat results must not be scanned by each message'); }
+  }
+  const message = { role: 'assistant', timestamp, content: [{ type: 'toolCall', toolCallId: 'own', toolName: 'read', input: { path: '/example.txt' } }] };
+  const results = new LookupOnlyResults([['own', { role: 'toolResult', toolCallId: 'own', timestamp: timestamp + 3000, content: [] }]]);
+  assert.match(renderMessage(message, { toolResults: results }), /3s/);
 });
 
 test("matches response model aliases and otherwise includes the provider", () => {

@@ -3,6 +3,7 @@
 import { NativeCallDetails } from "./NativeCallDetails";
 
 import { memo, useState, useRef, useEffect, useMemo } from "react";
+import { createThinkingContentCache } from "@/lib/thinking-content-cache";
 import ReactMarkdown from "react-markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
@@ -91,8 +92,7 @@ function estimateUpdatedTokens(previous: TokenEstimateCacheEntry | undefined, te
   return baseTokens + estimateTokens(text.slice(suffixStart));
 }
 
-const MAX_THINKING_CACHE_ENTRIES = 100;
-const thinkingContentCache = new Map<string, Promise<string>>();
+const thinkingContentCache = createThinkingContentCache();
 
 // Messages larger than this skip markdown rendering entirely. react-markdown +
 // KaTeX + syntax highlighting on multi-hundred-KB payloads (e.g. pasted HAR or
@@ -162,31 +162,14 @@ const USER_BUBBLE_MAX_HEIGHT = 300;
 
 function loadThinkingContent(sessionId: string, entryId: string, blockIndex: number): Promise<string> {
   const key = `${sessionId}:${entryId}:${blockIndex}`;
-  const cached = thinkingContentCache.get(key);
-  if (cached) {
-    thinkingContentCache.delete(key);
-    thinkingContentCache.set(key, cached);
-    return cached;
-  }
-
-  const request = fetch(
+  return thinkingContentCache(key, () => fetch(
     `/api/sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/thinking?blockIndex=${blockIndex}`,
   ).then(async (response) => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json() as { thinking?: unknown };
     if (typeof data.thinking !== "string") throw new Error("Invalid thinking response");
     return data.thinking;
-  }).catch((error) => {
-    thinkingContentCache.delete(key);
-    throw error;
-  });
-
-  thinkingContentCache.set(key, request);
-  if (thinkingContentCache.size > MAX_THINKING_CACHE_ENTRIES) {
-    const oldestKey = thinkingContentCache.keys().next().value;
-    if (oldestKey) thinkingContentCache.delete(oldestKey);
-  }
-  return request;
+  }));
 }
 
 export interface ThinkingWorkObservation {
@@ -294,7 +277,22 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onNavigate, onEditContent, showTimestamp = true, prevTimestamp, sessionId, writtenFiles, onThinkingWork, onCopyWork }: Props) {
+/** Project before the memo boundary. A bailed-out child may retain its old props
+ * indefinitely; those must never include an obsolete whole-transcript map. The
+ * small outer adapter always receives the current parent props. */
+export function MessageView(props: Props) {
+  let toolResults: Map<string, ToolResultMessage> | undefined;
+  if (props.message.role === "assistant" && props.toolResults) {
+    for (const block of props.message.content ?? []) {
+      if (block.type !== "toolCall") continue;
+      const result = props.toolResults.get(block.toolCallId);
+      if (result) (toolResults ??= new Map()).set(block.toolCallId, result);
+    }
+  }
+  return <MemoizedMessageView {...props} toolResults={toolResults} />;
+}
+
+const MemoizedMessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onNavigate, onEditContent, showTimestamp = true, prevTimestamp, sessionId, writtenFiles, onThinkingWork, onCopyWork }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} sessionId={sessionId} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} onEditContent={onEditContent} />;
   }
@@ -714,14 +712,16 @@ function AssistantMessageView({
   const toolCallDurations = useMemo<Map<string, number>>(() => {
     const map = new Map<string, number>();
     if (!toolResults || !message.timestamp) return map;
-    for (const [callId, result] of toolResults) {
-      if (result.timestamp && message.timestamp) {
+    for (const block of message.content) {
+      if (block.type !== "toolCall") continue;
+      const result = toolResults.get(block.toolCallId);
+      if (result?.timestamp) {
         const secs = Math.round((result.timestamp - message.timestamp) / 1000);
-        if (secs > 0) map.set(callId, secs);
+        if (secs > 0) map.set(block.toolCallId, secs);
       }
     }
     return map;
-  }, [toolResults, message.timestamp]);
+  }, [toolResults, message.content, message.timestamp]);
 
   const textContent = blocks
     .filter((b): b is TextContent => b.type === "text")
@@ -965,16 +965,19 @@ function ThinkingText({ text }: { text: string }) {
   return pieces.length === 1 ? text : pieces.map((piece, index) => <div key={index}>{piece.text}</div>);
 }
 
-export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex, onThinkingWork }: {
+interface ThinkingBlockProps {
   block: ThinkingContent;
   duration?: number;
   sessionId?: string;
   entryId?: string;
   blockIndex: number;
   onThinkingWork?: (observation: ThinkingWorkObservation) => void;
-}) {
+}
+
+/** Unmount the stateful body on collapse, including its prior React state.
+ * Only the bounded shared cache owns reuse after this reader disappears. */
+function ExpandedThinking({ block, sessionId, entryId, blockIndex, onThinkingWork }: ThinkingBlockProps) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(isThinkingExpandedByDefault);
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -982,21 +985,11 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex,
   tRef.current = t;
   const thinkingWorkRef = useRef(onThinkingWork);
   thinkingWorkRef.current = onThinkingWork;
-  const preview = getThinkingPreview(block.thinking);
 
-  // Keep already-mounted blocks in sync when the preference changes.
+  // Shared in-flight/small settled reads survive this reader; failures and
+  // oversized bodies can be fetched again on the next explicit expansion.
   useEffect(() => {
-    const onChange = () => setExpanded(isThinkingExpandedByDefault());
-    window.addEventListener(THINKING_EXPANDED_EVENT, onChange);
-    return () => window.removeEventListener(THINKING_EXPANDED_EVENT, onChange);
-  }, []);
-
-  // Load deferred history content whenever the block is expanded.
-  // loadThinkingContent() memoizes in-flight promises and drops failed ones
-  // from its cache, so re-running this effect is cheap and a failed load can
-  // be retried by collapsing and expanding the block again.
-  useEffect(() => {
-    if (!expanded || !block.deferred || content !== null) return;
+    if (!block.deferred) return;
     if (!sessionId || !entryId) {
       setError(tRef.current("i18n.thinkingUnavailable"));
       return;
@@ -1023,7 +1016,22 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex,
     return () => {
       cancelled = true;
     };
-  }, [expanded, block.deferred, content, sessionId, entryId, blockIndex]);
+  }, [block.deferred, sessionId, entryId, blockIndex]);
+
+  return <div style={{ flex: 1, minWidth: 0, color: error ? "#f87171" : "var(--text-muted)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+    {loading ? t("i18n.loadingThinking") : error ?? <ThinkingText text={(block.deferred ? content : block.thinking) ?? ""} />}
+  </div>;
+}
+
+export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex, onThinkingWork }: ThinkingBlockProps) {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(isThinkingExpandedByDefault);
+  const preview = getThinkingPreview(block.thinking);
+  useEffect(() => {
+    const onChange = () => setExpanded(isThinkingExpandedByDefault());
+    window.addEventListener(THINKING_EXPANDED_EVENT, onChange);
+    return () => window.removeEventListener(THINKING_EXPANDED_EVENT, onChange);
+  }, []);
 
   return (
     <div style={{
@@ -1066,19 +1074,8 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex,
           </span>
         )}
       </button>
-      {expanded && (
-        <div
-          style={{
-            flex: 1,
-            minWidth: 0,
-            color: error ? "#f87171" : "var(--text-muted)",
-            whiteSpace: "pre-wrap",
-            overflowWrap: "anywhere",
-          }}
-        >
-           {loading ? t("i18n.loadingThinking") : error ?? <ThinkingText text={(block.deferred ? content : block.thinking) ?? ""} />}
-        </div>
-      )}
+      {expanded && <ExpandedThinking key={block.deferred ? `${sessionId}:${entryId}:${blockIndex}` : "inline"}
+        block={block} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} onThinkingWork={onThinkingWork} />}
       {duration !== undefined && (
         <span style={{ flexShrink: 0, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
       )}
