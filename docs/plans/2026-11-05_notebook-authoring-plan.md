@@ -1,9 +1,9 @@
 # Guided reading and native notebook authoring
 
-**Status:** P0–P3 complete with independent checkpoint reviews and focused
-verification. Reader simplification, native inspect/update and explicit reference
-maintenance are implemented. Overall review, complete acceptance and integration
-remain P4 work. Implementation remains authorized.
+**Status:** Ready for exact-state local integration approval. P0–P3 checkpoint
+reviews, P4 overall review and complete Nix acceptance are finished. Reader
+simplification, native inspect/update and explicit reference maintenance are
+implemented. Local merge remains pending; no deployment or publication is implied.
 **Workspace:** `feat/notebook-authoring`, originally based on local `main` at
 `14d60757535e0ed78ff3753fda1372b0e4c47bbb`, subsequently rebased onto
 `b5696cd4cfb935b9bdc3f8d7918bbd41da419286` with approved conflict resolutions.
@@ -340,12 +340,12 @@ P3 checkpoint evidence (2026-11-05, x86_64-linux ordinary Nix sandboxes):
 
 ### P4 — Delivery and acceptance
 
-- [ ] Update `docs/review-notebooks.md`, feature/session contracts and authoring tool
+- [x] Update `docs/review-notebooks.md`, feature/session contracts and authoring tool
   descriptions; keep ADRs durable and remove obsolete current-behavior instructions.
-- [ ] Obtain independent implementation review of the settled candidate, address
+- [x] Obtain independent implementation review of the settled candidate, address
   concrete findings, and register every added/removed test in live classification
   with its isolation rationale. Review package/source inputs and public-safe diff.
-- [ ] Run complete Nix acceptance on the settled candidate: core/static/plugin,
+- [x] Run complete Nix acceptance on the settled candidate: core/static/plugin,
   every browser/terminal group and genuine Home Manager VM. Normally use
   `nix run .#test -- all --workers 4 --jobs 12` after resource admission; record
   actual command/input identities, requested/effective widths, results and timing
@@ -353,6 +353,46 @@ P3 checkpoint evidence (2026-11-05, x86_64-linux ordinary Nix sandboxes):
 - [ ] Rebase onto current local main, reassess verification, obtain exact-state
   integration approval and use the required non-FF merge. Resource cleanup remains
   independently gated; never publish or delete saved notebook data implicitly.
+
+P4 delivery evidence (2026-11-05):
+
+- Independent overall runtime/integration and delivery/coverage reviewers closed
+  their scopes at `df50af1d`. Complete acceptance then exposed one transitive
+  dependency omission: the offline Git-review converter's frozen helper identity
+  did not include the new shared Git read scope. The minimal addition was reviewed
+  independently and committed as `20bb6982e67024714a386a13504d6abd39bce82a`.
+  Original AST closure/private-copy assertions were unchanged; the focused bridge
+  passed **34/34**. Earlier migration rehearsal identities remain historical, not
+  upgraded by this correction. The failed full run and interrupted peers remain
+  retained; they are not acceptance evidence.
+- On `20bb6982`, `nix run --no-write-lock-file .#test -- all --workers 4 --jobs 12`
+  passed complete **530-file / 4,573-test / 14-suite** core/static/plugin coverage,
+  all **26 browser/terminal groups / 60 complete input chains**, and genuine
+  Home Manager deployment/HTTP persistence/restart/PTY/shutdown checks. No skipped
+  or cancelled core cases. Static evidence is input-bound, with eight existing
+  warnings. Source export:
+  `76533299bf211646203be161628373ff04578b65063c4bd78b76435465690ef0`.
+  Core artifact: `/nix/store/gacinaqzj2z5s6c0w2bi7x1b4ikb8bl1-brabbler-core-checks`.
+  Browser and deployment used the same installed package:
+  `/nix/store/ijx27g32xbza2nqcj663msryv9az3rsj-brabbler-0.1.0`.
+- Requested/effective widths were **12/12 core workers and 4/4 browser sandboxes**,
+  with admitted overlap on 32 available CPUs and approximately 48 GiB available
+  memory. Conservative E holds stayed exclusive. Whole command approximately
+  **450 s**, including realization. Core file window **443.888 s**, approximately
+  **6.3 s** before file execution. Browser support/manifest preparation
+  **4.278/6.115 s**, group-client window **321.894 s**. Deployment invocation
+  **67.685 s**, including realization, with **19.104 s** guest evidence execution.
+  Overlapping intervals are not additive. Dependencies/static/application outputs
+  were warmed by earlier recorded runs; this is not a cold-cache speed claim.
+- Realized package inspection confirms all seven new runtime owners are present,
+  all five new test files and migration tools are absent, and retired recording
+  owners are absent. Maintained-document destinations and public-safe diff checks
+  pass; filesystem link checks are not browser link verification. Exact manifests,
+  logs and failure evidence remain in private task storage.
+- Later evidence/status-only edits do not change application/test bytes or relabel
+  this run as newer execution. Local `main` remains the verified base `b5696cd4`;
+  final integration still needs exact-state approval and the ordinary unsigned
+  non-fast-forward merge. Feature resources and evidence are retained.
 
 ## Stop conditions and recovery
 
@@ -378,5 +418,6 @@ logs and raw reviewer/test evidence stay outside tracked files.
 - [x] Saved reviewer files/browser drafts remain untouched; recovery is documented.
 - [x] Native inspect/update/refresh tools work without browser state or widened grants.
 - [x] Reference updates are scoped, validated and explicit; ambiguity remains visible.
-- [ ] Required independent review and complete Nix acceptance pass at the candidate.
-- [ ] Maintained guides/ADR updated and public-safe; exact local integration handled.
+- [x] Required independent review and complete Nix acceptance pass at the candidate.
+- [x] Maintained guides/ADR updated and public-safe.
+- [ ] Exact local integration approved and completed; no publication or cleanup implied.
