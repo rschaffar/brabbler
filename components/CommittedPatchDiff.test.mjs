@@ -201,6 +201,23 @@ test('CommittedPatchDiff: actual SSR, CodeView bindings and controls', async t =
     assert.equal(captured.at(-1), null, 'late full-file body cannot restore a cleared selection');
   });
 
+  await run('renamed patch feedback cites the immutable filename on the selected side', async () => {
+    const patch = modified.replace('a/notes.txt b/notes.txt', 'a/old.txt b/new.txt')
+      .replace('index 4824a54', 'similarity index 80%\nrename from old.txt\nrename to new.txt\nindex 4824a54')
+      .replace('--- a/notes.txt', '--- a/old.txt').replace('+++ b/notes.txt', '+++ b/new.txt');
+    const model = createDiffReview(patch), captured = [], from = h.work.length;
+    const context = { oldFile: { name: 'old.txt', contents: 'First line\nOld text\n', cacheKey: 'rename:old' },
+      newFile: { name: 'new.txt', contents: 'First line\nNew text\n', cacheKey: 'rename:new' } };
+    await show({ patch, reviewModel: model, loadContext: async () => context, onReviewSelection: value => captured.push(value) });
+    await awaitReads(from); await h.frames.fire(h.frames.take());
+    for (const [side, path, quote] of [['deletions', 'old.txt', 'Old text'], ['additions', 'new.txt', 'New text']]) {
+      const start = h.work.length;
+      await act(async () => current().instance.setSelectedLines({ id: 'diff', range: { start: 2, end: 2, side } }));
+      await awaitReads(start);
+      assert.equal(captured.at(-1)?.path, path); assert.equal(captured.at(-1)?.quote, quote);
+    }
+  });
+
   for (const outcome of ['success', 'rejection']) await run(`obsolete selection context ${outcome}/abort never clears a newer target selection`, async st => {
     const gate = deferred(), entered = deferred(), selected = [], matching = { oldFile: { name: 'notes.txt', contents: 'First line\nOld text\n', cacheKey: 'old' }, newFile: { name: 'notes.txt', contents: 'First line\nNew text\n', cacheKey: 'new' } };
     st.after(() => gate.resolve(matching));

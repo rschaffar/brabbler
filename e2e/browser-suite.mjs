@@ -311,6 +311,11 @@ let nativeToolsFixture;
       writeFileSync(join(gitProject, "review-source.tsx"), '// Outside the excerpt\nexport const greeting = "<script>not executable</script>";\n\nexport const view = <a title="pinned">Hello</a>;\n/* Multiline\n   comment */\n');
       git("add", "review-source.tsx");
     }
+    if (group === "diff-context") {
+      writeFileSync(join(gitProject, "rename-edited.txt"), Array.from({ length: 30 }, (_, i) => `Rename context ${i}\n`).join(""));
+      writeFileSync(join(gitProject, "rename-pure.txt"), "Pure rename context\n");
+      git("add", "rename-edited.txt", "rename-pure.txt");
+    }
     git("add", "base.txt", "checks/fixture.txt", "z-context.txt", "draft.txt"); commit("base fixture");
     git("switch", "-c", "feature");
     writeFileSync(join(gitProject, "first.txt"), "First feature patch\n");
@@ -319,6 +324,12 @@ let nativeToolsFixture;
     writeFileSync(join(gitProject, "second.txt"), "Second feature patch\n");
     writeFileSync(join(gitProject, "base.txt"), "Revised base fixture\n");
     writeFileSync(join(gitProject, "z-context.txt"), changedContextContents);
+    if (group === "diff-context") {
+      git("mv", "rename-edited.txt", "y-renamed-edited.txt");
+      git("mv", "rename-pure.txt", "y-renamed-pure.txt");
+      writeFileSync(join(gitProject, "y-renamed-edited.txt"), Array.from({ length: 30 }, (_, i) => i === 15 ? "Rename actual edit\n" : `Rename context ${i}\n`).join(""));
+      git("add", "y-renamed-edited.txt");
+    }
     git("add", "second.txt", "base.txt", "z-context.txt"); commit("second feature");
     git("tag", "e2e-light");
     git("tag", "--no-sign", "-a", "e2e-annotated", "-m", "E2E annotated release");

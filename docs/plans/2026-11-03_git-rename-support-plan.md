@@ -8,9 +8,10 @@ operation approvals/receipts. Authored endpoint-tree comparisons are deferred.
 Pure renames remain visible even without hunks. Reuse native Git and the existing
 diff renderer rather than inventing a rename detector.
 
-**Status / authority:** Planning and independent plan review only. Implementation,
-acceptance execution, integration, deployment and cleanup are not authorized by
-this document. Await the user's greenlight; continue in the same feature worktree.
+**Status / authority:** Implementation authorized by the user after independent
+plan review; work continues in the same feature worktree. Native pairing proof
+and implementation are complete; focused checks pass and full acceptance is pending. Verification is required before exact-state local integration;
+deployment, publication and cleanup remain separately gated.
 
 ## Context
 
@@ -113,40 +114,40 @@ path/version/mode equality. This follow-up replaces the current delete/add
 
 ### P1 — Prove the pairing contract, then deliver Explorer
 
-- [ ] Add native fixtures to `lib/git-explorer.test.mjs` for pure and edited renames;
+- [x] Add native fixtures to `lib/git-explorer.test.mjs` for pure and edited renames;
   verify one `R` entry, both paths, metadata-only visibility and actual edit hunks.
-- [ ] Prove selected/full consistency early using real Git: ambiguous equal-content
+- [x] Prove selected/full consistency early using real Git: ambiguous equal-content
   candidates, original-path reuse, rename chains, and both `item → item/child` and
   reverse renames, with and without unrelated changed siblings. Extend the existing
   review-reader file/directory-transition owner. Compare normalized old/new paths,
   modes/OIDs and selected patch blocks. Stop if a small safe nested-path strategy
   is not established; do not proceed on sibling-path fixtures alone.
-- [ ] Add the minimal presentation policy/helpers and strict scored two-path
+- [x] Add the minimal presentation policy/helpers and strict scored two-path
   parsing; extend `ExplorerFile`, `commitFiles`, `explorerPatch` and
   `explorerFileContext`. Verify immutable before/after contents, root/first-parent
   behavior and refusal of unknown paths. Leave explicit comparison readers unchanged.
-- [ ] Pass original-path metadata through `GitCommitViewer` into the existing
+- [x] Pass original-path metadata through `GitCommitViewer` into the existing
   `GitPatchStack`; add the `Renamed` label. Notebook commit views inherit this
   composition; do not restructure `CompareEvidence`. Verify old → new names and
   pure/edited rendering using existing mounted component owners.
-- [ ] Make `CommittedPatchDiff` feedback selections side-aware (`prevName` on the
+- [x] Make `CommittedPatchDiff` feedback selections side-aware (`prevName` on the
   old side, `name` on the new side); verify both with its mounted selection owner.
   Preserve existing saved anchors without rewriting/rebasing reviewer records.
 
 ### P2 — Apply the same presentation to operation reviews
 
-- [ ] Split canonical equality enumeration from presentation enumeration in
+- [x] Split canonical equality enumeration from presentation enumeration in
   `plugins/git-workflow/review-reader.ts`; parse scored raw rename records and keep
   old/new modes and OIDs. Extend generated `GitReviewFile` / `ReviewPage` with
   `previousPath`; validate complete framing and object availability as before.
-- [ ] Update selected preview/download/context to use the inventory-derived pair,
+- [x] Update selected preview/download/context to use the inventory-derived pair,
   preserving exact paired-path isolation using the strategy established by P1,
   validation before response headers, binary/full-index download fidelity and child/iterator closure. Verify selected
   bytes against the corresponding complete-download file block.
-- [ ] Update `ReviewAttachment` navigation and labels to show old → new and Renamed;
+- [x] Update `ReviewAttachment` navigation and labels to show old → new and Renamed;
   reuse the existing renderer for pure, edited and binary renames. Exercise the
   session and standalone provider bridges without changing mutation authority.
-- [ ] Verify unchanged metadata decoding and stored outcomes/relations using existing
+- [x] Verify unchanged metadata decoding and stored outcomes/relations using existing
   `review-data`, provider and attachment tests. Add a saved-review reopening case
   with a deliberately disagreeing recorded relation to prove reads do not recompute
   it. Add relation counterexamples: the same path/version/mode changes remain equal
@@ -154,20 +155,20 @@ path/version/mode equality. This follow-up replaces the current delete/add
 
 ### P3 — Close focused regressions and accept the settled candidate
 
-- [ ] Extend existing native/parser owners for empty files, binary moves, mode changes,
+- [x] Extend existing native/parser owners for empty files, binary moves, mode changes,
   tab/newline/Unicode/pathspec-looking names, malformed/truncated records, explicit
   detection-limit behavior and hostile ambient rename/copy configuration. Retain
   meaningful path-reuse/symlink/gitlink checks rather than replacing them with only
   happy-path renames. Re-review any changed test effects/classification.
-- [ ] Extend `GuidedReviewReader.diff`, notebook-material/store and existing route
+- [x] Extend `GuidedReviewReader.diff`, notebook-material/store and existing route
   owners with unchanged old-path deletion/new-path addition comparisons and saved
   answer fingerprints; verify notebook commit identity/currentness is unchanged.
   Keep authored comparison readers and saved reviewer bytes untouched.
-- [ ] Add thin installed-browser connections to the existing `diff-context` and
+- [x] Add thin installed-browser connections to the existing `diff-context` and
   `git-plugin` groups: one renamed entry, correct names, real edits/pure-rename state,
   immutable context and historical selected download. Keep edge matrices in native
   and mounted tests; do not introduce new groups or repeat them all in Chromium.
-- [ ] Update maintained guides with presentation policy, limit and saved-review
+- [x] Update maintained guides with presentation policy, limit and saved-review
   behavior. Independently review the settled implementation for paired-path
   authorization, selected/full consistency and accidental scope growth.
 - [ ] Run focused checks while editing, then complete the repository's acceptance
@@ -223,8 +224,29 @@ compatibility/scope. All concrete findings were accepted:
 
 Both reviewers confirmed the amended plan addresses their substantive findings.
 No new framework, schema migration, persistent cache, whole-patch filtering engine
-or broader UI restructuring is justified. The nested-path proof remains proposed
-implementation work, not a verified solution. Reviews ran no checks or builds.
+or broader UI restructuring is justified. At planning handoff, the nested-path
+proof was proposed implementation work, not a verified solution. Plan reviewers
+ran no checks or builds.
+
+### Implementation disposition
+
+Native fixtures closed the selected-read feasibility gate: nested pairs use the
+complete inventory to exclude unrelated descendants. Other endpoint prefixes use
+escaped descendant globs; a bare trailing-slash exclusion also hides a selected
+gitlink. Nested download admission runs the exact command with `--no-patch` before
+headers to detect native argv exhaustion without truncation or a new fixed
+application limit. No whole-patch scanner or patch synthesis was needed.
+
+Independent implementation review found two browser-fixture issues (fullscreen
+tab order and mobile navigation), both corrected. Added binary mounted, strict
+raw-framing, gitlink/symlink, detection-limit, preheader-failure and notebook
+saved-answer regressions cover its requested gaps. The corrected gitlink selection
+passes native tests. A real oversized immutable tree proves native `E2BIG` refusal
+before download headers while overview and the whole download remain available;
+no mocked subprocess or new operation-size ceiling is used. The mounted notebook
+commit-stop bridge and both installed-browser groups pass (including mobile).
+Focused checks cover the thirteen named core owners across corrected runs. Full
+acceptance remains required; source review alone is not execution evidence.
 
 ## Rollback / Recovery
 
@@ -241,14 +263,14 @@ remain separately gated operations.
 - [x] Existing source, active-plan overlap, ADRs and owning verification guides inspected.
 - [x] Two independent plan reviews assessed; concrete findings and excluded alternatives recorded.
 - [x] Planning-only handoff prepared; no application code or tests changed.
-- [ ] User greenlights implementation in this worktree.
+- [x] User greenlights implementation in this worktree.
 
-### Implementation (not started)
+### Implementation (verification in progress)
 
-- [ ] Explorer and operation review inventories, patches, contexts and labels agree
+- [x] Explorer and operation review inventories, patches, contexts and labels agree
   on pure/edited renames, with paired-path isolation and regression evidence;
   authored endpoint-tree comparison semantics remain unchanged.
-- [ ] Existing saved metadata/outcomes/relations and operation safeguards remain intact.
+- [x] Existing saved metadata/outcomes/relations and operation safeguards remain intact.
 - [ ] Maintained guides, independent implementation review and complete Nix acceptance pass.
 - [ ] Exact-state local integration is separately approved; no deployment, publication
   or feature-resource cleanup is implied by this plan's completion.

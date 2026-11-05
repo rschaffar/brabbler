@@ -11,6 +11,9 @@ import { readGitFileContext, readGitTreeFile } from "./git-file-context.ts";
 // @ts-expect-error Native Node tests require the .ts suffix; Next resolves it too.
 import { isReviewSourcePath, isReviewSourceRange, type ReviewSource } from "./review-notebook.ts";
 
+// @ts-expect-error Native Node tests require the .ts suffix; Next resolves it too.
+import { GIT_RENAME_ARGS, gitFilePathspecs, isGitRenameStatus } from "./git-rename.ts";
+
 const exec = promisify(execFile);
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const PAGE_SIZE = 40;
@@ -37,7 +40,7 @@ export interface ExplorerCommit {
   tags: string[];
 }
 
-export interface ExplorerFile { path: string; status: string }
+export interface ExplorerFile { path: string; previousPath?: string; status: string }
 
 function requireOid(oid: string): string {
   if (!OID.test(oid)) throw new GitExplorerError("INVALID", "Invalid commit ID");
@@ -172,20 +175,31 @@ export async function explorerLog(cwd: string, skip = 0, expectedHead?: string, 
 
 async function commitFiles(cwd: string, oid: string, parents: string[]): Promise<ExplorerFile[]> {
   const args = parents.length
-    ? ["diff", "--name-status", "--no-renames", "-z", parents[0], oid, "--"]
-    : ["diff-tree", "--root", "--no-commit-id", "--name-status", "-r", "--no-renames", "-z", oid, "--"];
+    ? ["diff", "--name-status", ...GIT_RENAME_ARGS, "-z", parents[0], oid, "--"]
+    : ["diff-tree", "--root", "--no-commit-id", "--name-status", "-r", ...GIT_RENAME_ARGS, "-z", oid, "--"];
   const output = await git(cwd, args);
-  return parseChangedFiles(output);
+  return parseExplorerChangedFiles(output, true);
 }
 
-function parseChangedFiles(output: string): ExplorerFile[] {
+/** Strict NUL-framed inventory; authored comparisons deliberately leave renames off. */
+export function parseExplorerChangedFiles(output: string, renames = false): ExplorerFile[] {
+  if (!output) return [];
+  const invalid = () => new GitExplorerError("UNAVAILABLE", "Invalid changed-file list");
+  if (!output.endsWith("\0")) throw invalid();
   const parts = output.split("\0");
-  if (parts.at(-1) === "") parts.pop();
-  if (parts.length % 2 !== 0) throw new GitExplorerError("UNAVAILABLE", "Invalid changed-file list");
+  parts.pop();
   const files: ExplorerFile[] = [];
-  for (let i = 0; i < parts.length; i += 2) {
-    if (!/^[AMDTCU]$/.test(parts[i]) || !parts[i + 1]) throw new GitExplorerError("UNAVAILABLE", "Invalid changed-file list");
-    files.push({ status: parts[i], path: parts[i + 1] });
+  for (let i = 0; i < parts.length;) {
+    const status = parts[i++], path = parts[i++];
+    if (!path) throw invalid();
+    if (renames && isGitRenameStatus(status)) {
+      const destination = parts[i++];
+      if (!destination || destination === path) throw invalid();
+      files.push({ status: "R", path: destination, previousPath: path });
+    } else {
+      if (status.length !== 1 || !/^[AMDTCU]$/.test(status)) throw invalid();
+      files.push({ status, path });
+    }
   }
   return files;
 }
@@ -222,8 +236,9 @@ export async function explorerSource(cwd: string, head: string, oid: string, pat
 /** Full-file context under exactly the same captured history/path authority as a patch. */
 export async function explorerFileContext(cwd: string, head: string, oid: string, path: string, branch?: string) {
   const commit = await explorerCommit(cwd, head, oid, branch);
-  if (!commit.files.some((file) => file.path === path)) throw new GitExplorerError("NOT_FOUND", "File was not changed by this commit");
-  const context = await readGitFileContext(cwd, commit.parents[0] ?? null, oid, path);
+  const file = commit.files.find(file => file.path === path);
+  if (!file) throw new GitExplorerError("NOT_FOUND", "File was not changed by this commit");
+  const context = await readGitFileContext(cwd, commit.parents[0] ?? null, oid, path, file.previousPath);
   await anchored(cwd, head, branch);
   return context;
 }
@@ -231,11 +246,15 @@ export async function explorerFileContext(cwd: string, head: string, oid: string
 /** A single file's committed patch, selected from this commit's server-derived file list. */
 export async function explorerPatch(cwd: string, head: string, oid: string, path: string, branch?: string) {
   const commit = await explorerCommit(cwd, head, oid, branch);
-  if (!commit.files.some((file) => file.path === path)) throw new GitExplorerError("NOT_FOUND", "File was not changed by this commit");
+  const file = commit.files.find(file => file.path === path);
+  if (!file) throw new GitExplorerError("NOT_FOUND", "File was not changed by this commit");
+  const paths = await gitFilePathspecs(file, commit.files);
+  // Only globally detected pairs may be inferred again in the isolated selection.
+  const renames = file.previousPath ? GIT_RENAME_ARGS : ["--no-renames"];
   const args = commit.parents.length
-    ? ["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=3", commit.parents[0], oid, "--", path]
-    : ["diff-tree", "--root", "--no-commit-id", "-p", "-r", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=3", oid, "--", path];
-  const patch = await git(cwd, args, MAX_PATCH_BYTES);
+    ? ["diff", "--no-color", "--no-ext-diff", "--no-textconv", ...renames, "--unified=3", commit.parents[0], oid, "--", ...paths]
+    : ["diff-tree", "--root", "--no-commit-id", "-p", "-r", "--no-color", "--no-ext-diff", "--no-textconv", ...renames, "--unified=3", oid, "--", ...paths];
+  const patch = await git(cwd, ["--no-literal-pathspecs", ...args], MAX_PATCH_BYTES);
   await anchored(cwd, head, branch);
   return { oid, path, patch, hasBinaryChanges: /^(?:Binary files .+ differ|GIT binary patch)$/m.test(patch) };
 }
@@ -266,7 +285,7 @@ async function comparisonGuard(cwd: string, head: string, base: string, candidat
 /** Separate explicit tree-pair semantics; existing commit readers remain first-parent. */
 export async function explorerCompare(cwd: string, head: string, base: string, candidate: string, branch: string) {
   const identity = await comparisonGuard(cwd, head, base, candidate, branch);
-  const files = parseChangedFiles(await git(cwd, ["diff", "--name-status", "--no-renames", "-z", base, candidate, "--"]));
+  const files = parseExplorerChangedFiles(await git(cwd, ["diff", "--name-status", "--no-renames", "-z", base, candidate, "--"]));
   await comparisonGuard(cwd, head, base, candidate, branch, identity);
   return { head, base, candidate, identity, files };
 }

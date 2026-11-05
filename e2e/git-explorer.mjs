@@ -140,6 +140,31 @@ export async function checkGitExplorer(page, { base, sessionId, cwd, targetWorkt
   await checkExplorerContextBridge(page, longFile, detail, toggleLongFile);
   assert.deepEqual(contextReads, ["z-context.txt", "z-context.txt"], "Failure retries once, then layouts/expansion/reading reuse the same snapshot");
   await checkGitExplorerFullscreen(page, { base, sessionId, explorer, graph, detail, file: longFile });
+  // Thin installed connection: native rename inventory -> shared reader/context.
+  for (const kind of ["edited", "pure"]) {
+    const path = `y-renamed-${kind}.txt`, old = `rename-${kind}.txt`;
+    const renamed = detail.getByRole("region", { name: `File changes: ${path}`, exact: true });
+    await renamed.scrollIntoViewIfNeeded();
+    const toggle = renamed.getByRole("button", { name: `Toggle diff: ${path}`, exact: true });
+    if (await toggle.getAttribute("aria-expanded") === "false") await toggle.click();
+    await renamed.getByText(`${old} → ${path}`, { exact: true }).waitFor();
+    await renamed.getByText("Renamed", { exact: true }).waitFor();
+    assert.equal(await detail.getByRole("region", { name: `File changes: ${old}`, exact: true }).count(), 0);
+    if (kind === "edited") {
+      await renamed.getByText("Rename actual edit", { exact: true }).waitFor();
+      const contextReply = page.waitForResponse(response => {
+        const query = new URL(response.url()).searchParams;
+        return query.get("op") === "context" && query.get("path") === path;
+      });
+      await renamed.getByRole("button", { name: "Before", exact: true }).click();
+      const response = await contextReply; assert.equal(response.status(), 200);
+      const context = await response.json(); assert.equal(context.oldFile.name, old); assert.equal(context.newFile.name, path);
+      assert.ok(context.oldFile.contents.includes("Rename context 15\n"));
+      assert.ok(context.newFile.contents.includes("Rename actual edit\n"));
+      await renamed.getByRole("region", { name: "Before file", exact: true }).waitFor();
+    } else await renamed.getByText("No text hunks in this patch (metadata-only change).", { exact: true }).waitFor();
+  }
+  await toggleLongFile.scrollIntoViewIfNeeded();
   await page.evaluate((saved) => {
     if (saved === null) localStorage.removeItem("brabbler-quote-selection-enabled");
     else localStorage.setItem("brabbler-quote-selection-enabled", saved);

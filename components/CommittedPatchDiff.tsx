@@ -183,11 +183,11 @@ export function CommittedPatchDiff({ patch, hasBinaryChanges, before, after, ind
         const contents = side === "deletions" ? context.oldFile?.contents : context.newFile?.contents;
         if (contents === undefined) { onReviewSelection(null); return; }
         const lines = contents.split("\n"), quote = lines.slice(start - 1, end).join("\n").slice(0, 8000);
-        onReviewSelection(quote ? { start, end, side, quote, context: lines.slice(Math.max(0, start - 3), end + 2).join("\n").slice(0, 8000), path: file?.name } : null);
+        onReviewSelection(quote ? { start, end, side, quote, context: lines.slice(Math.max(0, start - 3), end + 2).join("\n").slice(0, 8000), path: side === "deletions" ? file?.prevName ?? file?.name : file?.name } : null);
       }).catch(() => { if (mounted.current && model.reading === mode && generation === selectionGeneration.current) onReviewSelection(null); });
       observeRead(work);
     } } : {}),
-  }), [view, isDark, loadContext, model, context, full, loader, wrap, bindViewer, onReviewSelection, ensureContext, observeRead, file?.name]);
+  }), [view, isDark, loadContext, model, context, full, loader, wrap, bindViewer, onReviewSelection, ensureContext, observeRead, file?.name, file?.prevName]);
   const contextFile = model.reading === "before" ? model.context?.oldFile : model.context?.newFile;
   const diffVersion = file?.isPartial ? 0 : 1;
   const items = useMemo(() => file ? model.reading === "diff"

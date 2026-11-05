@@ -7,19 +7,20 @@ import { guidedReadDomain } from './guided-diff.fixture.mjs';
 import { boundedErrors } from './files-diagnostics.fixture.mjs';
 
 const target = { version: 1, kind: 'compare', id: 'range-a', title: 'Feature range A', cwd: '/repo-a', branch: 'feature', base: 'a'.repeat(40), candidate: 'b'.repeat(40), path: 'changed.txt' };
+const commitTarget = { version: 1, kind: 'commit', id: 'rename-commit', title: 'Pinned rename commit', cwd: target.cwd, branch: target.branch, oid: target.candidate };
 const web = { version: 1, kind: 'web', id: 'web', title: 'External reference', url: 'https://example.test/reference' };
 const indexPath = '/guide/index.md', identity = '1'.repeat(64);
 const patch = 'diff --git a/changed.txt b/changed.txt\nindex 1234567..abcdef0 100644\n--- a/changed.txt\n+++ b/changed.txt\n@@ -2 +2 @@\n-old\n+new\n';
 const context = { oldFile: { name: target.path, contents: 'first\nold\nlast\n', cacheKey: 'pinned-base' }, newFile: { name: target.path, contents: 'first\nnew\nlast\n', cacheKey: 'pinned-candidate' } };
 const notebook = { index: { version: 1, id: 'guide', title: 'Guide', chapters: [{ id: 'one', title: 'First', path: 'one.md' }, { id: 'two', title: 'Second', path: 'two.md' }] }, chapters: [
-  { id: 'one', title: 'First', path: 'one.md', steps: [{ id: 'first', title: 'First step', markdown: 'Inspect the range.', targets: [target, web] }] },
+  { id: 'one', title: 'First', path: 'one.md', steps: [{ id: 'first', title: 'First step', markdown: 'Inspect the range.', targets: [target, web, commitTarget] }] },
   { id: 'two', title: 'Second', path: 'two.md', steps: [{ id: 'last', title: 'Last step', markdown: 'Read freely.', targets: [{ ...web, id: 'last-web' }] }] },
 ] };
 const pair = { cwd: target.cwd, branch: target.branch, head: target.candidate, base: target.base, candidate: target.candidate };
 
 // Real CommittedPatchDiff / Pierre instance, context controls and target lifetime.
 // Transport and missing DOM capabilities only are controlled; no renderer stub.
-test('successful comparison loads exact patch/context, retains reading model across targets and Back/Next, and fences obsolete context work', async t => {
+test('comparison retains exact context/lifetimes across navigation and commit stops inherit rename presentation', async t => {
   const domain = guidedReadDomain(); let h;
   t.after(async () => {
     const errors = []; domain.release(); // close transport/release peers before any join
@@ -122,4 +123,24 @@ test('successful comparison loads exact patch/context, retains reading model acr
   assert.equal(view.container.querySelector('input[aria-label="Search full file"]').value, 'old');
   await click(view, textButton(view.container, 'Changes')); await join(h.work.length - 1);
   assert.equal(view.container.querySelector('[aria-label="Side-by-side diff"]') !== null, true);
+
+  // A notebook commit stop inherits the real viewer/stack, not comparison aliases.
+  const logReplay = domain.expect('/api/git/explorer', { cwd: target.cwd, branch: target.branch, op: 'log' });
+  const log = domain.expect('/api/git/explorer', { cwd: target.cwd, branch: target.branch, op: 'log' });
+  await choose(commitTarget.id); await logReplay.deliver({ head: target.candidate });
+  const commitQuery = { cwd: target.cwd, branch: target.branch, head: target.candidate, oid: commitTarget.oid };
+  const detailReplay = domain.expect('/api/git/explorer', { ...commitQuery, op: 'commit' });
+  const detail = domain.expect('/api/git/explorer', { ...commitQuery, op: 'commit' });
+  await log.deliver({ head: target.candidate });
+  const metadata = { oid: commitTarget.oid, parents: [target.base], author: 'Fixture', date: '2026-01-01T00:00:00Z', message: 'Pure move',
+    files: [{ path: 'new.txt', previousPath: 'old.txt', status: 'R' }] };
+  await detailReplay.deliver(metadata);
+  const renamed = domain.expect('/api/git/explorer', { ...commitQuery, op: 'patch', path: 'new.txt' });
+  await detail.deliver(metadata);
+  from = h.work.length;
+  await renamed.deliver({ patch: 'diff --git a/old.txt b/new.txt\nsimilarity index 100%\nrename from old.txt\nrename to new.txt\n', hasBinaryChanges: false });
+  await join(from);
+  const stop = view.container.querySelector('[data-review-stop="rename-commit"]');
+  assert.match(stop.textContent, /old.txt → new.txt/); assert.match(stop.textContent, /Renamed/);
+  assert.match(stop.textContent, /No text hunks in this patch \(metadata-only change\)/); assert.match(stop.textContent, new RegExp(commitTarget.oid));
 });
