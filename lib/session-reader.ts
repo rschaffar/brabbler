@@ -11,6 +11,7 @@ import { projectIdentityKey } from "./project-identity";
 import { sessionPathKey } from "./session-path";
 import { resolveProject, type ProjectInfo } from "./worktree";
 import { readSubagentRun, SUBAGENT_META_TYPE } from "./subagents";
+import { readBtwMetadata } from "./btw";
 import { getValidatedSessionScanFingerprint, listSessionsIncremental, matchesSessionScanFingerprint, type ScannedSessionInfo } from "./session-list-scanner";
 
 export { getAgentDir };
@@ -197,22 +198,25 @@ export function mergeSessionLists(
 type ScannedSubagent = Readonly<Pick<NonNullable<ReturnType<typeof readSubagentRun>>,
   "parentSessionId" | "profile" | "description" | "status">>;
 type ScanFingerprint = NonNullable<ReturnType<typeof getValidatedSessionScanFingerprint>>;
+type ScannedRelation = { subagent: ScannedSubagent | null; btw: Readonly<{ parentSessionId: string; sourceLeafId: string | null }> | null };
 
 declare global {
-  var __piSessionRelationCache: WeakMap<ScannedSessionInfo, { fingerprint: ScanFingerprint; subagent: ScannedSubagent | null }> | undefined;
+  var __piSessionRelationCache: WeakMap<ScannedSessionInfo, ScannedRelation & { fingerprint: ScanFingerprint }> | undefined;
 }
 
-function readScannedSubagent(scanned: ScannedSessionInfo): ScannedSubagent | null {
+function readScannedSubagent(scanned: ScannedSessionInfo): ScannedRelation {
   const fingerprint = getValidatedSessionScanFingerprint(scanned);
   const cache = globalThis.__piSessionRelationCache ??= new WeakMap();
   const cached = cache.get(scanned);
-  if (fingerprint && cached?.fingerprint === fingerprint) return cached.subagent;
+  if (fingerprint && cached?.fingerprint === fingerprint) return cached;
 
   let stable = fingerprint !== undefined;
   const entries = readSessionRelationEntries(scanned.path, (stats) => {
     stable = stable && fingerprint !== undefined && matchesSessionScanFingerprint(fingerprint, stats);
   });
   const run = readSubagentRun(entries, scanned.id, scanned.path);
+  const metadata = readBtwMetadata(entries, scanned.id);
+  const btw = metadata ? Object.freeze({ parentSessionId: metadata.parentSessionId, sourceLeafId: metadata.sourceLeafId }) : null;
   // Never retain transcripts, task/result text or resource snapshots in this cache.
   const subagent = run ? Object.freeze({
     parentSessionId: run.parentSessionId, profile: run.profile,
@@ -222,28 +226,27 @@ function readScannedSubagent(scanned: ScannedSessionInfo): ScannedSubagent | nul
     try {
       if (matchesSessionScanFingerprint(fingerprint, statSync(scanned.path))
         && getValidatedSessionScanFingerprint(scanned) === fingerprint) {
-        cache.set(scanned, { fingerprint, subagent });
+        cache.set(scanned, { fingerprint, subagent, btw });
       }
     } catch { /* Best-effort projection, but failed validation must never be cached. */ }
   }
-  return subagent;
+  return { subagent, btw };
 }
 
 function resolveScannedSessionRelation(
   scanned: ScannedSessionInfo,
   pathToId: Map<string, string>,
-): { originSessionId?: string; subagent: ScannedSubagent | null } {
+): ScannedRelation & { originSessionId?: string } {
   const originSessionId = scanned.parentSessionPath
     ? pathToId.get(sessionPathKey(scanned.parentSessionPath))
     : undefined;
-  if (!scanned.parentSessionPath) return { originSessionId, subagent: null };
+  if (!scanned.parentSessionPath) return { originSessionId, subagent: null, btw: null };
 
   try {
-    const subagent = readScannedSubagent(scanned);
-    return { originSessionId, subagent };
+    return { originSessionId, ...readScannedSubagent(scanned) };
   } catch {
     // Malformed or concurrently removed session.
-    return { originSessionId, subagent: null };
+    return { originSessionId, subagent: null, btw: null };
   }
 }
 
@@ -252,7 +255,7 @@ function mapScannedSession(
   pathToId: Map<string, string>,
 ): SessionInfo {
   cacheSessionPath(scanned.id, scanned.path);
-  const { originSessionId, subagent } = resolveScannedSessionRelation(scanned, pathToId);
+  const { originSessionId, subagent, btw } = resolveScannedSessionRelation(scanned, pathToId);
   const detailsPending = scanned.detailsPending === true;
   return {
     path: scanned.path,
@@ -269,8 +272,8 @@ function mapScannedSession(
       : scanned.firstMessage || "(no messages)",
     ...(scanned.archived ? { archived: true } : {}),
     ...(scanned.spawnedBy ? { spawnedBy: scanned.spawnedBy } : {}),
-    parentSessionId: originSessionId,
-    ...(subagent
+    parentSessionId: btw?.parentSessionId ?? originSessionId,
+    ...(btw ? { relation: { kind: "btw" as const, ...btw } } : subagent
       ? { relation: { kind: "subagent" as const, parentSessionId: subagent.parentSessionId, profile: subagent.profile, description: subagent.description, status: subagent.status } }
       : scanned.parentSessionPath
         ? { relation: { kind: "fork" as const, ...(originSessionId ? { originSessionId } : {}) } }

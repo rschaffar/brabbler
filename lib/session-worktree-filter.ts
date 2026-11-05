@@ -35,7 +35,7 @@ export function sessionFamiliesForWorktree(
   for (const session of matching) {
     let current = session, owner = session.id;
     const seen = new Set([current.id]);
-    while (current.relation?.kind === "subagent") {
+    while (current.relation?.kind === "subagent" || current.relation?.kind === "btw") {
       const parent = byId.get(current.relation.parentSessionId);
       if (!parent) break;
       if (seen.has(parent.id)) { owner = session.id; break; }
@@ -50,11 +50,14 @@ export function sessionFamiliesForWorktree(
     if (!families.has(owner)) {
       const root = byId.get(owner)!;
       const archiveOwner = archiveOwners.get(owner)!;
-      families.set(owner, { root, subagents: [], latestModified: root.modified,
+      families.set(owner, { root, subagents: [], btws: [], latestModified: root.modified,
         archiveOwnerId: archiveOwner.id, familyArchived: Boolean(archiveOwner.archived) });
     }
     const family = families.get(owner)!;
-    if (session.id !== owner) family.subagents.push(session);
+    if (session.id !== owner) {
+      if (session.relation?.kind === "btw") family.btws!.push(session);
+      else family.subagents.push(session);
+    }
     if (session.modified > family.latestModified) family.latestModified = session.modified;
   }
   return [...families.values()].filter(family => status === "both"

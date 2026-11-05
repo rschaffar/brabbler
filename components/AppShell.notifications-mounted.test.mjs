@@ -82,6 +82,15 @@ for (const [visibility, focused] of [['visible', true], ['visible', false], ['hi
   }
 }
 
+test('full-size BTW completion refreshes bookkeeping without a browser notification', async t => {
+  const c = await fixture(t, { visibility: 'hidden' });
+  await c.update({ selectedSession: { ...session('aside'), relation: { kind: 'btw', parentSessionId: 'source', sourceLeafId: null } } });
+  await c.complete();
+  assert.equal(c.notifications.length, 0);
+  assert.deepEqual(c.settled, ['old']);
+  assert.equal(c.view.container.querySelector('output').textContent, '1');
+});
+
 test('actual shell method/title/dedup rules and current target with retained global ID set', async t => {
   const c = await fixture(t);
   for (const [method, body] of [

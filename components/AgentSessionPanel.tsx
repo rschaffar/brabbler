@@ -11,6 +11,7 @@ import type { SessionInfo, SubagentSessionStatus } from "@/lib/types";
 interface Props {
   rootSession: SessionInfo;
   subagents: SessionInfo[];
+  btws?: SessionInfo[];
   selectedSessionId: string;
   runningSessionIds: ReadonlySet<string>;
   onSelectSession: (session: SessionInfo) => void;
@@ -188,13 +189,13 @@ function AgentRow({
 }
 
 export function AgentSessionPanel(props: Props) {
-  const ids = [props.rootSession.id, ...props.subagents.map((session) => session.id)];
+  const ids = [props.rootSession.id, ...props.subagents.map((session) => session.id), ...(props.btws ?? []).map(session => session.id)];
   const usage = useAgentUsage(ids, props.runningSessionIds, props.onUsageWork);
   return <AgentSessionPanelContent {...props} usage={usage} />;
 }
 
 /** The view is separate from IO so recorded/zero/partial states can be rendered in core tests. */
-export function AgentSessionPanelContent({ rootSession, subagents, selectedSessionId, runningSessionIds, onSelectSession, usage }: Props & { usage: AgentUsageSnapshot }) {
+export function AgentSessionPanelContent({ rootSession, subagents, btws = [], selectedSessionId, runningSessionIds, onSelectSession, usage }: Props & { usage: AgentUsageSnapshot }) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
   const sortedSubagents = useMemo(() => [...subagents].sort((a, b) => {
@@ -212,8 +213,8 @@ export function AgentSessionPanelContent({ rootSession, subagents, selectedSessi
       })
     : sortedSubagents;
   const runningCount = countRunningSubagents(subagents, runningSessionIds);
-  const family = sumAgentUsage([rootSession.id, ...subagents.map((session) => session.id)], usage);
-  const selected = [rootSession, ...subagents].find((session) => session.id === selectedSessionId);
+  const family = sumAgentUsage([rootSession.id, ...subagents.map((session) => session.id), ...btws.map(session => session.id)], usage);
+  const selected = [rootSession, ...subagents, ...btws].find((session) => session.id === selectedSessionId);
   const selectedUsage = usage.get(selectedSessionId);
 
   return (
@@ -298,6 +299,15 @@ export function AgentSessionPanelContent({ rootSession, subagents, selectedSessi
             </div>
           )}
         </div>
+        {btws.length > 0 && <section aria-label={t("btw.related")} style={{ padding: "8px 12px", borderTop: "1px solid var(--border)" }}>
+          <strong style={{ fontSize: 12 }}>{t("btw.related")}</strong>
+          {btws.map(session => <button key={session.id} type="button" onClick={() => onSelectSession(session)}
+            aria-current={session.id === selectedSessionId ? "true" : undefined}
+            style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 0", cursor: "pointer", color: "var(--accent)", fontSize: 12 }}>
+            {sessionTitle(session)}{runningSessionIds.has(session.id) ? ` · ${t("agentSwitcher.status.running")}` : ""}
+            <span style={{ display: "block", color: "var(--text-muted)" }}><UsageLine entry={usage.get(session.id)} /></span>
+          </button>)}
+        </section>}
         <details style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-muted)", borderTop: "1px solid var(--border)" }}>
           <summary style={{ cursor: "pointer", padding: "4px 0" }}>{t("agentSwitcher.selectedBreakdown")}</summary>
           <section aria-label={t("agentSwitcher.selectedUsage")}>

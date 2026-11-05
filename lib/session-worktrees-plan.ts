@@ -132,7 +132,7 @@ export function sessionFamilyGraph(sessions: readonly SessionInfo[]) {
   }
   for (const session of sessions) {
     if (!session.relation || session.relation.kind === "fork") continue;
-    if (session.relation.kind !== "subagent") continue;
+    if (session.relation.kind !== "subagent" && session.relation.kind !== "btw") continue;
     const parent = session.relation.parentSessionId;
     parents.set(session.id, parent);
     const siblings = children.get(parent) ?? [];
@@ -176,7 +176,7 @@ export function sameSessionIds(a: readonly string[], b: readonly string[]): bool
 export function effectiveSessionArchived(session: SessionInfo, byId: ReadonlyMap<string, SessionInfo>): boolean {
   let current = session;
   const seen = new Set([current.id]);
-  while (current.relation?.kind === "subagent") {
+  while (current.relation?.kind === "subagent" || current.relation?.kind === "btw") {
     const parent = byId.get(current.relation.parentSessionId);
     if (!parent || seen.has(parent.id)) break;
     seen.add(parent.id); current = parent;

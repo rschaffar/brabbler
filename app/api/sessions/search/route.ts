@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { listAllSessions } from "@/lib/session-reader";
 import { searchSessionContents } from "@/lib/session-search";
 import { sessionFamiliesForWorktree } from "@/lib/session-worktree-filter";
+import { familyMembers } from "@/lib/session-family";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +29,8 @@ export async function GET(request: Request) {
     const catalog = query && !request.signal.aborted ? await listAllSessions() : [];
     const families = sessionFamiliesForWorktree(catalog, scope === "all" ? null : projectKey!, cwd,
       status as "active" | "archived" | "both");
-    const sessions = families.flatMap((family) => [family.root, ...family.subagents]);
-    const archiveById = new Map(families.flatMap((family) => [family.root, ...family.subagents]
+    const sessions = families.flatMap(familyMembers);
+    const archiveById = new Map(families.flatMap((family) => familyMembers(family)
       .map((session) => [session.id, family.familyArchived] as const)));
     const result = await searchSessionContents(sessions, query, request.signal, { titlesOnly: field === "title" });
     return NextResponse.json({ ...result, results: result.results.map((hit) => ({

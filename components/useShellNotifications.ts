@@ -62,7 +62,7 @@ export function useShellNotifications({ selectedSession, handleSelectSession, lo
     handleSessionSettled();
     setExplorerRefreshKey((k) => k + 1);
 
-    if (selectedSession?.relation?.kind === "subagent") return;
+    if (selectedSession?.relation?.kind === "subagent" || selectedSession?.relation?.kind === "btw") return;
     if (!shouldShowBrowserNotification()) return;
     const targetSession = selectedSession;
     deliverSessionNotification({

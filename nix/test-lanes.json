@@ -14,6 +14,21 @@
       "reason": "Actual ThinkingBlock and ChatMinimap under the guarded Cards fixture and real StrictMode React. Exact synthetic read capabilities and original request/effect-tail joins; numeric geometry and controlled measurement timers only. Serial per-process realms restore listeners/timers/globals after unmount, including emergency release for fault controls. No SDK, native network, service, source write or GC/RSS claim; installed history/minimap bridges remain."
     },
     {
+      "path": "components/ChatWindow.btw.test.mjs",
+      "lane": "F",
+      "reason": "Mounted actual ChatWindowView and keyboard ownership with synthetic session state through the guarded composer fixture. Native/browser transport, process and filesystem mutation are denied before imports; controlled frames, component work and realm cleanup are joined. Source question node/draft identity and secondary Stop/tool-selector behavior are behavioral DOM checks, not layout or server-execution claims."
+    },
+    {
+      "path": "lib/btw.test.mjs",
+      "lane": "F",
+      "reason": "Pure production metadata, context, catalogue, family and activity projections with synthetic inputs. Jiti filesystem cache disabled; no SDK execution, timers, network, child processes, source writes or environment mutation."
+    },
+    {
+      "path": "lib/btw-runtime.test.mjs",
+      "lane": "N",
+      "reason": "Real SDK JSONL creation, catalogue, refresh, relocation and cascade deletion use private mkdtemp agent/project roots and file-local globals. Async operations and scanner persistence are awaited before restoring environment and removing roots. Separate actual RPC startup fixture supplies external SDK construction/provider capabilities and joins wrappers; no live provider, fixed port, shared source output or unowned process."
+    },
+    {
       "path": "lib/git-file-context-lifecycle.test.mjs",
       "lane": "N",
       "reason": "Actual immutable context reader owns real per-case native Git children through private executable wrappers and named blob-read gates. PATH is process-local and restored only after owned promises and observed wrapper PIDs settle; fixtures have registered cleanup, safety closure and no grandchildren while held. Cancellation, failed-side sibling closure and pre-abort tests run serially with private repositories; no provider, fixed port, shared source output or SDK actor."

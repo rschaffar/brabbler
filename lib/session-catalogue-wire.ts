@@ -90,6 +90,8 @@ export function decodeSessionCatalogue(value: unknown): SessionInfo[] {
       if (relation.kind === "subagent") {
         if (typeof relation.parentSessionId !== "string") return invalid();
         text(relation.profile); text(relation.description);
+      } else if (relation.kind === "btw") {
+        if (typeof relation.parentSessionId !== "string" || !relation.parentSessionId || (relation.sourceLeafId !== null && typeof relation.sourceLeafId !== "string")) return invalid();
       } else if (relation.kind !== "fork" || (relation.originSessionId !== undefined && typeof relation.originSessionId !== "string")) return invalid();
     }
     // The fixed slots above are validated before this private shape cast. mapText

@@ -13,6 +13,7 @@ import { useSessionAutoName } from "@/hooks/useSessionAutoName";
 import { SessionAutoNameButton, OverviewNavigationButtons } from "./SessionNavigationControls";
 import { useNavigationState, useSessionNavigation } from "@/hooks/useSessionNavigation";
 import { ChatWindow } from "./ChatWindow";
+import { BtwPanel } from "./BtwPanel";
 import { isHistoryOnlySession } from "@/lib/session-directory";
 import { MarkdownMediaScope } from "./MarkdownMedia";
 import { WebVersionNotice } from "./WebVersionNotice";
@@ -122,6 +123,21 @@ export function AppShell() {
   const handleBackgroundTaskDone = useCallback(() => {
     if (soundEnabledRef.current) playDoneSound();
   }, [playDoneSound, soundEnabledRef]);
+  const [btwSourceId, setBtwSourceId] = useState<string | null>(null);
+  const btwReturnFocus = useRef<HTMLElement | null>(null);
+  const btwTrigger = useRef<HTMLButtonElement | null>(null);
+  const btwRestoreFocus = useRef(false);
+  const btwSourceRef = useRef(selectedSession?.id); btwSourceRef.current = selectedSession?.id;
+  const closeBtw = useCallback(() => { btwRestoreFocus.current = true; setBtwSourceId(null); }, []);
+  useLayoutEffect(() => {
+    if (btwSourceId !== null || !btwRestoreFocus.current) return;
+    btwRestoreFocus.current = false;
+    const target = btwReturnFocus.current; btwReturnFocus.current = null;
+    // Mobile's main chat is inert until this close commit has completed.
+    const visible = target?.isConnected && !target.closest("[inert]") && target.getClientRects().length;
+    (visible ? target : btwTrigger.current)?.focus({ preventScroll: true });
+  }, [btwSourceId]);
+  const handleBtwChanged = useCallback(() => setRefreshKey(value => value + 1), [setRefreshKey]);
   const [scratchpadOpen, setScratchpadOpen] = useState(false);
   const [scratchpadMounted, setScratchpadMounted] = useState(false);
   const projectPrivacy = useHiddenProjects();
@@ -136,7 +152,7 @@ export function AppShell() {
     () => getSessionFamily(sessionsWithSelection, selectedSession?.id),
     [selectedSession?.id, sessionsWithSelection],
   );
-  const hasSubagentSessions = Boolean(activeSessionFamily?.subagents.length);
+  const hasSubagentSessions = Boolean(activeSessionFamily?.subagents.length || activeSessionFamily?.btws?.length);
   const activityController = useActivityOwner();
   const { snapshot: activity } = useActivityController(activityController);
   const { runningIds: runningSessionIds, queuedIds: queuedSessionIds,
@@ -193,6 +209,7 @@ export function AppShell() {
     if (!rightPanelOpen || !isSplitLayout) setChatHidden(false);
   }, [rightPanelOpen, isSplitLayout]);
   const { rightPanelFullWidth, gitExplorerFullWidth } = shellExpansionState({ rightPanelOpen, rightPanelExpanded, isMobile, activeOverview, gitExplorerExpanded });
+  const btwOpen = Boolean(selectedSession && btwSourceId === selectedSession.id && !gitExplorerFullWidth && !rightPanelFullWidth && !(isMobile && activeOverview && overviewMobileList));
   useEffect(() => {
     if (activeOverview !== "git" || isMobile || rightPanelFullWidth) setGitExplorerExpanded(false);
   }, [activeOverview, isMobile, rightPanelFullWidth]);
@@ -884,6 +901,16 @@ export function AppShell() {
               <path d={chatCollapsed ? "M9 12h6m-3-3v6" : "M9 12h6"} />
             </svg>
           </button>}
+          {showChat && selectedSession && selectedSession.relation?.kind !== "btw" && <button ref={btwTrigger} type="button" className="activity-top-button" title={translate("btw.open")} aria-label={translate("btw.open")}
+            aria-expanded={btwOpen}
+            onPointerDown={() => { if (!btwOpen) btwReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; }}
+            onClick={event => {
+              if (btwOpen) { closeBtw(); return; }
+              if (!btwReturnFocus.current?.isConnected) btwReturnFocus.current = event.currentTarget;
+              setActiveTopPanel(null); setChatHidden(false); setRightPanelOpen(false); closeOverview();
+              if (isMobile) setSidebarOpen(false);
+              setBtwSourceId(selectedSession.id);
+            }} style={{ height: TOP_BAR_ICON_BUTTON_SIZE, padding: "0 10px", flexShrink: 0, borderRight: "1px solid var(--border)", color: "var(--accent)", fontSize: 12, fontWeight: 600 }}>BTW</button>}
           <ToolbarActionsStrip isMobile={isMobile} showChat={showChat} selectedSessionId={selectedSession?.id} activeOverview={activeOverview}>
           <OverviewNavigationButtons activeOverview={activeOverview} isMobile={isMobile} overviewMobileList={overviewMobileList}
             activityNeedsCount={activityNeedsCount} closeOverview={closeOverview} reviewNavigationId={reviewNavigationId}
@@ -918,6 +945,8 @@ export function AppShell() {
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m7 12 3 3 7-7" /><rect x="3" y="3" width="18" height="18" rx="4" /></svg>
           </button>
           <SubagentToolbarMarker showChat={showChat} selectedSession={selectedSession} translate={translate} />
+          {showChat && selectedSession?.relation?.kind === "btw" && <button type="button" className="shrink-0 px-2 text-xs text-accent underline"
+            onClick={() => { if (selectedSession.relation?.kind === "btw") void handleOpenSession(selectedSession.relation.parentSessionId); }}>{translate("btw.back")}</button>}
           {showChat && selectedSession?.spawnedBy && <a
             href={`/?session=${encodeURIComponent(selectedSession.spawnedBy)}`}
             title={`Started by session ${selectedSession.spawnedBy}`}
@@ -962,6 +991,7 @@ export function AppShell() {
                 <AgentSessionPanel
                   rootSession={activeSessionFamily.root}
                   subagents={activeSessionFamily.subagents}
+                  btws={activeSessionFamily.btws}
                   selectedSessionId={selectedSession.id}
                   runningSessionIds={runningSessionIds}
                   onSelectSession={handleSelectSession}
@@ -1216,13 +1246,13 @@ export function AppShell() {
               initialSelection={reviewNavigation ?? undefined} onReturnToWorkspace={reviewNavigation ? returnToWorkspaceHistory : undefined}
               expanded={gitExplorerFullWidth} canExpand={!isMobile} onToggleExpanded={handleGitExplorerExpandToggle} />
           </div>}
-          <div inert={gitExplorerFullWidth || Boolean(activeOverview && isMobile && overviewMobileList)} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
+          <div inert={gitExplorerFullWidth || Boolean(activeOverview && isMobile && overviewMobileList) || (isMobile && btwOpen)} style={{ flex: 1, minWidth: 0, overflow: "hidden", position: "relative" }}>
           {showChat ? (
-            <MarkdownMediaScope key={sessionKey} active={!scratchpadOpen && !chatCollapsed && settingsSection === null && !projectTrustDialogOpen && !acceptanceOpen && !gitExplorerFullWidth && !rightPanelFullWidth && !(isMobile && (rightPanelOpen || sidebarOpen)) && !(activeOverview && isMobile && overviewMobileList)}>
+            <MarkdownMediaScope key={sessionKey} active={!scratchpadOpen && !chatCollapsed && settingsSection === null && !projectTrustDialogOpen && !acceptanceOpen && !gitExplorerFullWidth && !rightPanelFullWidth && !(isMobile && (rightPanelOpen || sidebarOpen || btwOpen)) && !(activeOverview && isMobile && overviewMobileList)}>
             <ChatWindow
               key={sessionKey}
               {...chatBinding}
-              covered={chatCollapsed || gitExplorerFullWidth || rightPanelFullWidth}
+              covered={chatCollapsed || gitExplorerFullWidth || rightPanelFullWidth || (isMobile && btwOpen)}
               searchTarget={searchTarget?.sessionId === selectedSession?.id ? searchTarget : null}
               onSearchTargetHandled={handleSearchTargetHandled}
               initialScrollPosition={selectedSession ? sessionScrollPositionsRef.current.get(selectedSession.id) ?? null : null}
@@ -1300,6 +1330,15 @@ export function AppShell() {
             )
           ) : null}
           </div>
+          {showChat && selectedSession && <BtwPanel key={`btw:${selectedSession.id}`} parent={selectedSession}
+            open={btwOpen}
+            runningIds={runningSessionIds} archivedRootSessionId={activeSessionFamily?.root.archived ? activeSessionFamily.root.id : null}
+            onClose={closeBtw} onOpenSession={id => { setBtwSourceId(null); void handleOpenSession(id); }}
+            onChanged={handleBtwChanged} onSessionRestored={handleSessionRestored}
+            onDraft={(sourceId, text) => {
+              if (btwSourceRef.current !== sourceId || !chatInputRef.current) throw new Error(translate("btw.sourceChanged"));
+              chatInputRef.current.insertText(`\n\n${text}\n`, { atEnd: true });
+            }} />}
         </div>
       </div>
 
