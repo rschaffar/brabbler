@@ -60,6 +60,7 @@ import {
   readSubagentRun,
   readSubagentSessionResources,
   SUBAGENT_CONTROL_TOOL_NAMES,
+  SUBAGENT_META_TYPE,
 } from "./subagents";
 import { createSubagentController, hasUnsettledSubagentExecution } from "./subagent-runtime";
 import { isBuiltInSubagentsEnabled } from "./subagent-settings";
@@ -74,6 +75,8 @@ import { createAskUserExtension, preferBrabblerAskUserExtension, type AskUserUiC
 import { parseQuestionSet } from "./question-set";
 import { createSessionReferenceExtension } from "./session-reference-extension";
 import { createBrabblerSourceExtension } from "./brabbler-source-extension";
+import { createNotebookAuthoringExtension } from "./notebook-authoring-extension";
+import { filterNotebookTools } from "./notebook-tool-policy";
 import { createLocalFileLinkGuidanceExtension } from "./local-file-link-guidance";
 import { bundledPluginExtensions } from "./plugins/registry";
 import { validatePluginCard } from "./plugins/ui";
@@ -271,7 +274,7 @@ export function withExtensionTools(session: AgentSessionLike, toolNames: string[
   const selectedToolNames = resolveShellTools(toolNames, session.settingsManager.getDefaultTools());
   const extensionToolNames = session.getAllTools().filter((t) => !["hidden", "deferred", "codemode"].includes(t.exposure ?? "")).map((t) => t.name)
     .filter((name) => !codingToolNames.has(name));
-  return [...new Set([...selectedToolNames, ...extensionToolNames])];
+  return filterNotebookTools([...new Set([...selectedToolNames, ...extensionToolNames])]);
 }
 
 // ============================================================================
@@ -381,7 +384,7 @@ export class AgentSessionWrapper {
           const pinned = readSessionToolSelection(inner.sessionManager.getEntries() as unknown as SessionEntry[]);
           if (pinned !== undefined) {
             const extensions = inner.getActiveToolNames().filter(name => !CODING_TOOL_NAMES.includes(name));
-            inner.setActiveToolsByName([...resolveShellTools(pinned, inner.settingsManager.getDefaultTools()), ...extensions]);
+            inner.setActiveToolsByName(filterNotebookTools([...resolveShellTools(pinned, inner.settingsManager.getDefaultTools()), ...extensions]));
           }
         }
         return result;
@@ -3187,6 +3190,10 @@ async function startRpcSessionInternal(
         )
       : null;
     const btw = readBtwMetadata(sessionManager.getEntries() as unknown as SessionEntry[], sessionManager.getSessionId());
+    // Legacy/malformed child metadata must not gain newly introduced authoring
+    // tools through the ordinary-session fallback. Valid children retain their
+    // explicit extension switch and saved tool allowlist below.
+    const ordinaryNotebookTools = !sessionManager.getEntries().some(entry => entry.type === "custom" && entry.customType === SUBAGENT_META_TYPE);
     const persistedToolNames = subagentResources
       ? undefined
       : readSessionToolSelection(sessionManager.getEntries() as unknown as SessionEntry[]);
@@ -3226,7 +3233,7 @@ async function startRpcSessionInternal(
 
     // Determine which tools to pass based on requested toolNames.
     // Since v0.68.0, session creation expects string[] tool names instead of Tool[] instances.
-    let toolsOption: string[] | undefined = subagentResources?.tools;
+    let toolsOption: string[] | undefined = subagentResources ? filterNotebookTools(subagentResources.tools) : undefined;
     if (!subagentResources && selectedToolNames !== undefined) {
       // toolNames === [] -> "all off" (an empty allow-list disables every tool).
       // Otherwise DO NOT pass a builtin-only allow-list: passing CODING_TOOL_NAMES
@@ -3290,7 +3297,7 @@ async function startRpcSessionInternal(
               ...nativeSessionTools.factories,
               ...(!chatOnly ? [createProjectCommandBashExtension({ cwd: sessionCwd, settings: settingsManager })] : []),
               ...(usesExactSystemPrompt ? [exactSystemPromptExtension] : [createLocalFileLinkGuidanceExtension()]),
-              ...(subagentResources.loadExtensions ? [createAskUserExtension(), acceptancePlugin.extension(sessionCwd)] : []),
+              ...(subagentResources.loadExtensions ? [createAskUserExtension(), createNotebookAuthoringExtension(), acceptancePlugin.extension(sessionCwd)] : []),
             ],
             extensionsOverride: (base) => preferUserBashExtension(subagentResources.loadExtensions ? preferBrabblerAskUserExtension(base) : base),
           }
@@ -3303,6 +3310,7 @@ async function startRpcSessionInternal(
               ...nativeSessionTools.factories,
               createSessionReferenceExtension(),
               createBrabblerSourceExtension(),
+              ...(ordinaryNotebookTools ? [createNotebookAuthoringExtension()] : []),
               createLocalFileLinkGuidanceExtension(),
               createProjectCommandBashExtension({
                 cwd: sessionCwd,

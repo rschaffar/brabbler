@@ -56,10 +56,25 @@ function header(v: Record<string, unknown>) {
 }
 function nodes(markdown: string) {
   if (new TextEncoder().encode(markdown).length > GUIDED_LIMITS.documentBytes) throw new Error("Document exceeds 256 KiB");
-  return unified().use(remarkParse).parse(markdown).children;
+  // Micromark strips a leading BOM before assigning offsets. Consume the whole
+  // prefix ourselves (including repeated BOMs), then restore raw coordinates.
+  const bom = markdown.match(/^\ufeff*/u)![0].length;
+  const children = unified().use(remarkParse).parse(markdown.slice(bom)).children;
+  if (bom) for (const child of children) for (const point of [child.position?.start, child.position?.end]) {
+    if (point?.offset !== undefined) point.offset += bom;
+    if (point?.line === 1) point.column += bom;
+  }
+  return children;
 }
 function fences(markdown: string, lang: string): Code[] {
   return nodes(markdown).filter((n): n is Code => n.type === "code" && n.lang === lang);
+}
+/** Raw UTF-16 source offsets owned by the same Markdown AST as reader admission.
+ * Consumers must validate the complete package before using these for edits. */
+export function notebookMetadataRanges(markdown: string) {
+  return nodes(markdown).filter((node): node is Code => node.type === "code"
+    && ["brabbler-step", "brabbler-review", "brabbler-evidence"].includes(node.lang ?? ""))
+    .map(node => ({ language: node.lang!, value: node.value, start: node.position!.start.offset!, end: node.position!.end.offset! }));
 }
 export function parseNotebookIndex(markdown: string): NotebookIndex | null {
   const markers = fences(markdown, "brabbler-notebook");

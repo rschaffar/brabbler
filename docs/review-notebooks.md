@@ -396,8 +396,36 @@ history and evidence. Equivalent patches do not establish equivalent source rang
 first-parent diffs, prose or test results. Do not substitute branch tip, match solely
 by subject, fetch objects or mutate Git as a side effect of editing a notebook.
 Unclear mappings should remain explicit unresolved cases, not guessed references.
-Native inspect/update/reference-refresh tools are planned, not yet available in
-this reader-first slice; ordinary read/edit tools remain usable.
+Reference-refresh tooling is the next implementation slice. Ordinary read/edit
+tools remain usable; the native inspect/update tools below need no browser pane
+or original conversation.
+
+### Native inspect and step update
+
+- `notebook_inspect({ indexPath })` reads only the explicit `index.md` and declared
+  chapters and returns a compact validated outline. It does not read assets, Git
+  objects, browser storage or `review-data/`. Malformed packages refuse explicitly.
+- Add `stepId` to obtain that complete step's Markdown (including its leading
+  `brabbler-step` fence), pinned reference definitions, writability and `binding`.
+- `notebook_update_step({ indexPath, stepId, binding, source })` replaces exactly
+  that step. Pass the unmodified binding from a fresh inspection and the complete
+  replacement source, retaining its stable ID and a separator before its neighbor.
+  Manifest revision, notebook identity, resolved chapter and whole-chapter revision
+  must still match. The whole package is validated; outside-step bytes and parsed
+  neighbors are preserved. A changed or moved step requires another inspection.
+- Inspect requires the active tool and `read`; update additionally requires `edit`
+  (`write` or shell access is not a substitute). Grants and cancellation are checked
+  again after asynchronous preparation and immediately before saving. Paths do not
+  grant roots. Chat-only stays tool-free; extension-enabled children retain their
+  resolved selectors and saved allowlists, without fallback grants.
+- Saves use the ordinary file editor's per-file compare-and-replace semantics for
+  cooperating in-process writers, not a lock against arbitrary external writers.
+  A successful result names the actual path and old/new revisions. If a result is
+  lost or uncertain, reread first; never replay a possibly completed write blindly.
+
+These tools neither send chat messages nor run Git operations/tests. Schema and
+reference inspection do not prove that the prose is correct or that a candidate
+passed tests. Ask the reader to **Reload guide** after an explicit saved revision.
 
 ### Contextual authoring example
 

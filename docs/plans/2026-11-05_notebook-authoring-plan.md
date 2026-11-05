@@ -1,8 +1,9 @@
 # Guided reading and native notebook authoring
 
-**Status:** P0 complete. P1 is implemented and focused verification passes; native
-authoring tools (P2) are next. This is a reader-first checkpoint, not complete
-feature acceptance or integration. Implementation remains authorized.
+**Status:** P0–P2 complete with independent checkpoint reviews and focused
+verification. Reader simplification and native inspect/update tools are implemented;
+reference maintenance (P3) is next. Complete acceptance and integration remain P4
+work. Implementation remains authorized.
 **Workspace:** `feat/notebook-authoring`, based on local `main` at
 `14d60757535e0ed78ff3753fda1372b0e4c47bbb`. One receiving worktree and one repository
 writer; independent reviewers do not edit it. Nothing here authorizes deployment,
@@ -244,16 +245,45 @@ P1 evidence (2026-11-05, x86_64-linux ordinary Nix sandboxes):
 
 ### P2 — Shared authoring and native tool adapters
 
-- [ ] Add outline/selected-step inspection and minimally scoped revision-checked
+- [x] Add outline/selected-step inspection and minimally scoped revision-checked
   edits using the existing parser/file-access/save owners. Native private fixtures
   prove exact outside-step byte preservation, malformed packages, path/symlink
   denial, manifest retargeting, moved/deleted steps, fence escapes, CRLF/Unicode,
   stale chapter revisions, two cooperating same-revision saves, failure reporting
   and preserved unrelated data.
-- [ ] Register thin tools in the existing extension mechanism, including read-only,
+- [x] Register thin tools in the existing extension mechanism, including read-only,
   chat-only, explicit disable/selection and child capability tests. Prove an actual
   synthetic SDK session can inspect/edit a notebook without browser state and cannot
   use the tool to widen its grants. No live model/provider is required.
+
+P2 checkpoint evidence (2026-11-05):
+
+- Shared library and direct native adapters implement bounded inspect and exact
+  stable-step replacement. Repeated BOM offsets, same-ID chapter moves, peer
+  identity conflicts, first/sole/last boundaries and native save-error propagation
+  have explicit regressions. Existing saved reviewer data is not read or changed.
+- Actual offline Pi SDK/faux-provider sessions exercise native notebook reads/writes,
+  defaults, explicit selections, selectors, saved allowlists, ordinary reopen,
+  live read/edit/own-name revocation, abort and shutdown. Separate controlled
+  RPC/fresh-child owners prove host composition; these are not an end-to-end
+  persisted-child browser claim. Malformed child metadata cannot acquire new
+  notebook tools through ordinary fallback.
+- Independent library/parser and SDK/capability reviewers closed their scoped
+  findings after corrections. SDK fixture admission closes before abort/join;
+  complete operation failures remain observable through shutdown/disposal. New
+  suites retain conservative E holds; no isolation/pool promotion is claimed.
+- Focused `nix run --offline --no-write-lock-file .#test -- core --jobs 4` selected
+  `lib/notebook-authoring.test.mjs`, `lib/notebook-authoring-sdk.test.mjs`,
+  `lib/guided-review.test.mjs`, `lib/file-edit.test.mjs`, `lib/rpc-manager.test.mjs`
+  and `lib/subagent-prompt.test.mjs`: **164/164 tests, 6/6 files pass**, static checks
+  pass with eight pre-existing warnings. Source export:
+  `631e68627ebdfb7757787fd8d7dcc4990a81cf7a795e5cc4dc097fd62b14140e`.
+  Artifact: `/nix/store/2cpi5v87ar8diqs5srrgrwv9z6hcdgwb-brabbler-core-checks`.
+  Requested/effective file workers **4/4**, E owners exclusive. Whole command about
+  **64 s**, about **37 s** preparation before the **27.135 s** file-execution window.
+  Subsequent plan/index status edits are not relabelled as a new application run.
+- Earlier failures and reviewer reports remain in private task evidence. Native
+  reference maintenance, full acceptance, rebase and integration are still pending.
 
 ### P3 — Git-reference maintenance
 
