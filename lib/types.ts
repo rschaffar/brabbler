@@ -393,11 +393,11 @@ export interface SessionInfo {
   detailsPending?: boolean;
   /** Creator of this fresh ordinary session; not a fork/subagent family relation. */
   spawnedBy?: string;
-  parentSessionId?: string; // source session for a fork, or parent session for a subagent
-  /** How this session relates to another session. Forks remain top-level in the
-   *  UI; only subagent relations form a visible parent/child tree. */
+  parentSessionId?: string; // source session for a fork, or parent of an attached conversation
+  /** Forks remain independent; subagents and BTW conversations attach to a parent. */
   relation?:
     | { kind: "fork"; originSessionId?: string }
+    | { kind: "btw"; parentSessionId: string; sourceLeafId: string | null }
     | {
         kind: "subagent";
         parentSessionId: string;

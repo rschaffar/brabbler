@@ -17,6 +17,8 @@ Context sections start expanded in live question cards, including set-level and 
 - Question contexts and option descriptions render sanitized Markdown. Local file links and inline source references open Files using the session directory, including source-line ranges and PDF pages; ordinary web links retain browser navigation. Opening a reference does not select an option or submit an answer. Relative paths cannot escape the session directory, and file-access checks still apply.
 - The review screen retains question contexts and option descriptions for inspection. Completed requests appear as collapsed, read-only receipts with the displayed questions, options and submitted answers. Their file links open current saved content, not immutable historical evidence. Historical controls never invoke tools; answers and additional details remain literal text.
 
+The toolbar's **BTW** aside remains available while a question or approval waits. It receives only a labelled reference to the displayed question, never your unsent answer or approval authority. Opening, answering and minimizing BTW leave the source card mounted and unchanged; stopping BTW affects only the aside. See [BTW side conversations](feature-internals.md#btw-side-conversations).
+
 ## Draft privacy and recovery
 
 Batch drafts use this browser tab's `sessionStorage`, scoped to the session ID, request ID and exact request payload. Reload in the same tab restores drafts only when the server replays that still-pending request. Drafts are not sent to the model or saved in the session transcript. If browser storage is unavailable, the card warns that recovery is unavailable and keeps its in-memory drafts.

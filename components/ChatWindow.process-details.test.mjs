@@ -83,6 +83,8 @@ test('actual completion adapter respects current enabled/session/callback state 
   props = { ...props, enabled: false }; await view.rerender(element()); await act(async () => api.current()); assert.equal(current.length, 1);
   props = { ...props, enabled: true, session: { id: 'child', cwd: '', relation: { kind: 'subagent' } } }; await view.rerender(element());
   await act(async () => api.current()); assert.equal(current.length, 1); assert.equal(ended.length, 4);
+  props = { ...props, session: { id: 'aside', cwd: '', relation: { kind: 'btw', parentSessionId: 'source', sourceLeafId: null } } }; await view.rerender(element());
+  await act(async () => api.current()); assert.equal(current.length, 1); assert.equal(ended.length, 5);
 });
 
 function readingMessages() {

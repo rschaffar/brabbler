@@ -65,6 +65,8 @@ export interface ChatWindowProps {
   session: SessionInfo | null;
   /** A fullscreen sibling covers this chat, including its body-portaled composer. */
   covered?: boolean;
+  /** Independent side panel: never owns the shell's global Stop shortcut. */
+  secondary?: boolean;
   searchTarget?: { sessionId: string; entryId: string; blockIndex?: number } | null;
   onSearchTargetHandled?: (target: { sessionId: string; entryId: string }) => void;
   initialScrollPosition?: ChatScrollPosition | null;
@@ -289,7 +291,7 @@ export function useChatCompletionNotification(session: SessionInfo | null, sound
   const enabledRef = useRef(soundEnabled);
   soundRef.current = playDoneSound;
   enabledRef.current = soundEnabled;
-  const notify = session?.relation?.kind !== "subagent";
+  const notify = session?.relation?.kind !== "subagent" && session?.relation?.kind !== "btw";
   return useCallback(() => {
     if (notify && enabledRef.current) soundRef.current();
     onAgentEnd?.();
@@ -334,10 +336,10 @@ export function ChatWindowView(props: ChatWindowViewProps) {
   return useChatWindowView(props);
 }
 
-function useChatWindowView({ workObserver, session, sessionRunning, contextReloadNotice, covered = false, searchTarget, onSearchTargetHandled, onScrollPositionChange, archivedRootSessionId, archiveActionBusy, onSessionRestored, newSessionCwd, newSessionDraftKey, chatInputRef, onNativeSessionIdChange, onSessionStatsChange, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, state, work, restore }: ChatWindowViewProps) {
+function useChatWindowView({ workObserver, session, sessionRunning, contextReloadNotice, covered = false, secondary = false, searchTarget, onSearchTargetHandled, onScrollPositionChange, archivedRootSessionId, archiveActionBusy, onSessionRestored, newSessionCwd, newSessionDraftKey, chatInputRef, onNativeSessionIdChange, onSessionStatsChange, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, state, work, restore }: ChatWindowViewProps) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
-  const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
+  const completionNotificationsEnabled = session?.relation?.kind !== "subagent" && session?.relation?.kind !== "btw";
   const historyOnly = isHistoryOnlySession(session);
   const workObservationRef = useRef(workObserver);
   workObservationRef.current = workObserver;
@@ -540,8 +542,8 @@ function useChatWindowView({ workObserver, session, sessionRunning, contextReloa
 
   // Register the abort handler for the global Esc shortcut
   useEffect(() => {
-    registerAbortHandler(sessionBusy ? handleAbort : null);
-  }, [sessionBusy, handleAbort]);
+    if (!secondary) registerAbortHandler(sessionBusy ? handleAbort : null);
+  }, [sessionBusy, handleAbort, secondary]);
 
   // --- Lazy-load historical messages ---
   // Only render the last N messages initially. When the user scrolls to the
@@ -902,7 +904,7 @@ function useChatWindowView({ workObserver, session, sessionRunning, contextReloa
         }}
         onAccountsChanged={async () => { await loadModels(); }}
       />}
-      nativeToolsControl={session?.relation?.kind !== "subagent" && (session?.cwd ?? newSessionCwd) && <SessionToolsControl
+      nativeToolsControl={session?.relation?.kind !== "subagent" && session?.relation?.kind !== "btw" && (session?.cwd ?? newSessionCwd) && <SessionToolsControl
         key={`session-tools:${session?.id ?? newSessionDraftKey ?? newSessionCwd}`}
         cwd={(session?.cwd ?? newSessionCwd)!}
         sessionId={session?.id ?? sessionIdRef.current}
@@ -917,7 +919,7 @@ function useChatWindowView({ workObserver, session, sessionRunning, contextReloa
       compactError={compactError}
       compactResult={compactResult}
       toolPreset={toolPreset}
-      onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
+      onToolPresetChange={session?.relation?.kind !== "btw" && (session || isNew) ? handleToolPresetChange : undefined}
       thinkingLevel={thinkingLevel}
       modelSpeed={modelSpeed}
       modelSpeedChanging={modelSpeedChanging}

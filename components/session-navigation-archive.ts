@@ -1,4 +1,4 @@
-import type { getSessionFamily } from "@/lib/session-family";
+import { familyMembers, type getSessionFamily } from "@/lib/session-family";
 
 /** Default shell → chat archive binding. The notice/route still owns restore;
  * archived history is never a new authorization or a navigation command. */
@@ -9,7 +9,7 @@ export function sessionNavigationArchiveBinding(
 ) {
   return {
     archivedRootSessionId: family?.root.archived ? family.root.id : null,
-    archiveActionBusy: Boolean(family && [family.root, ...family.subagents]
+    archiveActionBusy: Boolean(family && familyMembers(family)
       .some(item => runningIds.has(item.id) || queuedIds.has(item.id))),
     onSessionRestored,
   };

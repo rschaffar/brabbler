@@ -3,6 +3,7 @@
 import { useNavigationWork } from "@/lib/navigation-work";
 import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import type { SessionInfo } from "@/lib/types";
+import { familyMembers } from "@/lib/session-family";
 import { useActivityController, useActivityNotifications } from "@/hooks/useActivityController";
 import { useSessionCatalogue } from "@/hooks/useSessionCatalogue";
 import type { ActivityClientController } from "@/lib/activity-client-controller";
@@ -1050,7 +1051,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             ? { ...session, archived: action === "archive" } : session));
         }
         for (const family of selectedFamilies.filter((item) => result.succeeded.includes(item.root.id))) {
-          const affected = [family.root, ...family.subagents].some((item) => item.id === selectedSessionIdRef.current);
+          const affected = familyMembers(family).some((item) => item.id === selectedSessionIdRef.current);
           if (affected) {
             if (action === "delete") onSessionDeleted?.(selectedSessionIdRef.current!);
             else onSessionArchived?.(selectedSessionIdRef.current!);
@@ -2023,7 +2024,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           >
             {virtualIndices.map((index) => {
               const family = sessionFamilies[index];
-              const familySessions = [family.root, ...family.subagents];
+              const familySessions = familyMembers(family);
               const displaySession = family.latestModified === family.root.modified
                 ? family.root
                 : { ...family.root, modified: family.latestModified };
@@ -2060,6 +2061,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     onMove={() => { setMovingSession(family.root); setMoveDestination(""); setMoveError(null); }}
                     archivedView={showArchived}
                     archiveDisabled={family.archiveOwnerId !== family.root.id}
+                    attachedBtwCount={family.btws?.length ?? 0}
                     onArchived={(id, archived) => {
                       // An older in-flight list response must not undo this action.
                       invalidateCatalogue();
@@ -2069,7 +2071,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     }}
                     onDeleted={(id) => {
                       invalidateCatalogue();
-                      onSessionDeleted?.(id);
+                      onSessionDeleted?.(familySessions.some(item => item.id === selectedSessionIdRef.current) ? selectedSessionIdRef.current! : id);
                       loadSessions();
                     }}
                   />
@@ -2360,6 +2362,7 @@ export function SessionItem({
   onArchived,
   archivedView = false,
   archiveDisabled = false,
+  attachedBtwCount = 0,
   depth = 0,
   hasChildren = false,
   collapsed = false,
@@ -2382,6 +2385,7 @@ export function SessionItem({
   onArchived?: (id: string, archived: boolean) => void;
   archivedView?: boolean;
   archiveDisabled?: boolean;
+  attachedBtwCount?: number;
   depth?: number;
   hasChildren?: boolean;
   collapsed?: boolean;
@@ -2578,7 +2582,7 @@ export function SessionItem({
         /* ── Delete confirmation: same height, two flat buttons ── */
         <>
           <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {t("sidebar.deleteSession", { title: title.slice(0, 22) + (title.length > 22 ? "…" : "") })}
+            {t(attachedBtwCount ? "sidebar.deleteSessionWithBtw" : "sidebar.deleteSession", { title: title.slice(0, 22) + (title.length > 22 ? "…" : ""), count: attachedBtwCount })}
           </div>
           <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
             <button

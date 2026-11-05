@@ -175,7 +175,7 @@ async function moveReservedSessionFamily(id: string, cwd: string, options: Sessi
   for (const session of sessions) {
     if (!existsSync(session.path)) continue;
     const moving = movedIds.has(session.id);
-    if (!moving && session.relation?.kind !== "fork" && session.relation?.kind !== "subagent") continue;
+    if (!moving && session.relation?.kind !== "fork" && session.relation?.kind !== "subagent" && session.relation?.kind !== "btw") continue;
     const header = readSessionHeader(session.path);
     if (!header || header.id !== session.id) throw new SessionMoveConflict("Session changed while planning move");
     if (!moving && (!header.parentSession || !relocated.has(sessionPathKey(header.parentSession)))) continue;
@@ -228,7 +228,7 @@ async function moveReservedSessionFamily(id: string, cwd: string, options: Sessi
     })) throw new SessionMoveConflict("Session family or source directories changed; preview the move again");
     const plannedFiles = new Set(files.map(file => sessionPathKey(file.source)));
     for (const session of finalSessions) {
-      if (movedIds.has(session.id) || (session.relation?.kind !== "fork" && session.relation?.kind !== "subagent")) continue;
+      if (movedIds.has(session.id) || (session.relation?.kind !== "fork" && session.relation?.kind !== "subagent" && session.relation?.kind !== "btw")) continue;
       const header = readSessionHeader(session.path);
       if (header?.parentSession && relocated.has(sessionPathKey(header.parentSession)) && !plannedFiles.has(sessionPathKey(session.path))) {
         throw new SessionMoveConflict("Linked sessions changed; preview the move again");

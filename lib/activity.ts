@@ -46,12 +46,12 @@ export function hiddenActivitySessionIds(sessions: readonly SessionInfo[], hidde
     while (current && !visited.has(current.id)) {
       // Unknown worktree identity or missing ancestry is not proof of a public project.
       if (!hasResolvedProjectIdentity(current) || hiddenProjectKeys.has(workspaceKeyOf(current))
-        || (current.relation?.kind === "subagent" && !byId.has(current.relation.parentSessionId))) {
+        || ((current.relation?.kind === "subagent" || current.relation?.kind === "btw") && !byId.has(current.relation.parentSessionId))) {
         hidden.add(session.id);
         break;
       }
       visited.add(current.id);
-      current = current.relation?.kind === "subagent" ? byId.get(current.relation.parentSessionId) : undefined;
+      current = current.relation?.kind === "subagent" || current.relation?.kind === "btw" ? byId.get(current.relation.parentSessionId) : undefined;
     }
   }
   return hidden;
@@ -98,7 +98,7 @@ export function getActivitySections(
   }
   for (const items of Object.values(sections)) {
     for (const item of items) {
-      const parentId = item.session.relation?.kind === "subagent" ? item.session.relation.parentSessionId : null;
+      const parentId = item.session.relation?.kind === "subagent" || item.session.relation?.kind === "btw" ? item.session.relation.parentSessionId : null;
       if (!parentId) continue;
       const parent = byId.get(parentId);
       item.nested = statusById.get(parentId) === item.status;
@@ -117,7 +117,7 @@ export function getActivitySections(
       placed.add(item.session.id);
       ordered.push(item);
       for (const child of items) {
-        if (child.nested && child.session.relation?.kind === "subagent"
+        if (child.nested && (child.session.relation?.kind === "subagent" || child.session.relation?.kind === "btw")
           && child.session.relation.parentSessionId === item.session.id) append(child);
       }
     };

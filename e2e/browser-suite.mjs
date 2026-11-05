@@ -36,6 +36,7 @@ import { seedNativeToolsFixtures, checkSelectedNativeRuntime } from "./native-to
 import { checkNativeToolsModalLayout } from "./native-tools-layout.mjs";
 import { applyFixtureEnvironment, createHarness } from "./harness.mjs";
 import { checkRunningSessionForks } from "./running-session-forks.mjs";
+import { checkBtwWhileWaiting, prepareBtwProvider } from "./btw.mjs";
 import { checkGitExplorer } from "./git-explorer.mjs";
 import { contextContents, changedContextContents } from "./git-diff-context.mjs";
 import { checkIntegratedGitGraph } from "./git-explorer-merge.mjs";
@@ -71,7 +72,7 @@ assert.match(root ?? "", /^\/nix\/store\//, "Nix-built application package requi
 const harness = createHarness(root, "browser");
 const { artifacts, agentDir, env: fixtureEnv } = harness;
 if (group === "history") fixtureEnv.BRABBLER_APP_NAME = "  E2E Brabbler  ";
-let coverage;
+let coverage, btwProvider;
 try {
 coverage = createCoverage(group, artifacts);
 applyFixtureEnvironment(fixtureEnv); // In-process helpers and children share isolation.
@@ -355,6 +356,7 @@ let nativeToolsFixture;
   assert.equal(laneURL.protocol, "http:");
   assert.equal(laneURL.hostname, "127.0.0.1", "Use only the guest's strict IPv4 loopback service");
   assert.equal(laneURL.origin, base, "Service URL must be the exact canonical lane origin");
+  if (group === "running-forks") btwProvider = await prepareBtwProvider(agentDir);
   const ownedServer = await harness.startService();
 
   async function api(path, status = 200) {
@@ -433,16 +435,27 @@ let nativeToolsFixture;
 
   async function runRunningForkChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`running-forks/${inputId === "en-desktop" ? "canonical-quote-stop-v2" : "first-user-quote-stop-v2"}@${inputId}`, async () => {
-      const { viewport } = browserInputs[inputId].options;
-      context = await newInputContext(inputId);
-      page = await context.newPage();
-      page.setDefaultTimeout(30_000);
-      const errors = harness.errorsFor(context);
-      await checkRunningSessionForks(page, { base, api, post, artifacts, width: viewport.width });
-      assert.deepEqual(errors, [], `Running-fork browser/server errors at ${viewport.width}px`);
-      await harness.closeContext(context); context = undefined; page = undefined;
-    });
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) {
+      await coverage.run(`running-forks/${inputId === "en-desktop" ? "canonical-quote-stop-v2" : "first-user-quote-stop-v2"}@${inputId}`, async () => {
+        const { viewport } = browserInputs[inputId].options;
+        context = await newInputContext(inputId);
+        page = await context.newPage();
+        page.setDefaultTimeout(30_000);
+        const errors = harness.errorsFor(context);
+        await checkRunningSessionForks(page, { base, api, post, artifacts, width: viewport.width });
+        assert.deepEqual(errors, [], `Running-fork browser/server errors at ${viewport.width}px`);
+        await harness.closeContext(context); context = undefined; page = undefined;
+      });
+      await coverage.run(`running-forks/btw-pending-question-v1@${inputId}`, async () => {
+        const { viewport } = browserInputs[inputId].options;
+        context = await newInputContext(inputId);
+        page = await context.newPage(); page.setDefaultTimeout(30_000);
+        const errors = harness.errorsFor(context);
+        await checkBtwWhileWaiting(page, { base, api, post, artifacts, width: viewport.width, provider: btwProvider });
+        assert.deepEqual(errors, [], `BTW browser/server errors at ${viewport.width}px`);
+        await harness.closeContext(context); context = undefined; page = undefined;
+      });
+    }
   }
 
   async function runSessionLaunchChecks() {
@@ -969,7 +982,7 @@ let nativeToolsFixture;
       await first.scrollIntoViewIfNeeded();
       await first.getByRole("checkbox").check();
       await page.getByRole("button", { name: "Delete", exact: true }).click();
-      await page.getByText("Permanently delete selected sessions (1) and their subagents? Forks will remain.").waitFor();
+      await page.getByText("Permanently delete selected sessions (1), their subagents and BTW conversations? Forks will remain.").waitFor();
       assert.ok((await api("/api/sessions?force=1")).sessions.some((s) => s.id === ids[0]), "Delete requires confirmation");
       await page.getByRole("button", { name: "Delete", exact: true }).last().click();
       await first.waitFor({ state: "detached" });
@@ -1707,6 +1720,9 @@ let nativeToolsFixture;
   await harness.fail(error);
 } finally {
   stage.finishOpen();
-  await harness.finish();
+  const failures = [];
+  try { await harness.finish(); } catch (error) { failures.push(error); }
+  try { await btwProvider?.close(); } catch (error) { failures.push(error); }
+  if (failures.length) throw new AggregateError(failures, "Browser/provider settlement failed");
 }
 }

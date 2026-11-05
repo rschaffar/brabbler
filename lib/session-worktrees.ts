@@ -137,7 +137,7 @@ export async function previewSessionMoves(request: SessionMovePreviewRequest): P
   const affected = new Set(plan.roots.flatMap(root => root.memberIds));
   const relocated = new Set(plan.roots.flatMap(root => root.bindings.map(binding => sessionPathKey(binding.path))));
   for (const session of sessions) {
-    if (affected.has(session.id) || (session.relation?.kind !== "fork" && session.relation?.kind !== "subagent")) continue;
+    if (affected.has(session.id) || (session.relation?.kind !== "fork" && session.relation?.kind !== "subagent" && session.relation?.kind !== "btw")) continue;
     const header = readSessionHeader(session.path);
     if (header?.parentSession && relocated.has(sessionPathKey(header.parentSession))) affected.add(session.id);
   }

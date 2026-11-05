@@ -27,7 +27,7 @@ export const scenarios = {
   "mobile-sidebar": ["mobile-sidebar/compact-search-native-rename-restore-move-v4@legacy-mobile"],
   "worktrees": ["worktrees/git-backed-loss-review-v5@en-desktop", "worktrees/git-backed-modal-review-v4@en-mobile-tall"],
   "session-launch": ["session-launch/feedback-and-independent-native-v2@en-desktop", "session-launch/independent-native-compact-v2@en-mobile-tall"],
-  "running-forks": ["running-forks/canonical-quote-stop-v2@en-desktop", "running-forks/first-user-quote-stop-v2@en-mobile-tall"],
+  "running-forks": ["running-forks/canonical-quote-stop-v2@en-desktop", "running-forks/btw-pending-question-v1@en-desktop", "running-forks/first-user-quote-stop-v2@en-mobile-tall", "running-forks/btw-pending-question-v1@en-mobile-tall"],
   "model-speed": ["model-speed/native-wiring-v3@en-desktop", "model-speed/native-fresh-v2@en-desktop", "model-speed/native-wiring-v3@en-mobile-tall", "model-speed/native-fresh-v2@en-mobile-tall"],
   "native-tools": ["native-tools/selected-runtime-native-v2@en-desktop", "native-tools/modal-layout@en-mobile-tall"],
   "trust": ["trust/worktree-caller-cwd-reset-native-v5@en-desktop", "trust/worktree-compact-restriction-native-v5@en-mobile-tall"],

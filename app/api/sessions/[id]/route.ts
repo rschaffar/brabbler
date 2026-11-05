@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { btwRelation, readBtwMetadata } from "@/lib/btw";
+import { familyMembers, getSessionFamily } from "@/lib/session-family";
+import { withSessionMoveLock } from "@/lib/session-move";
 import { existsSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import {
@@ -111,7 +114,8 @@ export async function GET(
     const subagent = header
       ? readSubagentRun(entries as never, header.id, filePath)
       : null;
-    const toolNames = readSubagentSessionResources(entries as never)?.tools
+    const btw = header ? readBtwMetadata(entries as never, header.id) : null;
+    const toolNames = btw ? [] : readSubagentSessionResources(entries as never)?.tools
       ?? readSessionToolSelection(entries as never);
     const info = header ? (await attachSessionProjectInfo([{
       path: filePath,
@@ -128,8 +132,8 @@ export async function GET(
             return typeof c === "string" ? c : (Array.isArray(c) ? (c.find((b: { type: string }) => b.type === "text") as { text: string } | undefined)?.text ?? "" : "") || "(no messages)";
           })()
         : "(no messages)",
-      parentSessionId,
-      ...(subagent
+      parentSessionId: btw?.parentSessionId ?? parentSessionId,
+      ...(btw ? { relation: btwRelation(btw) } : subagent
         ? { relation: { kind: "subagent" as const, parentSessionId: subagent.parentSessionId, profile: subagent.profile, description: subagent.description, status: liveRpc?.isRunning() ? "running" as const : subagent.status } }
         : header.parentSession
           ? { relation: { kind: "fork" as const, ...(parentSessionId ? { originSessionId: parentSessionId } : {}) } }
@@ -143,7 +147,7 @@ export async function GET(
     try { possibleInterruptedRun = readPossibleInterruptedRun(id); }
     catch (error) { console.error("[brabbler] Could not inspect run journal:", error); }
 
-    const nativeResources = subagent ? NO_NATIVE_RESOURCES : readNativeResourceSelection(entries as never);
+    const nativeResources = subagent || btw ? NO_NATIVE_RESOURCES : readNativeResourceSelection(entries as never);
     return perf?.attach(jsonResponse(
       req,
       {
@@ -208,8 +212,10 @@ export async function PATCH(
     if (typeof body.archived === "boolean") {
       if (!existsSync(filePath)) return NextResponse.json({ error: "Session not persisted yet" }, { status: 409 });
       const rpc = getRpcSession(id);
-      if (rpc?.isRunning()) {
-        return NextResponse.json({ error: "Stop the session before archiving it" }, { status: 409 });
+      const family = getSessionFamily(mergeSessionLists(await listAllSessions({ force: true }), getRpcSessionInfos({ includeTransient: true })), id);
+      if (family && family.root.id !== id && family.btws?.some(item => item.id === id)) return NextResponse.json({ error: "Archive or restore BTW through its source session family" }, { status: 409 });
+      if (rpc?.isRunning() || family && familyMembers(family).some(item => getRpcSession(item.id)?.isRunning())) {
+        return NextResponse.json({ error: "Stop the session family before archiving it" }, { status: 409 });
       }
       // An idle wrapper still holds a stale SessionManager. Evict it before
       // appending so a later prompt reloads the archive marker from disk.
@@ -237,6 +243,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  return withSessionMoveLock(async () => deleteSessionFamily(id));
+}
+
+async function deleteSessionFamily(id: string) {
   try {
     const filePath = await resolveSessionPath(id);
     if (!filePath) {
@@ -263,14 +273,14 @@ export async function DELETE(
 
     const targetPathKey = sessionPathKey(filePath);
     const dir = dirname(filePath);
-    // Deleting a session also deletes every persisted or live subagent below it.
+    // Delete attached conversations too; BTW is not reparented as an ordinary fork.
     const sessions = mergeSessionLists(
       await listAllSessions({ force: true }),
       getRpcSessionInfos({ includeTransient: true }),
     );
     const childrenByParent = new Map<string, string[]>();
     for (const session of sessions) {
-      if (session.relation?.kind !== "subagent") continue;
+      if (session.relation?.kind !== "subagent" && session.relation?.kind !== "btw") continue;
       const children = childrenByParent.get(session.relation.parentSessionId) ?? [];
       children.push(session.id);
       childrenByParent.set(session.relation.parentSessionId, children);
@@ -288,11 +298,11 @@ export async function DELETE(
           const entries = lines.slice(1).flatMap((line) => {
             try { return [JSON.parse(line) as SessionEntry]; } catch { return []; }
           });
-          const subagent = readSubagentRun(entries, header.id, childPath);
-          if (!subagent) continue;
-          const children = childrenByParent.get(subagent.parentSessionId) ?? [];
+          const relation = readBtwMetadata(entries, header.id) ?? readSubagentRun(entries, header.id, childPath);
+          if (!relation) continue;
+          const children = childrenByParent.get(relation.parentSessionId) ?? [];
           children.push(header.id);
-          childrenByParent.set(subagent.parentSessionId, children);
+          childrenByParent.set(relation.parentSessionId, children);
           sessionPaths.set(header.id, childPath);
         } catch { /* skip malformed or concurrently removed sessions */ }
       }
