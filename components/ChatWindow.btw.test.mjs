@@ -3,15 +3,16 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { composerFixture, inputText } from './composer.fixture.mjs';
 
-test('a secondary chat cannot replace the main global Stop owner or expose BTW tool switching', async t => {
+test('a secondary chat preserves the main global Stop owner while exposing independent BTW tool switching', async t => {
   const f = composerFixture(t);
   const shortcuts = await f.jiti.import('../hooks/useKeyboardShortcuts.ts');
   let mainStops = 0, childStops = 0;
+  const presets = [];
   shortcuts.registerAbortHandler(() => { mainStops++; });
   t.after(() => shortcuts.registerAbortHandler(null));
   const session = { id: 'btw-child', cwd: '', path: '', created: '', modified: '', firstMessage: '', messageCount: 0,
     relation: { kind: 'btw', parentSessionId: 'source', sourceLeafId: null } };
-  const h = await f.chat({ agentRunning: true, handleAbort() { childStops++; }, handleToolPresetChange() { assert.fail('no tool switching'); }, toolPreset: 'none' }, { session, secondary: true });
+  const h = await f.chat({ agentRunning: true, handleAbort() { childStops++; }, handleToolPresetChange(preset) { presets.push(preset); }, toolPreset: 'none' }, { session, secondary: true });
   function Shortcuts() { shortcuts.useGlobalKeyboardShortcuts({}); return null; }
   const props = { session, secondary: true, archivedRootSessionId: null, archiveActionBusy: false, onSessionRestored() {}, newSessionCwd: null, newSessionDraftKey: null, state: h.state, work: h.work };
   await h.view.rerender(createElement(h.p.I18nProvider, null, createElement(Shortcuts), createElement(h.p.ChatView, props)));
@@ -19,7 +20,13 @@ test('a secondary chat cannot replace the main global Stop owner or expose BTW t
   assert.equal(mainStops, 1); assert.equal(childStops, 0);
   props.state = { ...h.state, agentRunning: false };
   await h.view.rerender(createElement(h.p.I18nProvider, null, createElement(Shortcuts), createElement(h.p.ChatView, props)));
-  assert.equal(h.view.container.querySelector('[title^="Change tool preset"]') === null, true);
+  const tools = h.view.container.querySelector('[title^="Change tool preset"]');
+  assert.equal(Boolean(tools), true);
+  await h.view.dispatch(tools, new h.view.window.MouseEvent('click', { bubbles: true }));
+  const full = [...h.view.container.querySelectorAll('button')].find(button => button.textContent.startsWith('full'));
+  assert.equal(Boolean(full), true);
+  await h.view.dispatch(full, new h.view.window.MouseEvent('click', { bubbles: true }));
+  assert.deepEqual(presets, ['full']);
   await h.view.dispatch(h.view.window.document.body, new h.view.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
   assert.equal(mainStops, 2, 'idle secondary must not clear main ownership');
 });

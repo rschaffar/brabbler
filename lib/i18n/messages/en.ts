@@ -8,7 +8,7 @@ export const enLocale: LocalePlugin = {
   messages: {
     "btw.title": "BTW",
     "btw.open": "Ask a side question",
-    "btw.chatOnly": "Chat-only side conversation",
+    "btw.sideConversation": "Independent side conversation",
     "btw.fullSize": "Open full-size",
     "btw.back": "Back to source chat",
     "btw.close": "Minimize BTW",

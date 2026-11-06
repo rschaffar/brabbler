@@ -24,14 +24,27 @@ export async function prepareBtwProvider(agentDir) {
     request.on("end", () => {
       const work = (async () => { try {
         assert.equal(request.method, "POST"); assert.equal(request.url, "/v1/chat/completions");
-        requests.push(JSON.parse(Buffer.concat(chunks).toString()));
+        const body = JSON.parse(Buffer.concat(chunks).toString());
+        requests.push(body);
         const held = nextHold; nextHold = undefined;
         if (held) { held.arrive(); await held.blocked; }
         if (response.destroyed) return;
         response.writeHead(200, { "Content-Type": "text/event-stream" });
         const chunk = { id: `btw-${requests.length}`, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: "text" };
-        response.write(`data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: { role: "assistant", content: held ? "E2E BTW recall answer" : "E2E BTW answer" }, finish_reason: null }] })}\n\n`);
-        response.write(`data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`);
+        const userIndex = body.messages.findLastIndex(message => message.role === "user");
+        const user = body.messages[userIndex];
+        const userText = typeof user?.content === "string" ? user.content : (user?.content ?? []).filter(block => block.type === "text").map(block => block.text).join("\n");
+        const readEvidence = userText.startsWith("BTW question ");
+        const hasResult = body.messages.slice(userIndex + 1).some(message => message.role === "tool");
+        if (readEvidence && !hasResult) {
+          assert.ok(body.tools.some(tool => tool.function?.name === "read"), "BTW exposes real read tool");
+          response.write(`data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: `btw-read-${requests.length}`, type: "function", function: { name: "read", arguments: JSON.stringify({ path: "btw-evidence.txt" }) } }] }, finish_reason: null }] })}\n\n`);
+          response.write(`data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] })}\n\n`);
+        } else {
+          if (readEvidence) assert.ok(body.messages.some(message => message.role === "tool" && String(message.content).includes("BTW file evidence")), "actual read result reaches provider");
+          response.write(`data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: { role: "assistant", content: held ? "E2E BTW recall answer" : "E2E BTW answer" }, finish_reason: null }] })}\n\n`);
+          response.write(`data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`);
+        }
         response.end("data: [DONE]\n\n");
       } catch (error) { errors.push(error); if (!response.destroyed) { response.writeHead(500); response.end("Fixture request failed"); } } })();
       pending.add(work); void work.finally(() => pending.delete(work));
@@ -61,6 +74,7 @@ export async function prepareBtwProvider(agentDir) {
 
 export async function checkBtwWhileWaiting(page, { base, api, post, artifacts, width, provider }) {
   const sourceId = `e2e-running-fork-${width}`, sourcePath = `/api/agent/${sourceId}`;
+  await post(sourcePath, { type: "set_tools", toolNames: ["read", "bash", "edit", "write"] });
   await post(sourcePath, { type: "set_model", provider: "e2e-btw", modelId: "text" });
   await page.goto(`${base}/?session=${sourceId}`, { waitUntil: "domcontentloaded" });
   const activate = locator => width <= 640 ? locator.tap() : locator.click();
@@ -108,6 +122,7 @@ export async function checkBtwWhileWaiting(page, { base, api, post, artifacts, w
     const count = provider.requests.length, created = await open(); childId = created.session.id;
     assert.equal(provider.requests.length, count, "Opening BTW never prompts a model");
     assert.match(created.snapshot.text, /E2E browser question/);
+    writeFileSync(join(created.session.cwd, "btw-evidence.txt"), "BTW file evidence\n");
     const bounds = await panel.boundingBox(), area = await page.locator("#chat-content").boundingBox();
     assert.ok(bounds.x >= area.x - 1 && bounds.y >= area.y - 1 && bounds.x + bounds.width <= area.x + area.width + 1 && bounds.y + bounds.height <= area.y + area.height + 1);
     if (width > 640) {
@@ -126,16 +141,31 @@ export async function checkBtwWhileWaiting(page, { base, api, post, artifacts, w
     assert.equal((await childPrompt).status(), 200);
     await panel.getByText("E2E BTW answer", { exact: true }).waitFor();
     await waitForAsyncCondition(page, async id => !(await (await fetch(`/api/agent/${id}`)).json()).state.isPromptRunning, childId);
-    assert.equal(provider.requests.length, count + 1);
-    assert.deepEqual(provider.requests.at(-1).tools ?? [], [], "BTW advertises no tools to the real provider adapter");
+    assert.equal(provider.requests.length, count + 2, "real read tool call followed by its answer turn");
+    const tools = provider.requests.at(-1).tools.map(tool => tool.function?.name);
+    for (const name of ["read", "bash", "edit", "write", "ask_user", "read_btw_source"]) assert.ok(tools.includes(name), name);
+    assert.ok(provider.requests.at(-1).messages.some(message => message.role === "system" && String(message.content).includes("independent BTW")), "normal prompt includes additive BTW guidance");
     await checkSource();
     assert.equal(await questionNode.evaluate(element => element.isConnected), true);
     assert.equal(await answerNode.inputValue(), "Unsubmitted source answer"); assert.equal(await mainNode.inputValue(), draft);
+    const sessionTools = panel.getByRole("button", { name: "Session tools", exact: true });
+    if (!await sessionTools.isVisible()) await activate(panel.getByRole("button", { name: "More controls", exact: true }));
+    await activate(sessionTools);
+    const toolsDialog = page.getByRole("dialog", { name: "Session tools", exact: true });
+    await toolsDialog.waitFor();
+    await toolsDialog.press("Escape");
+    await toolsDialog.waitFor({ state: "hidden" });
+    assert.equal(await panel.isVisible(), true, "native dialog Escape does not minimize BTW");
+    await checkSource();
     await page.screenshot({ path: join(artifacts, `btw-${width}.png`), fullPage: true });
     await activate(panel.getByRole("button", { name: "Minimize BTW" }));
     assert.equal(await question.elementHandle().then(handle => handle.evaluate((element, original) => element === original, questionNode)), true);
     assert.equal(await answer.inputValue(), "Unsubmitted source answer"); assert.equal(await main.inputValue(), draft);
     assert.equal(await mainNode.evaluate(element => element === document.activeElement), true, "Closing restores the source focus after inert is removed");
+    assert.equal((await open()).session.id, childId);
+    await panel.getByRole("button", { name: "Minimize BTW" }).press("Escape");
+    await panel.waitFor({ state: "hidden" });
+    await checkSource();
     assert.equal((await open()).session.id, childId);
     // The real hook clears the queue then restores through the panel-owned input ref.
     const held = provider.holdNext(); releaseAnswer = held.release;
@@ -163,6 +193,16 @@ export async function checkBtwWhileWaiting(page, { base, api, post, artifacts, w
     await panel.getByText("E2E BTW answer", { exact: true }).waitFor();
     await activate(panel.getByRole("button", { name: "Copy latest answer to main draft", exact: true }));
     await page.waitForFunction(expected => document.querySelector("#chat-content > div .chat-input-textarea")?.value === expected, `${draft}\n\nE2E BTW recall answer\n`);
+    await checkSource();
+    const chatOnly = await post(`/api/agent/${childId}`, { type: "set_tools", toolNames: [] });
+    assert.equal(chatOnly.data.sessionId, childId); assert.equal(chatOnly.data.recreated, true);
+    assert.deepEqual((await api(`/api/sessions/${childId}`)).toolNames, []);
+    const enabled = await post(`/api/agent/${childId}`, { type: "set_tools", toolNames: ["read", "bash", "edit", "write"] });
+    assert.equal(enabled.data.sessionId, childId); assert.equal(enabled.data.recreated, true);
+    const applied = await post(`/api/agent/${childId}`, { type: "set_native_resources", nativeResources: { version: 1, codeMode: true, mcpServers: [] } });
+    assert.equal(applied.data.sessionId, childId);
+    assert.equal((await api(`/api/agent/${childId}`)).state.effectiveNativeResources.codeMode, true);
+    assert.equal((await api(`/api/sessions/${childId}`)).nativeResources.codeMode, true);
     await checkSource();
   } catch (error) { failure = error; } finally {
     releaseAnswer?.();

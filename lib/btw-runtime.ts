@@ -5,8 +5,10 @@ import { cacheSessionPath, getLatestModelChange, invalidateSessionListCache, lis
 import { withSessionMoveLock } from "./session-move";
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
 import { appendSessionModelSpeed, readSessionModelSpeed } from "./session-model-speed";
-import { appendSessionToolSelection } from "./session-tool-selection";
-import { appendNativeResourceSelection, NO_NATIVE_RESOURCES } from "./session-native-resources";
+import { appendSessionToolSelection, readSessionToolSelection } from "./session-tool-selection";
+import { appendNativeResourceSelection, readNativeResourceSelection } from "./session-native-resources";
+import { PRESET_FULL } from "./tool-presets";
+import { readBtwSource } from "./btw-source-reader";
 import { flushSessionEntries, quarantineSessionAfterSaveFailure, sessionSaveBarrier } from "./session-save";
 import type { SessionEntry, SessionInfo } from "./types";
 
@@ -20,6 +22,14 @@ async function managerFor(id: string, mutable = false) {
   const manager = openSessionManager(path, { mutable });
   if (manager.getSessionId() !== id) throw new Error("Session identity changed");
   return manager;
+}
+
+async function sourceFor(id: string) {
+  const live = getRpcSession(id);
+  if (live?.isAlive()) return live.inner.sessionManager;
+  const path = await resolveSessionPath(id);
+  if (!path) throw new Error("Source session not found");
+  return readBtwSource(path, id);
 }
 
 export async function getBtwConversation(parentSessionId: string, force = false): Promise<BtwConversation> {
@@ -38,13 +48,21 @@ export function saveBtwSnapshot(manager: SessionManager, snapshot: BtwSnapshot):
   } catch (error) { quarantineSessionAfterSaveFailure(manager); throw error; }
 }
 
+/** Read only the reference's anchored branch; never navigate or prompt its owner. */
+export async function readBtwSourceBranch(parentSessionId: string, leafId: string | null): Promise<SessionEntry[]> {
+  if (leafId === null) return [];
+  const manager = await sourceFor(parentSessionId);
+  if (!manager.getEntry(leafId)) throw new Error("Source reference anchor is unavailable; refresh context explicitly");
+  return manager.getBranch(leafId) as unknown as SessionEntry[];
+}
+
 /** Serialize with relocation and other creation attempts. No source runtime is
  * constructed, awaited for idle, prompted, navigated or written. */
 export async function ensureBtwConversation(parentSessionId: string, refresh = false): Promise<BtwConversation> {
   return withSessionMoveLock(async () => {
     const existing = await getBtwConversation(parentSessionId, true);
     if (existing.session && !refresh) return existing;
-    const parent = await managerFor(parentSessionId);
+    const parent = await sourceFor(parentSessionId);
     if (parent.getSessionId() !== parentSessionId) throw new Error("Source session identity changed");
     const sourceLeafId = parent.getLeafId();
     const entries = parent.getEntries() as unknown as SessionEntry[];
@@ -67,8 +85,13 @@ export async function ensureBtwConversation(parentSessionId: string, refresh = f
       const child = SessionManager.create(parent.getCwd(), parent.getSessionDir(), { parentSession: parent.getSessionFile() });
       try {
         child.appendCustomEntry(BTW_META_TYPE, { version: 1, sessionId: child.getSessionId(), parentSessionId, sourceLeafId, createdAt: snapshot.capturedAt });
-        appendSessionToolSelection(child, []);
-        appendNativeResourceSelection(child, NO_NATIVE_RESOURCES);
+        const live = getRpcSession(parentSessionId);
+        const liveTools = live?.inner.getActiveToolNames?.()
+          .map(name => name === "powershell" ? "bash" : name).filter(name => PRESET_FULL.includes(name));
+        const toolNames = readSessionToolSelection(entries)
+          ?? (live?.isChatOnly?.() ? [] : liveTools?.length ? liveTools : undefined);
+        if (toolNames !== undefined) appendSessionToolSelection(child, toolNames);
+        appendNativeResourceSelection(child, readNativeResourceSelection(entries));
         appendSessionAccounts(child, readSessionAccounts(entries) ?? {});
         appendSessionModelSpeed(child, readSessionModelSpeed(entries));
         const liveModel = getRpcSession(parentSessionId)?.inner.model;
