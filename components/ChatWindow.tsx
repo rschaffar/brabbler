@@ -904,7 +904,7 @@ function useChatWindowView({ workObserver, session, sessionRunning, contextReloa
         }}
         onAccountsChanged={async () => { await loadModels(); }}
       />}
-      nativeToolsControl={session?.relation?.kind !== "subagent" && session?.relation?.kind !== "btw" && (session?.cwd ?? newSessionCwd) && <SessionToolsControl
+      nativeToolsControl={session?.relation?.kind !== "subagent" && (session?.cwd ?? newSessionCwd) && <SessionToolsControl
         key={`session-tools:${session?.id ?? newSessionDraftKey ?? newSessionCwd}`}
         cwd={(session?.cwd ?? newSessionCwd)!}
         sessionId={session?.id ?? sessionIdRef.current}
@@ -919,7 +919,7 @@ function useChatWindowView({ workObserver, session, sessionRunning, contextReloa
       compactError={compactError}
       compactResult={compactResult}
       toolPreset={toolPreset}
-      onToolPresetChange={session?.relation?.kind !== "btw" && (session || isNew) ? handleToolPresetChange : undefined}
+      onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
       thinkingLevel={thinkingLevel}
       modelSpeed={modelSpeed}
       modelSpeedChanging={modelSpeedChanging}

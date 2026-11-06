@@ -115,7 +115,7 @@ export async function GET(
       ? readSubagentRun(entries as never, header.id, filePath)
       : null;
     const btw = header ? readBtwMetadata(entries as never, header.id) : null;
-    const toolNames = btw ? [] : readSubagentSessionResources(entries as never)?.tools
+    const toolNames = readSubagentSessionResources(entries as never)?.tools
       ?? readSessionToolSelection(entries as never);
     const info = header ? (await attachSessionProjectInfo([{
       path: filePath,
@@ -147,7 +147,7 @@ export async function GET(
     try { possibleInterruptedRun = readPossibleInterruptedRun(id); }
     catch (error) { console.error("[brabbler] Could not inspect run journal:", error); }
 
-    const nativeResources = subagent || btw ? NO_NATIVE_RESOURCES : readNativeResourceSelection(entries as never);
+    const nativeResources = subagent ? NO_NATIVE_RESOURCES : readNativeResourceSelection(entries as never);
     return perf?.attach(jsonResponse(
       req,
       {

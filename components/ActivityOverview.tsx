@@ -229,7 +229,7 @@ export function ActivityOverview({ sessions, runningIds, queuedIds, attention, p
                     >
                       <span className="activity-item-top">
                         <span className="activity-dot" aria-hidden="true" />
-                        {session.relation?.kind === "btw" && <span title={t("btw.chatOnly")}>{t("btw.title")}</span>}
+                        {session.relation?.kind === "btw" && <span title={t("btw.sideConversation")}>{t("btw.title")}</span>}
                         {session.relation?.kind === "subagent" && (
                           <span className="activity-subagent-icon" title={t("activity.subagent")}><SubagentIcon /></span>
                         )}

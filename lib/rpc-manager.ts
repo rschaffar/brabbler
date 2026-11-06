@@ -2,7 +2,8 @@ import type { Agent, AgentMessage as SdkAgentMessage, ThinkingLevel } from "@ear
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
-import { BTW_CONTEXT_TYPE, BTW_SYSTEM_PROMPT, btwRelation, btwSnapshotMessage, readBtwMetadata, type BtwSnapshot } from "./btw";
+import { BTW_CONTEXT_TYPE, BTW_SYSTEM_GUIDANCE, btwRelation, btwSnapshotMessage, readBtwMetadata, type BtwSnapshot } from "./btw";
+import { createBtwSourceExtension } from "./btw-source-extension";
 import { existsSync, realpathSync } from "fs";
 import { recordRunStart, recordRunSettlement } from "./session-run-recovery";
 import { readActivityReview, recordActivityCompletion } from "./activity-review-server";
@@ -1153,8 +1154,6 @@ export class AgentSessionWrapper {
 
   async send(command: Record<string, unknown>, promptGuard?: { validate: (disposition?: string) => void; literal?: boolean; owner?: symbol; pauseId?: string }): Promise<unknown> {
     const type = command.type as string;
-    if (["bash", "set_tools", "extension_ui_response", "extension_ui_input"].includes(type)
-      && readBtwMetadata(this.inner.sessionManager.getEntries() as unknown as SessionEntry[], this.sessionId)) throw new Error("BTW conversations are chat-only");
     if (type === "navigate_tree" && (this.pendingResume || this.pause && this.isRunning())) throw new Error("Cannot change branches during Resume or Pause settlement");
     if (["prompt", "steer", "follow_up"].includes(type) && this.pause && promptGuard?.pauseId !== this.pause.id) {
       throw new Error("Session is paused or pausing; use Resume on the main session");
@@ -2774,7 +2773,6 @@ export async function setRpcSessionTools(
   if (!existing?.isAlive()) {
     if (!sessionFile) throw new Error("Session not found");
     const manager = SessionManager.open(sessionFile, undefined);
-    if (readBtwMetadata(manager.getEntries() as unknown as SessionEntry[], manager.getSessionId())) throw new Error("BTW conversations are chat-only");
     if (readSubagentSessionResources(manager.getEntries() as unknown as SessionEntry[])) {
       throw new Error("Subagent tool selection is fixed by its profile");
     }
@@ -2787,7 +2785,6 @@ export async function setRpcSessionTools(
 
   if (existing.isRunning()) throw new Error("Cannot change tools while the session is running");
   assertModelRuntimeSessionReady(existing.inner);
-  if (readBtwMetadata(existing.inner.sessionManager.getEntries() as unknown as SessionEntry[], existing.sessionId)) throw new Error("BTW conversations are chat-only");
   if (readSubagentSessionResources(existing.inner.sessionManager.getEntries() as unknown as SessionEntry[])) {
     throw new Error("Subagent tool selection is fixed by its profile");
   }
@@ -2854,7 +2851,6 @@ export async function setRpcSessionNativeResources(sessionId: string, sessionFil
     if (existing?.isAlive()) assertModelRuntimeSessionReady(existing.inner);
     const manager = existing?.isAlive() ? existing.inner.sessionManager : sessionFile ? SessionManager.open(sessionFile, undefined) : undefined;
     if (!manager || manager.getSessionId() !== sessionId) throw new Error("Session not found");
-    if (readBtwMetadata(manager.getEntries() as unknown as SessionEntry[], manager.getSessionId())) throw new Error("BTW conversations are chat-only");
     if (readSubagentSessionResources(manager.getEntries() as unknown as SessionEntry[])) throw new Error("Native resources are not available to child sessions");
     const toolNames = readSessionToolSelection(manager.getEntries() as unknown as SessionEntry[]);
     const persisted = manager.getSessionFile();
@@ -3194,8 +3190,8 @@ async function startRpcSessionInternal(
     const persistedToolNames = subagentResources
       ? undefined
       : readSessionToolSelection(sessionManager.getEntries() as unknown as SessionEntry[]);
-    const selectedToolNames = btw ? [] : subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
-    const requestedNativeResources = subagentResources || btw ? NO_NATIVE_RESOURCES
+    const selectedToolNames = subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
+    const requestedNativeResources = subagentResources ? NO_NATIVE_RESOURCES
       : sessionFile ? readNativeResourceSelection(sessionManager.getEntries())
       : options.nativeResources === undefined ? NO_NATIVE_RESOURCES : validateNativeResourceSelection(options.nativeResources);
     if (options.initialPromptOwner !== undefined && (requestedNativeResources.codeMode || requestedNativeResources.mcpServers.length)) {
@@ -3299,9 +3295,11 @@ async function startRpcSessionInternal(
             extensionsOverride: (base) => preferUserBashExtension(subagentResources.loadExtensions ? preferBrabblerAskUserExtension(base) : base),
           }
         : chatOnly
-          ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, ...(btw ? { noContextFiles: true } : {}), extensionFactories: [exactSystemPromptExtension, ...(!btw ? [createSessionReferenceExtension()] : []), ...promptObserver] }
+          ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [exactSystemPromptExtension, createSessionReferenceExtension(), ...promptObserver] }
         : {
+            ...(btw ? { appendSystemPrompt: [BTW_SYSTEM_GUIDANCE] } : {}),
             extensionFactories: [
+              ...(btw ? [createBtwSourceExtension()] : []),
               ...nativeSessionTools.factories,
               createSessionReferenceExtension(),
               createBrabblerSourceExtension(),
@@ -3384,19 +3382,19 @@ async function startRpcSessionInternal(
       inner.setActiveToolsByName(withExtensionTools(inner, selectedToolNames ?? inner.getActiveToolNames()));
     }
 
-    const exactSystemPrompt = btw ? () => BTW_SYSTEM_PROMPT : subagentResources?.exactSystemPrompt !== undefined
+    const exactSystemPrompt = subagentResources?.exactSystemPrompt !== undefined
       ? () => subagentResources.exactSystemPrompt!
       : chatOnly
         ? subagentResources
           ? () => subagentResources.appendSystemPrompt[0] ?? ""
-          : () => contextFilesSystemPrompt(inner.resourceLoader.getAgentsFiles().agentsFiles)
+          : () => [contextFilesSystemPrompt(inner.resourceLoader.getAgentsFiles().agentsFiles), ...(btw ? [BTW_SYSTEM_GUIDANCE] : [])].join("\n\n")
         : undefined;
     exactSystemPromptRef.current = exactSystemPrompt;
     const wrapper = new AgentSessionWrapper(inner, {
       exactSystemPrompt,
       chatOnly,
       initialPromptOwner: options.initialPromptOwner,
-      monitorContextFiles: !subagentResources && !btw,
+      monitorContextFiles: !subagentResources,
       nativeSessionTools,
       onAgentRunComplete: (completedSessionId) => {
         void notifySessionComplete(completedSessionId).catch((error) => {

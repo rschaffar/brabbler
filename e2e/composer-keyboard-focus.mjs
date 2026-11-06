@@ -284,11 +284,13 @@ export async function checkRunningComposer(page, width, answer) {
     await assertLayout();
     const stop = page.getByRole("button", { name: "Stop", exact: true });
     await page.getByRole("button", { name: "More controls", exact: true }).click();
-    const rect = await stop.boundingBox();
-    assert.equal(await stop.evaluate((node, rect) => {
+    assert.equal(await stop.evaluate(node => {
+      // More can blur the editor and resize the keyboard-aware viewport. Measure
+      // and hit-test the same layout, not a rectangle from an earlier frame.
+      const rect = node.getBoundingClientRect();
       const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
       return node === hit || node.contains(hit);
-    }, rect), true, "More must not cover the separate Stop control");
+    }), true, "More must not cover the separate Stop control");
     await page.getByRole("button", { name: "Collapse controls", exact: true }).click();
     assert.equal(await input.inputValue(), "layout draft");
   } finally { await restoreViewport(page); }

@@ -85,8 +85,13 @@ export function BtwPanel(props: BtwPanelProps) {
   const resize = (next: number) => setWidth(Math.max(320, Math.min(next, window.innerWidth * 0.65)));
 
   return <aside className={styles.panel} hidden={!open} inert={!open} style={{ width }} aria-label={t("btw.title")}
-    onKeyDownCapture={event => {
-      if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); props.onClose(); }
+    onKeyDown={event => {
+      if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+        event.stopPropagation();
+        // Preserve native dialog cancellation; child cards/popovers get first refusal.
+        if ((event.target as HTMLElement).closest?.("dialog[open]")) return;
+        if (!event.defaultPrevented) { event.preventDefault(); props.onClose(); }
+      }
     }}>
     <div role="separator" tabIndex={0} aria-label={t("btw.resize")} aria-orientation="vertical" aria-valuemin={320} aria-valuenow={Math.round(width)} className={styles.resize}
       onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); resize(width + (event.key === "ArrowLeft" ? 24 : -24)); } }}
@@ -95,7 +100,7 @@ export function BtwPanel(props: BtwPanelProps) {
       onPointerUp={event => { resizing.current = null; event.currentTarget.releasePointerCapture(event.pointerId); }}
       onPointerCancel={() => { resizing.current = null; }} />
     <header className={styles.header}>
-      <div><strong>{t("btw.title")}</strong><small>{t("btw.chatOnly")}</small></div>
+      <div><strong>{t("btw.title")}</strong><small>{t("btw.sideConversation")}</small></div>
       {child && <button type="button" onClick={() => props.onOpenSession(child.id)}>{t("btw.fullSize")}</button>}
       <button type="button" ref={close} onClick={props.onClose} aria-label={t("btw.close")} title={t("btw.close")}>×</button>
     </header>

@@ -436,7 +436,7 @@ let nativeToolsFixture;
   async function runRunningForkChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
     for (const inputId of ["en-desktop", "en-mobile-tall"]) {
-      await coverage.run(`running-forks/${inputId === "en-desktop" ? "canonical-quote-stop-v2" : "first-user-quote-stop-v2"}@${inputId}`, async () => {
+      await coverage.run(`running-forks/${inputId === "en-desktop" ? "canonical-quote-stop-v2" : "first-user-quote-stop-v3"}@${inputId}`, async () => {
         const { viewport } = browserInputs[inputId].options;
         context = await newInputContext(inputId);
         page = await context.newPage();
@@ -446,7 +446,7 @@ let nativeToolsFixture;
         assert.deepEqual(errors, [], `Running-fork browser/server errors at ${viewport.width}px`);
         await harness.closeContext(context); context = undefined; page = undefined;
       });
-      await coverage.run(`running-forks/btw-pending-question-v1@${inputId}`, async () => {
+      await coverage.run(`running-forks/btw-tool-enabled-v2@${inputId}`, async () => {
         const { viewport } = browserInputs[inputId].options;
         context = await newInputContext(inputId);
         page = await context.newPage(); page.setDefaultTimeout(30_000);
