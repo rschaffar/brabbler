@@ -88,9 +88,10 @@ need separate review/authorization.
 ## Guarded SDK installation
 
 The modular SDK retains the existing exact-byte child-environment patch.
-SDK 1.5.0 and the application both pin modular Undici **8.12.3**; the old
-version-scoped override is no longer necessary. The owner-approved exclusion of
-the standalone `dist/bundle/` tree and its own `pi` CLI link remains the support
+The application pins modular Undici **8.12.4**. A parent/version-scoped override
+also updates SDK 1.5.0's declared 8.12.3 dependency for the newer security fixes;
+the exact manifest and child-environment fingerprints remain unchanged. The
+owner-approved exclusion of the standalone `dist/bundle/` tree and its own `pi` CLI link remains the support
 boundary for Brabbler-owned installations, with a refreshed exact inventory. It is
 not a claim that the new bundle retains the old vulnerabilities. The modular embedded
 runtime remains; this installation does not provide the standalone Pi CLI/bundled

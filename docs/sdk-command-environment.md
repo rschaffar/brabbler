@@ -114,7 +114,11 @@ browser recipe preserves `cwd: "/"`; clipboard also retains that upstream change
 The macOS stop-before-kill, unsupported-download-target checks, `rg --no-config`
 and detached POSIX clipboard behavior remain intact. No new environment hook
 replaces this policy. The standalone exclusion fingerprints all 83 inventory entries;
-modular Undici now resolves upstream's exact 8.12.3 without a downstream override.
+upstream SDK 1.5.0 still declares Undici 8.12.3, but the application and its
+version-scoped SDK override now resolve 8.12.4 for the subsequent security fixes.
+The runtime guard requires that exact resolved version; SDK manifest and all
+patch/bundle fingerprints remain unchanged. A clean registry audit alone does
+not supersede newer upstream security advisories.
 
 ## Regression ownership
 

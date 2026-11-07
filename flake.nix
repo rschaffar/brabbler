@@ -10,10 +10,7 @@
       systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
       linuxSystems = [ "x86_64-linux" "aarch64-linux" ];
       forSystems = selected: f: nixpkgs.lib.genAttrs selected
-        (system: f (import nixpkgs {
-          inherit system;
-          overlays = [ (import ./nix/nodejs-overlay.nix) ];
-        }));
+        (system: f (import nixpkgs { inherit system; }));
       # Evaluation-only checks must not read metadata from a filtered store copy:
       # --no-build may calculate its path without materialising that copy.
       manifest = builtins.fromJSON (builtins.readFile ./package.json);
