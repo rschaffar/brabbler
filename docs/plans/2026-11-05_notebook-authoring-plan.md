@@ -6,7 +6,8 @@ simplification, native inspect/update and explicit reference maintenance are
 implemented. Local merge remains pending; no deployment or publication is implied.
 **Workspace:** `feat/notebook-authoring`, originally based on local `main` at
 `14d60757535e0ed78ff3753fda1372b0e4c47bbb`, subsequently rebased onto
-`b5696cd4cfb935b9bdc3f8d7918bbd41da419286` with approved conflict resolutions.
+`b5696cd4cfb935b9bdc3f8d7918bbd41da419286` and then
+`3539b8f6c23b816ca9fec7e7a1ad2298bee1f7a9`, with approved conflict resolutions.
 One receiving worktree and one repository
 writer; independent reviewers do not edit it. Nothing here authorizes deployment,
 publication, Git history rewriting or deleting saved user data.
@@ -350,9 +351,11 @@ P3 checkpoint evidence (2026-11-05, x86_64-linux ordinary Nix sandboxes):
   `nix run .#test -- all --workers 4 --jobs 12` after resource admission; record
   actual command/input identities, requested/effective widths, results and timing
   intervals. Focused checks never count as full acceptance.
-- [ ] Rebase onto current local main, reassess verification, obtain exact-state
-  integration approval and use the required non-FF merge. Resource cleanup remains
-  independently gated; never publish or delete saved notebook data implicitly.
+- [x] Rebase onto current local main and reassess verification. The current-base
+  acceptance and independent rebase review are recorded below.
+- [ ] Obtain exact-state integration approval and use the required non-FF merge.
+  Resource cleanup remains independently gated; never publish or delete saved
+  notebook data implicitly.
 
 P4 delivery evidence (2026-11-05):
 
@@ -389,10 +392,47 @@ P4 delivery evidence (2026-11-05):
   owners are absent. Maintained-document destinations and public-safe diff checks
   pass; filesystem link checks are not browser link verification. Exact manifests,
   logs and failure evidence remain in private task storage.
-- Later evidence/status-only edits do not change application/test bytes or relabel
-  this run as newer execution. Local `main` remains the verified base `b5696cd4`;
-  final integration still needs exact-state approval and the ordinary unsigned
-  non-fast-forward merge. Feature resources and evidence are retained.
+- These results remain bound to the earlier base `b5696cd4`, not the subsequently
+  rebased candidate. Feature resources and evidence are retained.
+
+### Current-main integration checkpoint (2026-11-07)
+
+The user requested rebase and merge. All six commits were rebased onto local
+`main` at `3539b8f6c23b816ca9fec7e7a1ad2298bee1f7a9`. Explicitly approved conflict
+resolutions preserve main's tool-enabled BTW scenario IDs and audio-speed coverage
+alongside the notebook reader/retirement changes. Independent range-diff/integration
+review closed after two small compatibility corrections: import `Type` from
+`typebox` for Pi 1.5, and assign fresh combined Markdown desktop v8/mobile v7
+receipts. Main's earlier recording/audio v7/v6 IDs now reject before callbacks;
+no chain assertions were dropped. Historical receipt evidence above is unchanged.
+
+On rebased `4e88758b` plus those six reviewed file changes,
+`nix run --no-write-lock-file .#test -- all --workers 4 --jobs 12` passed:
+
+- **531/531 core files, 4,590/4,590 tests, 14 suites**, including static/plugin
+  requirements; no failures, skips or cancellations.
+- All **26 browser/terminal groups / 60 complete input chains**, with the combined
+  Markdown v8/v7 receipts and main's BTW/audio behavior intact.
+- Genuine Home Manager deployment, HTTP persistence/restart, native PTY and final
+  service shutdown, using the same installed production package as the browser.
+
+Export SHA-256:
+`aef5306be97c61833f6af58322919f62169ae399c0d3d5724b0e97cf835731f9`.
+Core artifact: `/nix/store/8ijlpa6fymj1b40s8ainjzjdpiahxh7z-brabbler-core-checks`.
+Production package: `/nix/store/gfg32cwbmappgy2l4ivmma17isjq9ix4-brabbler-0.1.0`.
+Requested/effective widths: **12/12 core and 4/4 browser**, admitted overlap on
+32 CPUs and approximately 65 GiB available memory; conservative E holds remain.
+The whole command took approximately **375 s**, including realization. Core
+pre-file preparation/file window: **59.035/315.784 s**; browser support/definition
+preparation: **3.907/5.130 s**, group-client window **267.285 s**; deployment
+invocation/guest evidence: **23.324/18.275 s**. Overlapping intervals are not additive.
+Earlier runs warmed dependencies/package outputs; this is not a cold-cache speed
+claim. The first rebased run also passed, but preceded the receipt-identity fix and
+is retained separately rather than relabelled as final verification.
+
+Subsequent plan/index evidence-only edits do not change tested application inputs.
+Exact-state native approval and an unsigned non-fast-forward merge remain the final
+integration gate. No remote publication or host deployment is authorized.
 
 ## Stop conditions and recovery
 

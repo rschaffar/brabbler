@@ -86,8 +86,9 @@ configuration) and `lib/git-file-context.test.mjs`. Their actual production-read
 assertions remain required; preserved old recording bytes are covered separately
 by the retirement owners above. No rename-aware reader tests are deleted.
 
-The changed Markdown chains use `render-files-native-v7@legacy-desktop` and
-`render-touch-wiring-v6@legacy-mobile`. Prior v6/v5 IDs are rejected before callbacks;
+The combined walkthrough/audio Markdown chains use `render-files-native-v8@legacy-desktop`
+and `render-touch-wiring-v7@legacy-mobile`. Main's recording/audio v7/v6 and older
+v6/v5 IDs are rejected before callbacks;
 dispatch, inventory and coverage tests change together. Other Markdown/media/skill/
 model/source-link assertions and input variants are unchanged. HTTP observation
 still allows only the exact existing-session catalogue and bodyless maintenance
