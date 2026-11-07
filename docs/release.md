@@ -9,7 +9,7 @@ this is not an upstream release.
 - Repository selected by the owner: `https://github.com/rschaffar/brabbler`.
   Selection/local remote configuration does not create or remotely verify it.
 - Initial Brabbler version: **0.1.0**; Pi SDK compatibility is recorded separately
-  as **1.4.0**, including the guarded downstream policies below.
+  as **1.5.0**, including the guarded downstream policies below.
 - The root manifest remains `private: true`. No npm registry publication or
   package-name ownership is assumed. There is no automatic update query,
   release-upload job or demo deployment.
@@ -88,9 +88,11 @@ need separate review/authorization.
 ## Guarded SDK installation
 
 The modular SDK retains the existing exact-byte child-environment patch.
-A version-scoped override fixes modular Undici resolution to **8.12.2**. The
-owner approved excluding SDK 1.4.0's affected standalone `dist/bundle/` tree and
-its own `pi` CLI link from Brabbler-owned installations. The modular embedded
+SDK 1.5.0 and the application both pin modular Undici **8.12.3**; the old
+version-scoped override is no longer necessary. The owner-approved exclusion of
+the standalone `dist/bundle/` tree and its own `pi` CLI link remains the support
+boundary for Brabbler-owned installations, with a refreshed exact inventory. It is
+not a claim that the new bundle retains the old vulnerabilities. The modular embedded
 runtime remains; this installation does not provide the standalone Pi CLI/bundled
 RPC entry points. A separately installed upstream Pi CLI is unaffected.
 
@@ -104,7 +106,14 @@ See [dependency dispositions](dependencies.md) for scope and remaining obligatio
 
 ## Current evidence and release gates
 
-The local application/source pair builds in isolated Nix and passed an ordinary
+The Pi SDK 1.5.0 candidate passed complete Linux Nix acceptance: **528 core files /
+4,483 tests**, all **26 browser/terminal groups / 60 receipts**, and the genuine
+Home Manager deployment VM in **488 seconds**, including realization. The
+[upgrade record](plans/archived/2026-11-07_pi-sdk-1.5-upgrade-plan.md) binds its exact
+inputs and limits. It does not refresh the ordinary-runtime archive smoke below
+or provide native macOS release evidence.
+
+The earlier 0.1.0 application/source checkpoint builds in isolated Nix and passed an ordinary
 Linux x86_64 / Node 24.21.0 smoke: runtime installation, native HTTP PTY, hidden
 password setup, login/restart/rotation, header/no-auth boundaries, preserved notice
 bytes, matching source checksum/version and actual HTTP notice/locator discovery.

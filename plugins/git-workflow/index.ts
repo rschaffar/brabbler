@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { createPluginExtension } from "../../lib/plugins/runtime";
 import type { BundledPlugin, PluginUiContext } from "../../lib/plugins/types";

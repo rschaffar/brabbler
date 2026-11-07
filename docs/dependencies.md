@@ -7,6 +7,65 @@ Lockfile changes also require updating `nix/npm-deps.nix`. Nix realizes matching
 built dependencies automatically for packages and acceptance. Writable manual-development
 shells still enforce their checkout dependency marker; never bypass it.
 
+## Pi SDK 1.5.0 compatibility (2026-11-07)
+
+The four direct Pi pins and all coordinated packages resolve exactly **1.5.0**:
+agent-core, ai, coding-agent, tui, codemode, mcp, telemetry and the newly introduced
+**pi-schema**. Node 24.21.0, TypeScript 6.0.3, native PTY, flake inputs and the
+independent demo lock remain unchanged. TypeBox **1.3.27**, already used by the
+SDK, is now an explicit runtime dependency: ordinary SDK consumers import `Type`
+from `typebox`, not pi-ai. The SDK's extension loader still aliases legacy imports
+for external extensions.
+
+Tool arguments now use pi-schema's JSON Schema validation and coercion, including
+optional-null removal and singleton-to-array conversion for plain JSON Schema/MCP
+tools. TypeBox-only refinements, codecs, JavaScript-only types and registered custom
+formats are not validation boundaries. Brabbler's schemas use ordinary JSON Schema;
+execution-time policy, permission and action-dependent checks remain required.
+Validation diagnostics use the new SDK wording.
+
+Upstream coding-agent now pins fixed **Undici 8.12.3**. The application uses the
+same direct pin, and the old 1.4-only override is removed rather than forcing an
+older library. The exact twelve-target environment patch and private MCP version
+guards are rebased to 1.5. The standalone CLI/bundle remains unsupported and excluded
+from this owned installation; its new **83-entry** inventory is fingerprinted in
+full. This exclusion is a support boundary, not a claim that 1.5's bundle retains
+the old Undici vulnerabilities. Six patch targets changed upstream; the exec and
+browser recipes preserve the new output-cap implementation and root working
+directory respectively. See [installation policy](sdk-command-environment.md).
+
+Other dependency changes are SDK-required minimatch **11.0.3** and its
+`@isaacs/nonrecursive-glob-match` **1.1.0** dependency (BlueOak-1.0.0); pi-schema is
+MIT. Unrelated resolved versions are preserved. A fresh lock-only public npm audit
+reports **10 moderate package findings**, all through the unchanged development
+minimatch **10.2.6** lint chain (`GHSA-g3hv-75wg-m249`). The same-registry base audit
+reports 11, including the old SDK parent; the upgraded SDK uses fixed minimatch.
+The corresponding `--omit=dev` audit reports zero findings. No forced downgrade,
+new blanket override or audit ignore is applied. Nix retains
+development dependencies, so development classification is not artifact absence
+or whole-service security clearance. Revisit the lint chain on its next maintenance
+pass; older clean-audit counts below are dated evidence.
+
+Adopt upstream incremental argument parsing, UTF-8-safe/capped `pi.exec()` output,
+summary OAuth/thinking/context-edit fixes, session-write rollback and catalog
+updates. Package-install failures are now reported as extension warnings while
+other packages continue loading; successful session creation is not proof that an
+external permission extension loaded. No new session format is introduced (JSONL remains v3). Catalog changes are not
+live-provider entitlement evidence. Preserve account-local runtimes, explicit tool
+pins, native worker retirement and the session-local Codex speed adapter; external
+extensions need their own review. Installed-service activation and publication are
+not part of a dependency update.
+
+The settled 1.5 candidate passed complete fresh Linux Nix acceptance: **528 core
+files / 4,483 tests / 14 suites**, all **26 browser/terminal groups / 60 receipts**,
+and the genuine Home Manager deployment VM in **488 seconds**, including in-run
+realization. Four core workers/four browser sandboxes overlapped; available RAM
+was below the twelve/four admission estimate. Exact input identities, preparation
+and execution intervals, the initial focused assertion failure and proof limits
+are recorded in the [upgrade record](plans/archived/2026-11-07_pi-sdk-1.5-upgrade-plan.md).
+This is synthetic Linux acceptance, not a new portable macOS smoke or live-provider
+certification.
+
 ## Brabbler 0.1.0 release checkpoint (2026-10-28)
 
 This checkpoint supersedes older present-tense advisory counts below; dated
@@ -55,7 +114,7 @@ Source/fence highlighting continues to use locked `react-syntax-highlighter` **1
 
 The root app pins runtime `remark-cjk-friendly` **2.3.2** (parse-only extension) and direct development `@types/mdast` **4.0.4** for CJK emphasis/autolink compatibility. Currency safety wraps remark-math tokenization rather than rewriting source, preserving code/escapes/source coordinates. Root manifests/lock and the Nix npm-cache hash move together; SDK, native PTY and flake/toolchain pins do not change. The static demo retains its independent renderer sources/manifests; this is an application port, not a demo redesign.
 
-`instrumentation-node.ts` reads global `httpIdleTimeoutMs` once at startup using SDK-compatible agent-directory resolution and a nonblocking regular-file reader. Missing/invalid settings keep the default; numeric zero or `disabled` disables idle header/body timeouts. Project settings cannot change this process-wide startup setting. Undici 8.12.2 explicitly uses CONNECT for proxied HTTP as well as HTTPS and a **2,000 ms address-family attempt window**, not a total connection deadline. Keep error listeners, fetch-override preservation and once-only configuration. Synthetic tests exercise CONNECT, stalled-body timeout, NO_PROXY and option propagation; native SDK parity tests resolve the agent directory without inspecting operator settings.
+`instrumentation-node.ts` reads global `httpIdleTimeoutMs` once at startup using SDK-compatible agent-directory resolution and a nonblocking regular-file reader. Missing/invalid settings keep the default; numeric zero or `disabled` disables idle header/body timeouts. Project settings cannot change this process-wide startup setting. Undici 8.12.3 explicitly uses CONNECT for proxied HTTP as well as HTTPS and a **2,000 ms address-family attempt window**, not a total connection deadline. Keep error listeners, fetch-override preservation and once-only configuration. Synthetic tests exercise CONNECT, stalled-body timeout, NO_PROXY and option propagation; native SDK parity tests resolve the agent directory without inspecting operator settings.
 
 A historical `npm audit --omit=dev --json` on the follow-up lock reported **3 moderate runtime findings** in the Mammoth/argparse/sprintf-js chain. That dated result is superseded by the release checkpoint above, including advisory withdrawals; it is not the current count or a security-clean claim.
 
