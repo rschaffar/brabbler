@@ -4,6 +4,7 @@ import { act, createElement } from 'react';
 import { createJiti } from 'jiti';
 import { guidedRuntime } from './guided-reader.fixture.mjs';
 import { pointerCaptureDouble } from '../lib/testing/react.fixture.mjs';
+import { deferred } from '../lib/testing/async.fixture.mjs';
 const jiti = createJiti(import.meta.url, { jsx: { runtime: 'automatic' }, tsconfigPaths: true, fsCache: false });
 const fence = (language, value) => '```' + language + '\n' + JSON.stringify(value) + '\n```\n';
 const index = { version: 1, id: 'guide', title: 'Guided request review', chapters: [{ id: 'one', title: 'First chapter', path: 'first.md' }, { id: 'two', title: 'Second chapter', path: 'last.md' }] };
@@ -302,4 +303,155 @@ test('real divider events clamp, capture one pointer, cancel and reset without g
   assert.equal(runtime.requests.length, 2);
   await pointer('pointerdown'); assert.equal(capture.size, 1);
   await view.unmount(); assert.equal(capture.size, 0, 'unmount releases capture'); runtime.healthy();
+});
+
+test('passive invalid or absent manifests never tear down an active reader', async t => {
+  const runtime = guidedRuntime(t), { GuidedReviewEntry, I18nProvider } = await production();
+  let markdown = fence('brabbler-notebook', index);
+  const element = () => createElement(I18nProvider, null, createElement(GuidedReviewEntry, {
+    filePath: folder.index, cwd: '/guide', markdown, onWork: runtime.onWork,
+  }, createElement('p', null, 'Ordinary document')));
+  const view = await runtime.mount(element());
+  const replay = runtime.expect('/api/review-notebook', folder), current = runtime.expect('/api/review-notebook', folder);
+  await click(view, 'Start guided reading');
+  const reading = { ...notebook, chapters: [{ ...notebook.chapters[0], steps: [{ ...notebook.chapters[0].steps[0], targets: [web] }] }, notebook.chapters[1]] };
+  await current.deliver(reading); await replay.deliver(notebook);
+  await click(view, 'Next'); await click(view, 'Explanation');
+  for (const changed of ['```brabbler-notebook\n{invalid\n```', 'No manifest during editing', fence('brabbler-notebook', { ...index, title: 'Changed but not reloaded' })]) {
+    markdown = changed; await view.rerender(element());
+    assert.equal(view.container.querySelector('[aria-current="step"]').textContent, 'Check failures');
+    assert.equal(button(view, 'Explanation').getAttribute('aria-pressed'), 'false');
+    assert.doesNotMatch(view.container.textContent, /Changed but not reloaded|Guided reading unavailable/);
+    assert.equal(runtime.requests.length, 2, 'passive updates neither reload nor close');
+  }
+  const failed = runtime.expect('/api/review-notebook', folder, 400);
+  await click(view, 'Reload guide'); await failed.deliver({ error: 'Invalid edited index' });
+  assert.match(view.container.querySelector('[role="alert"]').textContent, /Invalid edited index/);
+  assert.equal(view.container.querySelector('[aria-current="step"]').textContent, 'Check failures');
+  await click(view, 'Return to document');
+  markdown = '```brabbler-notebook\n{invalid\n```'; await view.rerender(element());
+  assert.match(view.container.textContent, /Guided reading unavailable/);
+  assert.equal([...view.container.querySelectorAll('button')].some(node => node.textContent === 'Start guided reading'), false);
+  markdown = fence('brabbler-notebook', index); await view.rerender(element());
+  assert.ok(button(view, 'Start guided reading')); assert.equal(runtime.requests.length, 3);
+  runtime.healthy();
+});
+
+test('reader exposes passive legacy guidance and explicit step context without recording or touching retained recovery', async t => {
+  // Complete historical freshReviewDraft shape, with synthetic unsaved text.
+  const validDraft = JSON.stringify({ questions: [], text: 'Saved concern', kind: 'finding', editing: null, anchor: null, pending: null, replyText: '', replies: [], previewBatchId: null });
+  const saved = [['brabbler-notebook-review-draft-v2:%2Fguide%2Findex.md:old', '{malformed old draft'], ['brabbler-notebook-review-draft-v1:/guide/index.md', validDraft]];
+  let retained;
+  const runtime = guidedRuntime(t, { setupPresenters(window, replace) {
+    const storage = window.localStorage, get = storage.getItem.bind(storage);
+    for (const [key, value] of saved) storage.setItem(key, value);
+    retained = () => { assert.equal(storage.length, saved.length); return saved.map(([key]) => [key, get(key)]); };
+    const prototype = Object.getPrototypeOf(storage);
+    for (const method of ['getItem', 'setItem', 'removeItem']) {
+      const original = prototype[method];
+      replace(prototype, method, function (key, ...args) {
+        assert.equal(String(key).startsWith('brabbler-notebook-review-draft-'), false, `unexpected recovery ${method}`);
+        return original.call(this, key, ...args);
+      });
+    }
+    replace(prototype, 'clear', () => assert.fail('unexpected storage clear'));
+  } });
+  const { GuidedReviewReader, I18nProvider } = await production();
+  const replay = runtime.expect('/api/review-notebook', folder), current = runtime.expect('/api/review-notebook', folder), drafted = [];
+  const view = await runtime.mount(createElement(I18nProvider, null, createElement(GuidedReviewReader, {
+    indexPath: folder.index, onClose() {}, onWork: runtime.onWork, reviewDestination: { id: 'chat-A', label: 'Chosen chat' },
+    onReviewBatchDraft: (destination, text) => drafted.push({ destination, text }),
+  })));
+  const legacy = { id: 'legacy', shortLabel: 'Old question', question: 'What matters here?', context: 'Optional context\n\n![No automatic image](https://example.invalid/no-auto.png)\n\n```python\nprint("author context")\n```\n\n```brabbler-review\n{"version":99}\n```', required: true, type: 'single', options: [{ id: 'a', title: 'Ordering', description: 'Reject before extraction' }], explanation: 'Author explanation' };
+  const reading = { ...notebook, chapters: [{ ...notebook.chapters[0], steps: [{ ...notebook.chapters[0].steps[0], targets: [web], questions: [legacy] }] }, notebook.chapters[1]] };
+  await current.deliver(reading); await replay.deliver(notebook);
+  const guidance = view.container.querySelector('.notebook-author-guidance');
+  for (const text of ['What matters here?', 'Optional context', 'Ordering', 'Reject before extraction', 'Author explanation']) assert.equal(guidance.textContent.includes(text), true, text);
+  assert.equal(guidance.querySelector('input, textarea, select, [role="radio"], [role="checkbox"]'), null, 'no question form; ordinary code-copy controls remain available');
+  assert.equal(guidance.querySelector('img, [data-review-stop]'), null, 'legacy context still suppresses automatic images and active cards');
+  assert.match(guidance.textContent, /author context/); assert.match(guidance.textContent, /"version":99/);
+  assert.equal(view.container.querySelector('.notebook-review-panel') === null, true);
+  assert.equal([...view.container.querySelectorAll('button')].some(node => /Anchor|Reviewed|recording/.test(node.textContent)), false);
+  await click(view, 'Next'); assert.equal(view.container.querySelector('[aria-current="step"]').textContent, 'Check failures');
+  await click(view, 'Ask about this step'); await runtime.join();
+  assert.equal(drafted.length, 1); assert.equal(drafted[0].destination.id, 'chat-A');
+  assert.doesNotMatch(drafted[0].text, /Saved concern|malformed old draft/);
+  const data = JSON.parse(drafted[0].text.split('~~~json\n')[1].split('\n~~~')[0]);
+  assert.equal(data.stepId, 'last'); assert.equal(data.chapterPath, 'last.md'); assert.equal(data.indexPath, folder.index);
+  assert.match(data.displayedStepSha256, /^[a-f0-9]{64}$/);
+  assert.match(view.container.textContent, /Step context added to Chosen chat/);
+  assert.deepEqual(retained(), saved);
+  assert.equal(runtime.requests.length, 2, 'no review-data or agent transport');
+  await view.unmount(); assert.deepEqual(retained(), saved);
+  runtime.healthy();
+});
+
+test('explicit guide reload preserves stable step and layout, refreshes same-ID evidence, and reports removed steps', async t => {
+  const runtime = guidedRuntime(t), { GuidedReviewReader, I18nProvider } = await production();
+  const replay = runtime.expect('/api/review-notebook', folder), current = runtime.expect('/api/review-notebook', folder);
+  const view = await runtime.mount(createElement(I18nProvider, null, createElement(GuidedReviewReader, { indexPath: folder.index, onClose() {}, onWork: runtime.onWork })));
+  const reading = { ...notebook, chapters: [{ ...notebook.chapters[0], steps: [{ ...notebook.chapters[0].steps[0], targets: [web] }] }, notebook.chapters[1]] };
+  await current.deliver(reading); await replay.deliver(notebook);
+  await click(view, 'Next'); await click(view, 'Explanation');
+  const refresh = runtime.expect('/api/review-notebook', folder);
+  await click(view, 'Reload guide');
+  assert.equal(button(view, 'Next').disabled, true); assert.match(view.container.textContent, /previous version remains/);
+  const changed = { ...notebook.chapters[1], steps: [{ ...notebook.chapters[1].steps[0], title: 'Updated failure explanation', targets: [{ ...web, id: 'last-web', url: 'https://example.test/updated' }] }] };
+  await refresh.deliver({ ...reading, chapters: [changed, reading.chapters[0]] });
+  assert.equal(view.container.querySelector('[aria-current="step"]').textContent, 'Updated failure explanation');
+  assert.equal(button(view, 'Explanation').getAttribute('aria-pressed'), 'false');
+  assert.equal(view.container.querySelector('.guided-evidence a').getAttribute('href'), 'https://example.test/updated');
+  const failed = runtime.expect('/api/review-notebook', folder, 409);
+  await click(view, 'Reload guide'); await failed.deliver({ error: 'Controlled read failure' });
+  assert.match(view.container.querySelector('[role="alert"]').textContent, /Controlled read failure/);
+  assert.equal(view.container.querySelector('[aria-current="step"]').textContent, 'Updated failure explanation');
+  const removed = runtime.expect('/api/review-notebook', folder);
+  await click(view, 'Retry'); await removed.deliver({ ...reading, chapters: [reading.chapters[0]] });
+  assert.equal(view.container.querySelector('[aria-current="step"]').textContent, 'Inspect ordering');
+  assert.match(view.container.textContent, /previous step is no longer/);
+  runtime.healthy();
+});
+
+test('guide reload refreshes an unchanged mutable target and ignores old snapshot delivery', async t => {
+  const runtime = guidedRuntime(t), { GuidedReviewReader, I18nProvider } = await production();
+  const replay = runtime.expect('/api/review-notebook', folder), current = runtime.expect('/api/review-notebook', folder);
+  const view = await runtime.mount(createElement(I18nProvider, null, createElement(GuidedReviewReader, { indexPath: folder.index, onClose() {}, onWork: runtime.onWork })));
+  const reading = { ...notebook, chapters: [{ ...notebook.chapters[0], steps: [{ ...notebook.chapters[0].steps[0], targets: [file] }] }] };
+  const oldAsset = runtime.expect('/api/review-notebook', { ...folder, asset: 'notes.txt' }), asset = runtime.expect('/api/review-notebook', { ...folder, asset: 'notes.txt' });
+  await current.deliver(reading); await replay.deliver(notebook); await asset.deliver({ content: 'Snapshot A' });
+  assert.match(view.container.textContent, /Snapshot A/);
+  const refresh = runtime.expect('/api/review-notebook', folder);
+  await click(view, 'Reload guide');
+  const nextReplay = runtime.expect('/api/review-notebook', { ...folder, asset: 'notes.txt' }), next = runtime.expect('/api/review-notebook', { ...folder, asset: 'notes.txt' });
+  await refresh.deliver(reading); await next.deliver({ content: 'Snapshot B' });
+  await oldAsset.deliver({ content: 'Obsolete snapshot' }); await nextReplay.reject(new Error('obsolete snapshot refusal'));
+  assert.match(view.container.textContent, /Snapshot B/); assert.doesNotMatch(view.container.textContent, /Snapshot A|Obsolete snapshot/);
+  runtime.healthy();
+});
+
+for (const change of ['step-A-B-A', 'destination', 'destination-A-B-A', 'destination-A-missing-A', 'callback-unavailable', 'unmount']) test(`pending step context cannot outlive ${change}`, async t => {
+  const entered = deferred(), release = deferred(), digest = crypto.subtle.digest.bind(crypto.subtle);
+  const runtime = guidedRuntime(t, {
+    setupPresenters(_window, replace) { replace(crypto.subtle, 'digest', async (...args) => { entered.resolve(); await release.promise; return digest(...args); }); },
+    releasePresenters() { release.resolve(); },
+  });
+  const { GuidedReviewReader, I18nProvider } = await production();
+  const replay = runtime.expect('/api/review-notebook', folder), current = runtime.expect('/api/review-notebook', folder), drafted = [];
+  let props = { indexPath: folder.index, onClose() {}, onWork: runtime.onWork, reviewDestination: { id: 'A', label: 'A' }, onReviewBatchDraft: (...args) => drafted.push(args) };
+  const element = () => createElement(I18nProvider, null, createElement(GuidedReviewReader, props));
+  const view = await runtime.mount(element());
+  await current.deliver({ ...notebook, chapters: [{ ...notebook.chapters[0], steps: [{ ...notebook.chapters[0].steps[0], targets: [web] }] }, notebook.chapters[1]] }); await replay.deliver(notebook);
+  await click(view, 'Ask about this step'); await entered.promise;
+  if (change === 'step-A-B-A') { await click(view, 'Next'); await click(view, 'Back'); }
+  else if (change.startsWith('destination')) {
+    const original = props.reviewDestination;
+    props = { ...props, reviewDestination: change === 'destination-A-missing-A' ? undefined : { id: 'B', label: 'B' } }; await view.rerender(element());
+    if (change !== 'destination') { props = { ...props, reviewDestination: original }; await view.rerender(element()); }
+  } else if (change === 'callback-unavailable') {
+    const original = props.onReviewBatchDraft;
+    props = { ...props, onReviewBatchDraft: undefined }; await view.rerender(element());
+    props = { ...props, onReviewBatchDraft: original }; await view.rerender(element());
+  } else await view.unmount();
+  release.resolve(); await runtime.join();
+  assert.deepEqual(drafted, []); runtime.healthy();
 });

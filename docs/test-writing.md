@@ -380,34 +380,36 @@ historical pending language as a request to repeat completed discovery.
 
 ### Guided-review ownership
 
-`lib/notebook-review.test.mjs` exercises the actual strict reducer/question adapter
-and full recovery schema, including inherited-property and leading `_`/`-` IDs.
-`lib/notebook-review-store.test.mjs` and `app/api/review-data/route.test.mjs` own private
-native fsync/exclusive-link/history/import authorization and failure cases. Their
-two real writers both signal ready immediately before real installation at the
-same expected tip; a bounded named cross-process release gate is deliberate race
-orchestration, never a sleep claimed as settlement. Join both original processes,
-retain unexpected failures and inspect prior bytes; a serial stale-tip conflict is
-not a replacement witness. These tests do not prove arbitrary external-editor
-exclusion or universal power-loss behavior.
+Recording-only reducers, sidecar writers and mounted reviewer forms are retired.
+The [retirement ledger](notebook-recording-retirement.md#p1-assertion-dispositions)
+assigns every removed owner/input family at its original revision; it does not
+retire shared readers/composer/live-question protections with the forms.
+`lib/guided-review.test.mjs` owns legacy parsing and leading `_`/`-` IDs plus
+continued live required-answer rejection. `lib/notebook-step-context.test.mjs`
+checks explicit identities, pinned references, displayed-definition digest and
+bounded UTF-8 output without copying private feedback or granting edit authority.
+`app/api/review-data/route.test.mjs` mounts the retired route with no-filesystem/
+body-consumption guards and a byte-preserved malformed-history sentinel; it no
+longer claims storage durability or broad arbitrary-I/O exclusion.
 
-`NotebookReviewPanel.behavior.test.mjs` mounts actual forms/tray/recovery and the
-actual guided reader/FileEvidence snapshot binding, with controlled HTTP bodies and
-production reducer at the external boundary. It covers both evidence/inspection
-orders, independent pane records/radio groups, newer edits during Save, unavailable
-step concerns, per-batch pasted drafts and history/reply ownership. Guarded native
-ports and original `onWork` promises stay live through realm restoration; controlled
-transport is not native storage authority. `ChatInput.review-handoff.test.mjs` adds
-the actual composer/attachment/cursor bridge. `CommittedPatchDiff.test.mjs` uses
-Pierre's real public selection setters/callbacks, held context originals and SAME
-error identities, not a copied coordinate or rendered-component algorithm.
+`GuidedReviewReader.behavior.test.mjs` mounts the production reader with controlled
+HTTP bodies, preserves old recovery bytes without consuming them, and covers
+passive guidance, free steps, stale handoff/refusal, explicit reload, removed steps,
+changed references and ignored-abort delivery. Existing source/mutable-asset state
+owners remain. Guarded native ports and original `onWork` promises stay live through
+realm restoration; controlled transport is not native filesystem/Git authority.
+`ChatInput.review-handoff.test.mjs` retains the actual composer/attachment/cursor
+bridge, with switched/missing/unmounted destination refusal. `CommittedPatchDiff.test.mjs`
+retains Pierre's real public selection setters/callbacks, held context originals
+and SAME error identities, not a copied coordinate algorithm.
 
-The Markdown installed chain keeps its original read-only assertions *before* the
-new desktop/touch workflow tail. No old assertion/input is retired. The browser owns
-real geometry/Selection/native reload/composer transport, while core owners keep
-policy/race matrices. New files retain explicit E holds pending independent review;
-focused greens and meaningful production controls are bound in the active plan,
-not relabelled as full browser/service acceptance.
+The Markdown installed chain keeps every original read-only assertion before its
+replacement desktop/touch tail. Only recording/batch/import obligations are retired;
+new receipts cover optional legacy guidance, no-recording/no-agent execution,
+ordinary draft preservation, native reload, retained history and narrow controls.
+The browser owns real geometry/native reload/composer transport, while core owners
+keep policy/race matrices. Files with broad imports retain explicit E holds pending
+independent isolation review; focused greens are not full browser/service acceptance.
 
 ## Guards, classification and acceptance
 

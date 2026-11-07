@@ -35,6 +35,8 @@ import { appendSessionModelSpeed, readSessionModelSpeed } from "./session-model-
 import { withSessionModelSpeed } from "./session-model-speed-runtime";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createLocalFileLinkGuidanceExtension } from "./local-file-link-guidance";
+import { createNotebookAuthoringExtension } from "./notebook-authoring-extension";
+import { filterNotebookTools } from "./notebook-tool-policy";
 import { acceptancePlugin } from "../plugins/acceptance";
 import { createAskUserExtension, preferBrabblerAskUserExtension } from "./ask-user-extension";
 import { appendSubagentInputFiles, loadSubagentInputFiles, assertSubagentInputBudget, subagentInputLimits } from "./subagent-input";
@@ -390,7 +392,7 @@ export function createSubagentController(
             ...(promptPlan.exactSystemPrompt !== undefined
               ? [createExactSystemPromptExtension(() => promptPlan.exactSystemPrompt)] : []),
             ...(!chatOnly && promptPlan.exactSystemPrompt === undefined ? [createLocalFileLinkGuidanceExtension()] : []),
-            ...(profile.loadExtensions ? [createAskUserExtension(), acceptancePlugin.extension(childCwd)] : []),
+            ...(profile.loadExtensions ? [createAskUserExtension(), createNotebookAuthoringExtension(), acceptancePlugin.extension(childCwd)] : []),
           ],
           extensionsOverride: (base) => preferUserBashExtension(profile.loadExtensions ? preferBrabblerAskUserExtension(base) : base),
         },
@@ -406,10 +408,10 @@ export function createSubagentController(
           profile.disallowedExtensionTools,
         )
         : [];
-      const activeTools = resolveShellTools(
+      const activeTools = filterNotebookTools(resolveShellTools(
         withSubagentExtensionTools(profile.tools, extensionToolNames),
         settingsManager.getDefaultTools(),
-      );
+      ));
 
       // Services may discover a new model/provider. Recheck the same bytes before making a child manager.
       const callModel = parseSubagentModel(parentModelRuntime, request.model);

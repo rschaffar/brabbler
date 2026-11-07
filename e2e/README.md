@@ -121,22 +121,25 @@ deadlines. Duplication is judged by the exact obligation/input and sufficient ow
 not merely by membership in different integration chains. Preserve the necessary
 connection or physical step, not all of its functional neighbors.
 
-The Markdown media helper also owns the remote-image default-block → inline global enable → native PNG request/decoding → reload → Settings disable bridge at both desktop/touch inputs. An exact synthetic image route supplies inline bytes locally; no external host is contacted. Existing local-media assertions remain, with additional native audio-speed checks under fresh `render-files-native-v7` / `render-touch-wiring-v6` receipts. Mounted Markdown owners cover shared chat/file rendering, raw/linked images, inert guided prose, cross-tab changes and failed-write safety; the installed bridge does not duplicate that matrix.
+The Markdown media helper also owns the remote-image default-block → inline global enable → native PNG request/decoding → reload → Settings disable bridge at both desktop/touch inputs. An exact synthetic image route supplies inline bytes locally; no external host is contacted. Existing local-media assertions remain, with additional native audio-speed checks under current `render-files-native-v8` / `render-touch-wiring-v7` receipts. Mounted Markdown owners cover shared chat/file rendering, raw/linked images, inert guided prose, cross-tab changes and failed-write safety; the installed bridge does not duplicate that matrix.
 
 The Markdown media helper seeds synthetic PCM WAV and a tiny VP8 WebM from reviewed inline bytes (with provenance/hash), not downloaded fixtures or runtime ffmpeg. Desktop/mobile checks observe zero eager media/remote requests, native playback and seeking, fine-grained pitch-preserving audio speed controls with keyboard/narrow-layout reachability and a shared preference in chat/Files, session-scoped external-reference range reads/denials, corrupt-file feedback and explicit repair reload, narrow layout, covered-pane/session teardown and no automatic resumption. Direct authorization negatives use Node HTTP, preserving unfiltered browser console/5xx reporting. The existing notebook Markdown chain also retains all read-only assertions before
-its interactive tail. At both original desktop/touch inputs, that tail connects native
-recording/forms/source Selection, cross-chapter frozen preview, existing-composer
-append without Send, pasted reply import, reviewer resolution, saved reload/resume
-and changed-required-question re-review. Partial-reply assertions bind the exact
-batch across the shared desktop/mobile fixture history. The no-model-turn/agent-
-execution assertion retains structured method/path/body observations and permits
-only the exact existing-fixture-session `POST {"type":"get_tools"}` catalogue tuple
-among non-GET requests; other sessions, extra fields, new sessions and all prompt/
-execution commands fail. Ordinary GET observations remain in diagnostics. No
-console/HTTP failures are filtered. Programmatic native Selection
-API use is not a claim about physical iOS/Android selection handles. Reducer/mounted/
-native store owners retain policy and race matrices; no prior browser assertions are
-retired. Candidate-specific execution is recorded in the active guided-review plan.
+its reader-to-chat/reload tail. At both original desktop/touch inputs, that tail
+connects passive legacy guidance, free navigation, preserved unsent text and explicit
+step context, no review-data transport, position-preserving guide reload and untouched
+malformed sidecar/browser recovery bytes. Narrow toolbar targets remain reachable.
+Only the old recording/form/batch/import/resolution/resume/re-review obligations
+are retired; [exact dispositions](../docs/notebook-recording-retirement.md#p1-assertion-dispositions)
+name the surviving shared production owners. Changed chain bodies have fresh
+`render-files-native-v8` / `render-touch-wiring-v7` receipts, with superseded IDs
+rejected before callbacks. The no-model-turn/agent-execution assertion retains
+structured method/path/body observations and permits only the exact existing-session
+`POST {"type":"get_tools"}` catalogue and bodyless same-session maintenance lease
+tuples among non-GET requests. Other sessions, extra fields, new sessions and all
+prompt/execution commands fail. Ordinary GET observations remain in diagnostics.
+No console/HTTP failures are filtered. Mounted/native owners retain policy and race
+matrices; [the active authoring plan](../docs/plans/2026-11-05_notebook-authoring-plan.md)
+records candidate-specific verification, not full acceptance from a focused pass.
 
 The managed-model tail retains the populated saved-context geometry at both inputs. It now also proves the direct in-provider catalog selector and thinking control have current unoccluded physical targets, preserves the other provider binding during inspection, and connects a row edit to the installed `/api/models/defaults` writer with private native-file readback and reopen. Only that exact shared preference is saved/restored; context configuration, enabled patterns, credentials and account bindings remain unmodified. Catalog/account metadata are synthetic geometry inputs, not live authentication, provider access or native catalog-discovery proof. Mounted/native owners retain precedence, validation, failures and interleaving matrices.
 
