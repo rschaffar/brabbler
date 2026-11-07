@@ -1492,8 +1492,8 @@
     },
     {
       "path": "lib/json-response.test.mjs",
-      "lane": "F",
-      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+      "lane": "N",
+      "reason": "Private ephemeral loopback HTTP server exercises the real Next response adapter. Response body, forwarding promises and server/connection closure are joined, including failures; no fixed/shared port, source writes or provider requests."
     },
     {
       "path": "lib/live-transcript.test.mjs",

@@ -26,6 +26,16 @@ the new resolution; the twelve-target environment patch, SDK manifest/helper
 fingerprints and 83-entry standalone exclusion are unchanged. Keep the pre-framework
 request-header guard; a Next version bump alone does not retire that boundary.
 
+Next 16.4.5 also strips transport/framing headers when forwarding a Web `Response`
+to Node HTTP. The previous `jsonResponse` helper precompressed large JSON, so the
+new adapter forwarded gzip bytes without `Content-Encoding`; genuine installed
+bootstrap and raw-HTTP diagnostics reproduced the failure. The helper now leaves
+JSON decoded and lets Next negotiate/apply HTTP compression after that boundary.
+Compression remains enabled; no header-filter bypass, client encoding workaround
+or Node update is needed. Existing negative helper cases remain, with additive
+decoded-body/header and real Next-adapter regressions. Both new cases failed with
+the old helper before the fix.
+
 Nixpkgs advances to `1d060086d60cb76a40cf37109f979d88a5bd6396`, and Home Manager to
 `2c0c1f01521469cf0271180c453c79782d53c2f6`, retaining `nixpkgs.follows`. Their selected
 Chromium/Git/Python definitions advance to **156.0.8078.79 / 2.56.0 / 3.14.8**.
