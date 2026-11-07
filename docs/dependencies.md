@@ -26,15 +26,46 @@ the new resolution; the twelve-target environment patch, SDK manifest/helper
 fingerprints and 83-entry standalone exclusion are unchanged. Keep the pre-framework
 request-header guard; a Next version bump alone does not retire that boundary.
 
-Next 16.4.5 also strips transport/framing headers when forwarding a Web `Response`
-to Node HTTP. The previous `jsonResponse` helper precompressed large JSON, so the
-new adapter forwarded gzip bytes without `Content-Encoding`; genuine installed
-bootstrap and raw-HTTP diagnostics reproduced the failure. The helper now leaves
-JSON decoded and lets Next negotiate/apply HTTP compression after that boundary.
-Compression remains enabled; no header-filter bypass, client encoding workaround
-or Node update is needed. Existing negative helper cases remain, with additive
-decoded-body/header and real Next-adapter regressions. Both new cases failed with
-the old helper before the fix.
+### Next compression compatibility — reassess on every Next update
+
+Next 16.4.5 strips transport/framing headers when adapting a Web `Response` to Node
+HTTP. Brabbler's previous `jsonResponse` helper precompressed large JSON, leaving
+gzip bytes without `Content-Encoding`. Returning decoded JSON alone fixed parsing
+but **did not preserve compression**: Next stores singleton Content-Type arrays,
+while its compressor's default predicate accepts only strings. The initial
+assumption of automatic API compression was retracted after raw-HTTP checks and
+two existing gzip regressions failed.
+
+`bin/next-compression-compat.js` wraps the existing compressor's filter option,
+not the response or the security header filter. Only GET/HEAD catalogue/detail
+JSON with the helper's existing large-response `Vary: Accept-Encoding` marker gets
+a predicate-local scalar view of a singleton Content-Type. Actual headers,
+custom filters/options, MIME values and Next's encoding/framing safeguards remain
+unchanged. `bin/next-compression-preload.js` installs it before managed Next
+`dev`/`start` captures the factory, after the existing request guard. Build/typegen
+are not patched, no vendor bytes/global prototypes are changed, and no Node
+update or external proxy is required.
+
+The temporary profile requires **Next 16.4.5** and SHA-256
+`8e7c2ec6982978c754c00388e0d1d3ff46d7aae99945d060f6f1052954c24e29`
+for `next/dist/compiled/compression/index.js`. Unknown versions/bytes/exports or
+late installation refuse startup; repeat installation is idempotent. This is a
+reviewed internal-module compatibility exception, not a public Next extension.
+
+**On every Next upgrade:**
+
+1. Recheck the Web-response framing filter, singleton Content-Type forwarding and
+   the compressor predicate. Do not blindly update the version/hash guard.
+2. Prefer removing the adapter/preload when upstream makes correct HTTP compression
+   work without it; otherwise explicitly review and qualify a replacement profile.
+3. Run the compatibility, launch and catalogue/detail route checks, then all three
+   complete [Nix acceptance levels](testing.md). Preserve actual wire gzip, identity/
+   refusal, threshold, MIME/error, framing and cleanup evidence. Keep the request
+   guard and SDK installation policy unchanged unless separately reviewed.
+
+The original helper negatives remain. Catalogue/detail compression assertions now
+cross the real Next/HTTP boundary instead of requiring a precompressed Web body;
+decoded-body/header and raw gzip regressions retain the failure distinction.
 
 Nixpkgs advances to `1d060086d60cb76a40cf37109f979d88a5bd6396`, and Home Manager to
 `2c0c1f01521469cf0271180c453c79782d53c2f6`, retaining `nixpkgs.follows`. Their selected

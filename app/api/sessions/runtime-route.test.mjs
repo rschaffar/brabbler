@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
+import { createNextHTTPBridge } from "../../../lib/next-compression.fixture.mjs";
 import test from "node:test";
 import { createJiti } from "jiti";
 
@@ -289,24 +290,26 @@ test("session listing returns a gzip-compressed response when the client accepts
   sibling.appendMessage({ role: "assistant", content: [{ type: "text", text: "done" }], timestamp: Date.now() });
   invalidateSessionListCache();
 
-  const response = await native.routes.getSessionList(new Request("http://localhost/api/sessions", {
+  const bridge = await createNextHTTPBridge(t, request => native.routes.getSessionList(request));
+  native.release(bridge.close);
+  const response = await native.body(bridge.request("/api/sessions", {
     headers: { "Accept-Encoding": "gzip" },
   }));
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("Content-Encoding"), "gzip");
-  assert.match(response.headers.get("Vary") ?? "", /(?:^|,\s*)Accept-Encoding(?:\s*,|$)/i);
-  const payload = JSON.parse(gunzipSync(Buffer.from(await response.arrayBuffer())).toString("utf8"));
+  assert.equal(response.headers["content-encoding"], "gzip");
+  assert.match(response.headers.vary ?? "", /(?:^|,\s*)Accept-Encoding(?:\s*,|$)/i);
+  const payload = JSON.parse(gunzipSync(response.body).toString("utf8"));
   assert.equal(payload.sessions.length, 2);
   assert.equal(payload.sessions[0].firstMessage, firstMessage);
   for (const query of ["compact=1", "summary=1&compact=1", "force=1&compact=1"]) for (const encoding of ["identity", "gzip"]) {
-    const compact = await native.routes.getSessionList(new Request(`http://localhost/api/sessions?${query}`, {
+    const compact = await native.body(bridge.request(`/api/sessions?${query}`, {
       headers: { "Accept-Encoding": encoding },
     }));
-    const raw = Buffer.from(await compact.arrayBuffer());
+    const raw = compact.body;
     const encoded = JSON.parse((encoding === "gzip" ? gunzipSync(raw) : raw).toString("utf8"));
     assert.equal(compact.status, 200);
-    assert.equal(compact.headers.get("Content-Encoding"), encoding === "gzip" ? "gzip" : null);
+    assert.equal(compact.headers["content-encoding"], encoding === "gzip" ? "gzip" : undefined);
     assert.equal(encoded.sessions.format, 1, "compact route shares repeated text instead of resending full rows");
     assert.equal(encoded.sessions.rows.length, 2);
     assert.deepEqual(decodeSessionCatalogue(encoded.sessions), payload.sessions, 'native compact summary/force metadata remains exact');
@@ -526,16 +529,15 @@ test("session detail returns a gzip-compressed response when the client accepts 
     globalThis.__piSessions = previousRegistry;
   });
 
-  const response = await native.routes.getSessionDetail(
-    new Request(`http://localhost/api/sessions/${id}`, {
-      headers: { "Accept-Encoding": "gzip" },
-    }),
-    { params: Promise.resolve({ id }) },
-  );
+  const bridge = await createNextHTTPBridge(t, request => native.routes.getSessionDetail(request, { params: Promise.resolve({ id }) }));
+  native.release(bridge.close);
+  const response = await native.body(bridge.request(`/api/sessions/${id}`, {
+    headers: { "Accept-Encoding": "gzip" },
+  }));
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("Content-Encoding"), "gzip");
-  const payload = JSON.parse(gunzipSync(Buffer.from(await response.arrayBuffer())).toString("utf8"));
+  assert.equal(response.headers["content-encoding"], "gzip");
+  const payload = JSON.parse(gunzipSync(response.body).toString("utf8"));
   assert.equal(payload.info.firstMessage, firstMessage);
 });
 

@@ -61,7 +61,7 @@ source-derived inventory and fresh receipts; the historical baseline stays intac
 
 | Group | Coverage |
 | --- | --- |
-| `state` | Installed-launcher rejection of reserved revalidation headers, API pagination/errors, externally appended JSONL, account validation/redaction/defaults/concurrent writes, live AGENTS reload and dependent durable account selection/deletion |
+| `state` | Installed-launcher rejection of reserved revalidation headers, genuine catalogue/detail gzip and JSON decoding, API pagination/errors, externally appended JSONL, account validation/redaction/defaults/concurrent writes, live AGENTS reload and dependent durable account selection/deletion |
 | `history` | Version reload, session/mobile identity, observer pagination/node identity, recovery acknowledgement, rendering/thinking/compaction, flat/nested/write/edit argument views, full/raw clipboard access, escaped strings, keyboard/mobile geometry and synthetic partial-input completion/handoff, minimap and reading/branch cancellation chain; short/overflow bottom-on-send without artificial padding, committed streaming follow and scroll-up/down/button detach/reattach; immediate empty New with restrictive saved presets, literal unsent-text/session reload and navigation, provisional-draft recovery after reload before acknowledgement without creation replay, explicit desktop New/modal focus and mobile model filtering through simulated keyboard shrink/pan/late IME settling |
 | `extension-dialogs` | Complete inline extension select/input/editor dialogs, keyboard/focus/expiry and retained receipts |
 | `mobile-sidebar` | Compact action geometry/keyboard, archive/search scopes, reconciled inline restore, live RPC readiness and acknowledged subsequent project move |
@@ -145,6 +145,14 @@ The running-forks mobile `first-user-quote-stop-v3` chain measures the current S
 These are native Chromium proofs, not every browser/codec combination; the static demo and Markdown-file previews are outside this feature's scope.
 
 The question group's `native-publication-files-v3` / `compact-native-files-v3` receipts retain the prior desktop/mobile chains and additionally prove live context/option links open the real Files pane at a source line without browser navigation or native label selection; desktop also checks saved-receipt file navigation. Mounted `ChatWindow.extension-request.test.mjs` owns the broader card/review/receipt/compaction link matrix and no-answer behavior. This is additive coverage, not retirement of the existing native input chains.
+
+The state chain's `api-append-accounts-gzip-v2@service` receipt adds explicit gzip
+negotiation and successful JSON decoding for the installed catalogue/detail
+responses. All earlier state assertions remain. The old receipt is refused before
+callback execution; core owners retain the raw-byte/refusal/threshold/MIME/framing
+matrix and real Next adapter/compressor coverage. No browser deadline changes or
+client encoding workarounds are used. [Dependency maintenance](../docs/dependencies.md)
+owns the temporary compressor profile and reassessment on the next Next update.
 
 ## Contributor recipes and proof boundaries
 

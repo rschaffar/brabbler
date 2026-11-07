@@ -238,9 +238,13 @@ The catalogue/detail `jsonResponse` helper leaves Web `Response` bodies decoded.
 Next's Node HTTP layer owns compression negotiation and framing: its response
 adapter strips transport headers, so precompressing that Web body would leave
 clients with gzip bytes but no encoding header. Status, cache headers and large-
-response `Vary: Accept-Encoding` remain intact. Core tests exercise the real Next
-response adapter; installed acceptance retains genuine HTTP decoding and browser
-connections. This does not disable Next's normal HTTP compression.
+response `Vary: Accept-Encoding` remain intact. The guarded managed-startup adapter
+in `bin/next-compression-compat.js` corrects only the compressor predicate's view
+of Next's singleton JSON Content-Type arrays. Actual response headers remain
+unchanged. [Dependency maintenance](dependencies.md) owns its exact version/hash
+and mandatory reassessment on every Next update. Core tests exercise the real
+Next response adapter/compressor and raw HTTP gzip; installed acceptance retains
+genuine decoding and browser connections. This does not disable compression.
 
 ### Running state polling + reconciliation
 - The sidebar polls `/api/agent/running` every 2.5 seconds while the tab is visible and pauses polling in background tabs. The session-list response remains the initial fallback.
