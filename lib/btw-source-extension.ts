@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { BTW_CONTEXT_LIMIT, btwReferenceText, readBtwMetadata, readBtwSnapshot } from "./btw";
 import type { SessionEntry } from "./types";

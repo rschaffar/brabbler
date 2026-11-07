@@ -9,8 +9,8 @@ const { createHash } = require("node:crypto");
 const { createRequire } = require("node:module");
 const { resolveInstalledSdkRoot, payload } = require("./patch-sdk-command-env");
 const applicationRoot = path.resolve(__dirname, "..");
-const BUNDLE_DIGEST = "f6deb19c143757233fe221c10ee27bd4cb6b5f59240330a5462a975f1da06bd2";
-const FIXED_UNDICI = "8.12.2";
+const BUNDLE_DIGEST = "295970fdfb99e0feb0e229b7383ecbe0daf3325040f7615b36ec55b5a30c3173";
+const FIXED_UNDICI = "8.12.3";
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 function refusal(code) { return Object.assign(new Error(`SDK runtime policy refused (${code})`), { code }); }
 function stat(file) {
@@ -30,7 +30,7 @@ function regular(file, limit = 1024 * 1024) {
 }
 function context(root) {
   const sdk = resolveInstalledSdkRoot(root);
-  if (hash(regular(path.join(sdk, "package.json"))) !== payload.packageJsonSha256 || payload.packageVersion !== "1.4.0") throw refusal("SDK_RUNTIME_VERSION");
+  if (hash(regular(path.join(sdk, "package.json"))) !== payload.packageJsonSha256 || payload.packageVersion !== "1.5.0") throw refusal("SDK_RUNTIME_VERSION");
   const require = createRequire(path.join(sdk, "package.json"));
   let undici;
   try { undici = JSON.parse(regular(require.resolve("undici/package.json"))); }
@@ -78,12 +78,12 @@ function verifyBundle(directory) {
     }
   }
   walk(directory);
-  if (records.length !== 82 || hash(records.sort().join("\n") + "\n") !== BUNDLE_DIGEST) throw refusal("SDK_RUNTIME_BUNDLE_UNKNOWN");
+  if (records.length !== 83 || hash(records.sort().join("\n") + "\n") !== BUNDLE_DIGEST) throw refusal("SDK_RUNTIME_BUNDLE_UNKNOWN");
 }
 function checkSdkRuntimePolicy(root = applicationRoot) {
   const c = context(root);
   if (stat(c.bundle) || stat(c.staged) || cliLink(c)) throw refusal("SDK_RUNTIME_NOT_EXCLUDED");
-  return { packageVersion: "1.4.0", undiciVersion: FIXED_UNDICI, standaloneBundles: "excluded" };
+  return { packageVersion: "1.5.0", undiciVersion: FIXED_UNDICI, standaloneBundles: "excluded" };
 }
 function preflightOwnedSdk(root = applicationRoot) {
   // npm hoisting could share this SDK with another application. Require a physical
@@ -106,7 +106,7 @@ function preflightOwnedSdk(root = applicationRoot) {
 }
 function preflightSdkRuntimePolicy(root = applicationRoot) {
   preflightOwnedSdk(root);
-  return { owned: true, packageVersion: "1.4.0" };
+  return { owned: true, packageVersion: "1.5.0" };
 }
 function applySdkRuntimePolicy(root = applicationRoot) {
   const { c, link, bundle, staged, owned } = preflightOwnedSdk(root);

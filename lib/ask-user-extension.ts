@@ -2,7 +2,7 @@
  * Web-focused adaptation of pi-ask-user 0.15.0 (edlsh/pi-ask-user).
  * Copyright (c) 2026 Enzo Lucchesi. MIT license: ./ask-user.LICENSE.
  */
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { type InlineExtension, type LoadExtensionsResult } from "@earendil-works/pi-coding-agent";
 import {
   askUserSummary, coerceAskUserOption, normalizeAskUserAnswer, parseAskUserPreference,

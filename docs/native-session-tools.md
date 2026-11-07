@@ -1,6 +1,6 @@
 # Native session tools
 
-The reduced feature composes SDK 1.4.0 MCP, tools-only Code-mode and Tool search for ordinary sessions. Complete Nix acceptance and desktop/mobile browser evidence are recorded in the [archived implementation record](plans/archived/2026-10-21_native-session-tools-plan.md). It does not introduce a configuration-management system.
+The reduced feature composes SDK 1.5.0 MCP, tools-only Code-mode and Tool search for ordinary sessions. Complete Nix acceptance and desktop/mobile browser evidence are recorded in the [archived implementation record](plans/archived/2026-10-21_native-session-tools-plan.md). It does not introduce a configuration-management system.
 
 ## Configuration and selection
 
@@ -50,7 +50,7 @@ Code-mode's `details.calls` are complete display snapshots. Temporary IDs may be
 
 ## Maintenance boundary
 
-`native-mcp-sdk.ts` isolates the small unavoidable SDK 1.4 private surface (pure validator/namespace, native credential-store constructor and transport helpers). It resolves the application's installed package with Node 24 metadata, verifies exact SDK/transport versions, and does not reimplement engines. SDK upgrades require reassessing this bridge and running installed-package acceptance.
+`native-mcp-sdk.ts` isolates the small unavoidable SDK 1.5 private surface (pure validator/namespace, native credential-store constructor and transport helpers). It resolves the application's installed package with Node 24 metadata, verifies exact SDK/transport versions, and does not reimplement engines. SDK upgrades require reassessing this bridge and running installed-package acceptance.
 
 Code-mode defaults to two process-wide workers. SDK 1.4 queues excess calls for up to 60 seconds (bounded by a shorter script deadline); retirement/caller abort must remove queued work without late worker admission. `PI_CODEMODE_MAX_WORKERS` remains an explicit operator SDK setting, not an automatic capacity increase by this host.
 

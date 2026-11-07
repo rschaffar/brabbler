@@ -12,7 +12,7 @@ consumed. Removing browser SSH does not remove this command-secret protection.
 ## Installation and verification
 
 `bin/sdk-command-env-payload.js` pins the public `@earendil-works/pi-coding-agent`
-**1.4.0** manifest and all twelve target modules by SHA-256, with original and
+**1.5.0** manifest and all twelve target modules by SHA-256, with original and
 patched hashes and exact replacement recipes. It contains only patch snippets,
 not vendored SDK modules. Its self-contained ESM helper is installed at
 `dist/utils/brabbler-command-env.js` inside the SDK and imports no application code.
@@ -67,7 +67,7 @@ installation; supported launchers check both policies read-only before allocatio
 The standalone Pi CLI/bundled RPC entry points (including helpers that launch them)
 are not provided by this Brabbler-owned tree. A separate Pi installation remains
 separate. The archive must be extracted and installed as its own application root,
-so npm honors the fixed modular-Undici override; sharing or hoisting its SDK into
+so npm honors its locked dependencies and installation policies; sharing or hoisting its SDK into
 another application's dependency tree is unsupported and refuses.
 
 ## Covered modular paths
@@ -106,10 +106,15 @@ hygiene, not isolation; a successful check is not a whole-SDK sandbox certificat
 The patch adds import lines to distributed JavaScript; existing upstream source
 maps are not regenerated and can show pre-patch coordinates. Reassess this bounded
 patch on every SDK change rather than widening accepted fingerprints casually.
-The 1.4 rebase retains all twelve targets and replacement recipes: eight originals
-are unchanged; grep, shell, tools-manager and clipboard-command have new exact
-fingerprints. Upstream `rg --no-config`, Windows resolution and detached POSIX
-clipboard behavior remain intact. No new environment hook replaces this policy.
+The 1.5 rebase retains all twelve targets: six originals are unchanged; exec,
+grep, shell, tools-manager, clipboard-command and open-browser have new exact
+fingerprints. Exec's recipe follows the refactored spawn indentation without
+changing its new combined-output cap, UTF-8 decoding or termination logic. The
+browser recipe preserves `cwd: "/"`; clipboard also retains that upstream change.
+The macOS stop-before-kill, unsupported-download-target checks, `rg --no-config`
+and detached POSIX clipboard behavior remain intact. No new environment hook
+replaces this policy. The standalone exclusion fingerprints all 83 inventory entries;
+modular Undici now resolves upstream's exact 8.12.3 without a downstream override.
 
 ## Regression ownership
 
@@ -125,7 +130,8 @@ exported helper.
 `lib/sdk-command-env-runtime.test.mjs` requires already-patched dependencies. A
 private worker exercises actual modular `pi.exec`, config helpers, native Bash,
 shared local shell execution, package command wrappers, ripgrep/fd and footer Git
-against synthetic processes and files. It additionally exercises the actual
+against synthetic processes and files. It checks `pi.exec()` output caps and
+invalid-limit refusal, and the root cwd of clipboard/browser helpers. It additionally exercises the actual
 clipboard command helper and exported `copyToClipboard` through a private
 `wl-copy` recorder, browser opening through a private opener recorder, and the
 exported `RpcClient.start/stop` through a private `node` recorder. These recorders

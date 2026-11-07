@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 
 function sourceAt(root: string): { path: string; version: string } | null {

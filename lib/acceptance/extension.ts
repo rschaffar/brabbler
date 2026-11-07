@@ -1,5 +1,5 @@
 import { defineTool, type ExtensionContext, type InlineExtension } from "@earendil-works/pi-coding-agent";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { acceptanceProject, digest, readProfiles } from "./config";
 import { acceptanceCoordinator } from "./coordinator";
 import { acceptanceLog, allowedAcceptanceProject } from "./server";
