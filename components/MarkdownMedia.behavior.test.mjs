@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
 import { createJiti } from 'jiti';
 import { markdownDom, byText, assertMediaRelease } from './markdown-dom.fixture.mjs';
 
@@ -11,6 +11,117 @@ async function production() {
   return { MarkdownMedia, MarkdownMediaScope, I18nProvider };
 }
 const url = href => new URL(href, 'https://fixture.invalid/');
+const rateKey = 'brabbler-audio-playback-rate';
+async function inputValue(view, field, value) {
+  Object.getOwnPropertyDescriptor(view.window.HTMLInputElement.prototype, 'value').set.call(field, value);
+  await view.dispatch(field, new view.window.Event('input', { bubbles: true }));
+}
+
+test('audio speed controls adjust the actual player, share the saved preference and preserve source/position', async t => {
+  const f = markdownDom(t, { media: true });
+  const { MarkdownMedia, I18nProvider } = await production();
+  const view = await f.mount(createElement(I18nProvider, null,
+    ...['First', 'Second'].map(label => createElement(MarkdownMedia, { key: label, filePath: `/${label}.wav`, type: 'audio', label }))));
+  const boxes = [...view.container.querySelectorAll('.markdown-media')];
+  const button = (box, label) => box.querySelector(`button[aria-label="${label}"]`);
+  assert.equal(view.container.querySelector('.audio-speed-control') === null, true, 'unloaded audio has no controls');
+  view.window.localStorage.setItem(rateKey, '1.35');
+  await f.click(byText(boxes[0], 'button', 'Load audio: First'));
+  const audio = boxes[0].querySelector('audio'), src = audio.getAttribute('src');
+  assert.equal(audio.playbackRate, 1.35);
+  assert.equal(audio.defaultPlaybackRate, 1.35);
+  assert.equal(audio.preservesPitch, true);
+  audio.currentTime = 12;
+  const calls = f.mediaCalls.length;
+  await f.click(button(boxes[0], 'Increase playback speed'));
+  assert.equal(audio.playbackRate, 1.4, 'increase is exactly 0.05 without floating-point drift');
+  await f.click(button(boxes[0], 'Decrease playback speed'));
+  assert.equal(audio.playbackRate, 1.35);
+  const exact = boxes[0].querySelector('input[type="number"]');
+  await inputValue(view, exact, '1.43');
+  assert.equal(audio.playbackRate, 1.35, 'typing an exact value does not interrupt playback');
+  await view.dispatch(exact, new view.window.FocusEvent('focusout', { bubbles: true }));
+  assert.equal(audio.playbackRate, 1.43);
+  for (const invalid of ['', '0.49', '3.01']) {
+    await inputValue(view, exact, invalid);
+    await view.dispatch(exact, new view.window.FocusEvent('focusout', { bubbles: true }));
+    assert.equal(audio.playbackRate, 1.43);
+    assert.equal(exact.value, '1.43', 'invalid entry restores the current speed');
+  }
+  await inputValue(view, exact, '2.00');
+  await view.dispatch(exact, new view.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  assert.equal(exact.value, '1.43');
+  await view.dispatch(exact, new view.window.FocusEvent('focusout', { bubbles: true }));
+  assert.equal(audio.playbackRate, 1.43, 'Escape cancels rather than applying the draft');
+  const slider = boxes[0].querySelector('input[type="range"]');
+  assert.equal(slider.step, '0.05');
+  await inputValue(view, slider, '2.25');
+  assert.equal(audio.playbackRate, 2.25);
+  assert.equal(view.window.localStorage.getItem(rateKey), '2.25');
+  await f.click(byText(boxes[1], 'button', 'Load audio: Second'));
+  const second = boxes[1].querySelector('audio');
+  assert.equal(second.playbackRate, 2.25, 'new tracks inherit the preference');
+  await act(async () => { second.playbackRate = 1.75; });
+  await view.dispatch(second, new view.window.Event('ratechange'));
+  assert.equal(audio.playbackRate, 1.75, 'native speed changes synchronize both controls');
+  assert.equal(exact.value, '1.75');
+  view.window.localStorage.setItem(rateKey, '2.1');
+  // A self-applied native event can arrive after a peer write but before its
+  // storage notification. It must not turn the old rate into a new preference.
+  await view.dispatch(audio, new view.window.Event('ratechange'));
+  assert.equal(view.window.localStorage.getItem(rateKey), '2.1', 'queued acknowledgement never overwrites a newer peer choice');
+  await view.dispatch(view.window, new view.window.StorageEvent('storage', { key: rateKey, storageArea: view.window.localStorage }));
+  assert.equal(audio.playbackRate, 2.1);
+  assert.equal(second.playbackRate, 2.1, 'peer-tab preference changes apply to loaded audio');
+  await inputValue(view, slider, '3');
+  assert.equal(button(boxes[0], 'Increase playback speed').disabled, true);
+  await inputValue(view, slider, '0.5');
+  assert.equal(button(boxes[0], 'Decrease playback speed').disabled, true);
+  await f.click(byText(boxes[0], 'button', 'Reset to 1×'));
+  assert.equal(audio.playbackRate, 1);
+  assert.equal(second.playbackRate, 1);
+  assert.equal(boxes[0].querySelector('audio') === audio, true);
+  assert.equal(audio.currentTime, 12, 'speed adjustment never seeks');
+  assert.equal(audio.getAttribute('src'), src);
+  assert.equal(f.mediaCalls.length, calls + 2, 'only the second activation replays media cleanup; speed never loads/pauses');
+});
+
+test('audio speed rejects corrupt preferences and remains usable when browser storage refuses access', async t => {
+  const f = markdownDom(t, { media: true });
+  const { MarkdownMedia, I18nProvider } = await production();
+  const view = await f.mount(createElement(I18nProvider, null,
+    createElement(MarkdownMedia, { filePath: '/take.wav', type: 'audio', label: 'Recording' })));
+  await f.click(byText(view.container, 'button', 'Load audio: Recording'));
+  let audio = view.container.querySelector('audio');
+  for (const value of ['NaN', 'Infinity', '0', '3.01', '', 'invalid']) {
+    view.window.localStorage.setItem(rateKey, value);
+    await view.dispatch(view.window, new view.window.StorageEvent('storage', { key: rateKey }));
+    assert.equal(audio.playbackRate, 1, `invalid saved rate ${value}`);
+  }
+  const storage = view.window.localStorage, originalWrite = view.window.Storage.prototype.setItem;
+  const read = t.mock.method(view.window.Storage.prototype, 'getItem', () => { throw Error('storage unavailable'); });
+  const write = t.mock.method(view.window.Storage.prototype, 'setItem', () => { throw Error('storage unavailable'); });
+  try {
+    await f.click(view.container.querySelector('button[aria-label="Increase playback speed"]'));
+    assert.equal(audio.playbackRate, 1.05, 'in-tab speed works without storage');
+    await f.click(byText(view.container, 'button', 'Unload player'));
+    await f.click(byText(view.container, 'button', 'Load audio: Recording'));
+    audio = view.container.querySelector('audio');
+    assert.equal(audio.playbackRate, 1.05, 'unsaved preference survives an unloaded gap');
+    await f.click(byText(view.container, 'button', 'Unload player'));
+    originalWrite.call(storage, rateKey, '1.65');
+    await view.dispatch(view.window, new view.window.StorageEvent('storage', { key: rateKey }));
+    read.mock.restore();
+    await f.click(byText(view.container, 'button', 'Load audio: Recording'));
+    audio = view.container.querySelector('audio');
+    assert.equal(audio.playbackRate, 1.65, 'peer changes are observed even while all players are unloaded');
+  } finally {
+    read.mock.restore(); write.mock.restore();
+    storage.removeItem(rateKey);
+    await view.dispatch(view.window, new view.window.StorageEvent('storage', { key: null }));
+  }
+  assert.equal(audio.playbackRate, 1, 'clearing preferences restores normal speed');
+});
 
 for (const type of ['audio', 'video']) {
   test(`mounted ${type} activation, Strict Effects, error and explicit reload keep the real DOM owner`, async t => {

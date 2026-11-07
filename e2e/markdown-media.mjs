@@ -144,7 +144,26 @@ export async function checkMarkdownMedia(page, { base, fixtures: f }) {
     await placeholder.waitFor();
     assert.equal(await image.count(), 0, "disable removes further automatic image sources");
 
-    const audio = await load("User recording", "audio"); await playAndSeek(audio);
+    const audio = await load("User recording", "audio");
+    const speed = media("User recording").getByRole("group", { name: "Audio playback speed", exact: true });
+    const slider = speed.getByRole("slider", { name: "Speed", exact: true });
+    await slider.focus(); await slider.press("Home"); await slider.press("ArrowRight");
+    await page.waitForFunction(node => node.playbackRate === 0.55, await audio.elementHandle());
+    const exact = speed.getByRole("spinbutton", { name: "Exact playback speed", exact: true });
+    await exact.fill("1.43"); await exact.press("Enter");
+    await speed.getByRole("button", { name: "Increase playback speed", exact: true }).click();
+    await page.waitForFunction(node => node.playbackRate === 1.48 && node.preservesPitch, await audio.elementHandle());
+    assert.equal(await exact.inputValue(), "1.48");
+    assert.equal(await page.evaluate(() => localStorage.getItem("brabbler-audio-playback-rate")), "1.48");
+    for (const control of [slider, exact, speed.getByRole("button", { name: "Decrease playback speed", exact: true }),
+      speed.getByRole("button", { name: "Increase playback speed", exact: true }), speed.getByRole("button", { name: "Reset to 1×", exact: true })]) {
+      await control.scrollIntoViewIfNeeded();
+      const bounds = await control.boundingBox(), container = await speed.boundingBox();
+      assert.ok(bounds.height >= 44 && bounds.x >= container.x - 1 && bounds.x + bounds.width <= container.x + container.width + 1,
+        "speed controls remain reachable without horizontal overflow at this viewport");
+    }
+    await playAndSeek(audio);
+    assert.equal(await audio.evaluate(node => node.playbackRate), 1.48, "native playback and seeking preserve the selected speed");
     const audioHandle = await audio.elementHandle();
     await media("User recording").hover();
     assert.equal(await audioHandle.evaluate(node => node.isConnected), true, "message hover preserves native player identity");
@@ -154,6 +173,7 @@ export async function checkMarkdownMedia(page, { base, fixtures: f }) {
     assert.equal(await video.getAttribute("playsinline"), "");
     assert.equal(await video.evaluate(node => node.videoWidth === 64 && node.videoHeight === 64 && node.getVideoPlaybackQuality().totalVideoFrames > 0), true);
     const external = await load("External recording", "audio"); await playAndSeek(external);
+    assert.equal(await external.evaluate(node => node.playbackRate), 1.48, "new audio inherits the saved speed");
     assert.ok(requests.some(url => url.pathname === new URL(fileUrl(f.external)).pathname && url.searchParams.get("type") === "read"));
     assert.deepEqual(forbidden, [], "inline playback has no metadata/watch/edit/Git probes");
 
@@ -174,6 +194,7 @@ export async function checkMarkdownMedia(page, { base, fixtures: f }) {
     await media("External recording").getByRole("button", { name: "Open in Files", exact: true }).click();
     const panel = page.locator("#file-panel");
     await panel.locator("audio").waitFor();
+    await page.waitForFunction(node => node.playbackRate === 1.48 && node.preservesPitch, await panel.locator("audio").elementHandle());
     if (page.viewportSize().width > 640) await panel.getByRole("button", { name: "Expand file panel", exact: true }).click();
     await released(externalHandle);
     if (page.viewportSize().width > 640) await panel.getByRole("button", { name: "Restore file panel width", exact: true }).click();
