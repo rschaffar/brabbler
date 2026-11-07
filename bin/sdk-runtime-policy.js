@@ -10,7 +10,7 @@ const { createRequire } = require("node:module");
 const { resolveInstalledSdkRoot, payload } = require("./patch-sdk-command-env");
 const applicationRoot = path.resolve(__dirname, "..");
 const BUNDLE_DIGEST = "295970fdfb99e0feb0e229b7383ecbe0daf3325040f7615b36ec55b5a30c3173";
-const FIXED_UNDICI = "8.12.3";
+const FIXED_UNDICI = "8.12.4";
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 function refusal(code) { return Object.assign(new Error(`SDK runtime policy refused (${code})`), { code }); }
 function stat(file) {

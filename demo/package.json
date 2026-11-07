@@ -20,9 +20,9 @@
     "@xterm/xterm": "6.0.0",
     "ansi_up": "^6.0.6",
     "js-yaml": "^5.4.3",
-    "katex": "0.19.0",
+    "katex": "0.19.1",
     "mermaid": "^12.1.0",
-    "next": "16.4.2",
+    "next": "16.4.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",
@@ -35,15 +35,15 @@
     "remark-math": "^6.0.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.3",
+    "@tailwindcss/postcss": "^4.3.5",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/react-syntax-highlighter": "^15.5.13",
-    "eslint": "^10.12.0",
-    "eslint-config-next": "16.4.2",
-    "postcss": "^8.5.29",
-    "tailwindcss": "^4.3.3",
+    "eslint": "^10.14.0",
+    "eslint-config-next": "16.4.5",
+    "postcss": "^8.5.32",
+    "tailwindcss": "^4.3.5",
     "typescript": "^6.0.3"
   },
   "overrides": {

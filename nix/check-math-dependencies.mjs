@@ -8,7 +8,7 @@ for (const directory of ["", "demo/"]) {
   const lock = JSON.parse(readFileSync(new URL(`${directory}package-lock.json`, root), "utf8"));
   const label = directory || "root/";
   const version = manifest.dependencies.katex;
-  assert.equal(version, "0.19.0", `${label}: exact reviewed security-fixed pin`);
+  assert.equal(version, "0.19.1", `${label}: exact reviewed security-fixed pin`);
   assert.equal(manifest.overrides.katex, "$katex", `${label}: shared renderer override`);
   assert.equal(lock.packages[""].dependencies.katex, version, `${label}: manifest/lock identity`);
   const copies = Object.entries(lock.packages).filter(([path]) => /(?:^|\/)node_modules\/katex$/.test(path));
