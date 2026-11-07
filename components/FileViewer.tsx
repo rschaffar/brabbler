@@ -27,6 +27,7 @@ import { parseFrontmatter } from "@/lib/frontmatter";
 import { markdownPreviewRehypePlugins, normalizeDisplayMathWithSourceMap } from "@/lib/markdown";
 import { FileMarkdownBody } from "./FileMarkdownBody";
 import { NativeDocumentPreview } from "./NativeDocumentPreview";
+import { AudioSpeedControl } from "./AudioSpeedControl";
 import type { ReviewBatchDraft, ReviewChatDestination } from "@/lib/review-handoff";
 import { GuidedReviewEntry } from "./GuidedReviewReader";
 import { DelimitedTable } from "./DelimitedTable";
@@ -491,6 +492,7 @@ function formatDuration(seconds: number): string {
 }
 
 function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true, onWork }: Props) {
+  const audioRef = useRef<HTMLAudioElement>(null);
   const observeWork = useFileWork(onWork);
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
@@ -630,6 +632,7 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true, onWo
             </div>
           )}
           <audio
+            ref={audioRef}
             key={src}
             controls
             preload="metadata"
@@ -638,6 +641,7 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true, onWo
             onError={() => setError("Failed to load audio")}
             style={{ width: "100%" }}
           />
+          <AudioSpeedControl mediaRef={audioRef} src={src} />
         </div>
       </div>
     </div>

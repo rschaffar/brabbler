@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { useI18n } from "@/hooks/useI18n";
 import type { OpenFileLink } from "@/lib/file-links";
 import { markdownMediaFileUrl, releaseMarkdownMedia } from "@/lib/markdown-media";
+import { AudioSpeedControl } from "./AudioSpeedControl";
 
 const MediaActiveContext = createContext(true);
 let activationSequence = 0;
@@ -64,6 +65,7 @@ function LoadedMedia({ type, src, label }: { type: "audio" | "video"; src: strin
   const props = { ref: (media: HTMLMediaElement | null) => { mediaRef.current = media; }, src, controls: true, preload: "metadata", "aria-label": label, onError: () => setFailed(true) };
   return <>
     {type === "audio" ? <audio {...props} /> : <video {...props} playsInline />}
+    {type === "audio" && <AudioSpeedControl mediaRef={mediaRef} src={src} />}
     {failed && <span role="status" className="markdown-media-error">{t("chat.mediaFailed")}</span>}
   </>;
 }

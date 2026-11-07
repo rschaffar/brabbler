@@ -47,6 +47,28 @@ async function openMedia(t, kind) {
   };
 }
 
+test('Files audio shares speed controls and reapplies the preference when the native player is replaced', async t => {
+  const h = await openMedia(t, { ext: 'wav', selector: 'audio' });
+  const { view, runtime, root, props } = h;
+  const first = root().querySelector('audio'), src = first.getAttribute('src');
+  view.window.localStorage.setItem('brabbler-audio-playback-rate', '1.65');
+  await view.dispatch(view.window, new view.window.StorageEvent('storage', { key: 'brabbler-audio-playback-rate' }));
+  assert.equal(first.playbackRate, 1.65);
+  await view.dispatch(root().querySelector('[aria-label="Increase playback speed"]'),
+    new view.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(first.playbackRate, 1.7);
+  assert.equal(first.getAttribute('src'), src, 'changing speed does not reload Files audio');
+  await h.render({ ...props, filePath: '/root/next.wav' });
+  const next = root().querySelector('audio');
+  assert.equal(next !== first, true, 'source change replaces the keyed native audio');
+  assert.equal(next.playbackRate, 1.7);
+  assert.equal(next.defaultPlaybackRate, 1.7);
+  assert.equal(next.preservesPitch, true);
+  await view.dispatch(next, new view.window.Event('loadedmetadata'));
+  assert.equal(next.playbackRate, 1.7, 'metadata readiness retains the selected speed');
+  assert.equal(runtime.requests.length, 0, 'speed controls admit no file or metadata reads');
+});
+
 // Independent actual branch owners, not a fake generic media viewer. The cwd
 // change is coupled to an explicit watch pause: media watcher identity is
 // path/session/watchEnabled, NOT cwd. The equal-cwd case is a new incarnation.
