@@ -56,6 +56,16 @@ pins, native worker retirement and the session-local Codex speed adapter; extern
 extensions need their own review. Installed-service activation and publication are
 not part of a dependency update.
 
+The settled 1.5 candidate passed complete fresh Linux Nix acceptance: **528 core
+files / 4,483 tests / 14 suites**, all **26 browser/terminal groups / 60 receipts**,
+and the genuine Home Manager deployment VM in **488 seconds**, including in-run
+realization. Four core workers/four browser sandboxes overlapped; available RAM
+was below the twelve/four admission estimate. Exact input identities, preparation
+and execution intervals, the initial focused assertion failure and proof limits
+are recorded in the [upgrade record](plans/archived/2026-11-07_pi-sdk-1.5-upgrade-plan.md).
+This is synthetic Linux acceptance, not a new portable macOS smoke or live-provider
+certification.
+
 ## Brabbler 0.1.0 release checkpoint (2026-10-28)
 
 This checkpoint supersedes older present-tense advisory counts below; dated

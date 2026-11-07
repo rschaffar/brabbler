@@ -106,7 +106,14 @@ See [dependency dispositions](dependencies.md) for scope and remaining obligatio
 
 ## Current evidence and release gates
 
-The local application/source pair builds in isolated Nix and passed an ordinary
+The Pi SDK 1.5.0 candidate passed complete Linux Nix acceptance: **528 core files /
+4,483 tests**, all **26 browser/terminal groups / 60 receipts**, and the genuine
+Home Manager deployment VM in **488 seconds**, including realization. The
+[upgrade record](plans/archived/2026-11-07_pi-sdk-1.5-upgrade-plan.md) binds its exact
+inputs and limits. It does not refresh the ordinary-runtime archive smoke below
+or provide native macOS release evidence.
+
+The earlier 0.1.0 application/source checkpoint builds in isolated Nix and passed an ordinary
 Linux x86_64 / Node 24.21.0 smoke: runtime installation, native HTTP PTY, hidden
 password setup, login/restart/rotation, header/no-auth boundaries, preserved notice
 bytes, matching source checksum/version and actual HTTP notice/locator discovery.
