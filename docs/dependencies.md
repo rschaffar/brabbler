@@ -101,6 +101,15 @@ fix the ten known moderate lint-chain matches. No minimatch-major override, forc
 peer resolution, lint suppression or security-clean claim is introduced. Existing
 ESLint-plugin peer-support exceptions and the KaTeX adapter override remain.
 
+The settled maintenance candidate passed complete fresh Linux Nix acceptance:
+**529 core files / 4,495 tests / 14 suites**, all **26 browser/terminal groups /
+60 receipts**, and the genuine Home Manager deployment VM in **404 seconds**.
+Four core workers/four browser sandboxes overlapped; available RAM was below the
+43-GiB twelve/four admission estimate. Preparation, execution windows, exact inputs,
+retained failures and proof limits are recorded in the
+[maintenance record](plans/archived/2026-11-07_runtime-maintenance-plan.md).
+The later archival/status update is not a new application-suite run.
+
 ## Pi SDK 1.5.0 compatibility checkpoint (2026-11-07)
 
 The four direct Pi pins and all coordinated packages resolve exactly **1.5.0**:
