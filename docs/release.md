@@ -88,9 +88,10 @@ need separate review/authorization.
 ## Guarded SDK installation
 
 The modular SDK retains the existing exact-byte child-environment patch.
-SDK 1.5.0 and the application both pin modular Undici **8.12.3**; the old
-version-scoped override is no longer necessary. The owner-approved exclusion of
-the standalone `dist/bundle/` tree and its own `pi` CLI link remains the support
+The application pins modular Undici **8.12.4**. A parent/version-scoped override
+also updates SDK 1.5.0's declared 8.12.3 dependency for the newer security fixes;
+the exact manifest and child-environment fingerprints remain unchanged. The
+owner-approved exclusion of the standalone `dist/bundle/` tree and its own `pi` CLI link remains the support
 boundary for Brabbler-owned installations, with a refreshed exact inventory. It is
 not a claim that the new bundle retains the old vulnerabilities. The modular embedded
 runtime remains; this installation does not provide the standalone Pi CLI/bundled
@@ -106,7 +107,18 @@ See [dependency dispositions](dependencies.md) for scope and remaining obligatio
 
 ## Current evidence and release gates
 
-The Pi SDK 1.5.0 candidate passed complete Linux Nix acceptance: **528 core files /
+The later dependency/Nix maintenance candidate, keeping Node **24.21.0**, passed
+complete fresh Linux Nix acceptance: **529 core files / 4,495 tests / 14 suites**,
+all **26 browser/terminal groups / 60 receipts**, and genuine Home Manager
+deployment in **404 seconds**, including in-run realization. JSON API gzip remains
+supported through the exact-version/source-guarded Next compressor filter; review
+or remove it on the next Next upgrade as required by [dependency maintenance](dependencies.md).
+The [verified maintenance record](plans/archived/2026-11-07_runtime-maintenance-plan.md)
+binds inputs, phase timings, failures and limits. This is not a new native-macOS
+archive smoke, host activation, publication or resolution of the deferred Node
+security update.
+
+The earlier SDK-only 1.5.0 candidate passed complete Linux Nix acceptance: **528 core files /
 4,483 tests**, all **26 browser/terminal groups / 60 receipts**, and the genuine
 Home Manager deployment VM in **488 seconds**, including realization. The
 [upgrade record](plans/archived/2026-11-07_pi-sdk-1.5-upgrade-plan.md) binds its exact

@@ -359,10 +359,15 @@ let nativeToolsFixture;
   if (group === "running-forks") btwProvider = await prepareBtwProvider(agentDir);
   const ownedServer = await harness.startService();
 
-  async function api(path, status = 200) {
-    const response = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(30_000) });
+  async function api(path, status = 200, requireGzip = false) {
+    const response = await fetch(`${base}${path}`, {
+      signal: AbortSignal.timeout(30_000),
+      ...(requireGzip ? { headers: { "Accept-Encoding": "gzip" } } : {}),
+    });
+    const data = await response.json();
     assert.equal(response.status, status, path);
-    return response.json();
+    if (requireGzip) assert.equal(response.headers.get("Content-Encoding"), "gzip", `Installed HTTP compression: ${path}`);
+    return data;
   }
 
   async function post(path, body) {
@@ -575,9 +580,10 @@ let nativeToolsFixture;
     });
   } else if (["state", "history", "extension-dialogs", "mobile-sidebar", "diff-context", "markdown", "file-edit", "archive", "privacy", "activity", "accounts", "questions", "session-links", "bulk", "move"].includes(group)) {
   let secondaryAccountId;
-  if (group === "state") await coverage.run("state/api-append-accounts@service", async () => {
+  if (group === "state") await coverage.run("state/api-append-accounts-gzip-v2@service", async () => {
     await checkRequestHeaderBoundary(base);
-  const detail = await api(`/api/sessions/${LONG}?deferThinking=1&deferMedia=1`);
+  await api("/api/sessions", 200, true);
+  const detail = await api(`/api/sessions/${LONG}?deferThinking=1&deferMedia=1`, 200, true);
   assert.deepEqual(detail.context.entryIds, ids(4950, 5000));
   assert.equal(detail.context.messages.length, 50);
   assert.equal(detail.context.hasMore, true);

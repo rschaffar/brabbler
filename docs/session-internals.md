@@ -234,6 +234,18 @@ separately after an authorized rebuild/measurement. [Production performance](pro
 owns recorded empirical findings and the deferred production/SPA measurement
 follow-ups; the executed implementation plan is archived.
 
+The catalogue/detail `jsonResponse` helper leaves Web `Response` bodies decoded.
+Next's Node HTTP layer owns compression negotiation and framing: its response
+adapter strips transport headers, so precompressing that Web body would leave
+clients with gzip bytes but no encoding header. Status, cache headers and large-
+response `Vary: Accept-Encoding` remain intact. The guarded managed-startup adapter
+in `bin/next-compression-compat.js` corrects only the compressor predicate's view
+of Next's singleton JSON Content-Type arrays. Actual response headers remain
+unchanged. [Dependency maintenance](dependencies.md) owns its exact version/hash
+and mandatory reassessment on every Next update. Core tests exercise the real
+Next response adapter/compressor and raw HTTP gzip; installed acceptance retains
+genuine decoding and browser connections. This does not disable compression.
+
 ### Running state polling + reconciliation
 - The sidebar polls `/api/agent/running` every 2.5 seconds while the tab is visible and pauses polling in background tabs. The session-list response remains the initial fallback.
 - `invalidateSessionListCache()` bumps the generation but **keeps** the previous scan, and the cache is fresh only while its recorded generation matches. Ordinary agent activity invalidates it frequently. Rebuilds still enumerate/stat the catalogue, attach project state and read changed relations; unchanged relation metadata is reused under scanner-validated fingerprints. Callers that only need metadata — mapping search hits to sidebar rows — pass `listAllSessions({ allowStale: true })` to read the previous scan and let the rebuild happen in the background. A stale scan is a complete catalogue apart from sessions created seconds ago, so those callers accept a brief window where a brand-new session is not yet listed.

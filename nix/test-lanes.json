@@ -224,7 +224,7 @@
     {
       "path": "app/api/sessions/runtime-route.test.mjs",
       "lane": "N",
-      "reason": "First-import actual ReadStream capture before whole runtime graph, private generated root registration and full catalogue/read-generation/scan/project-refresh/specific-writer/native-close joins before conditional removal. Original fourteen inputs source-reviewed and executed with current native controls; not public search timing, arbitrary aliases or universal idle. Parent current-source/input binding and fresh combined four-job gate required; AST ownership is independent of isolation, and E never repairs a leak."
+      "reason": "First-import actual ReadStream capture before whole runtime graph, private generated root registration and full catalogue/read-generation/scan/project-refresh/specific-writer/native-close joins before conditional removal. Catalogue/detail gzip inputs use a private ephemeral Next HTTP bridge with response/client/forwarding/server closure joined before native root removal. Original fourteen inputs remain; not public search timing, arbitrary aliases or universal idle. Parent current-source/input binding and fresh combined four-job gate required; AST ownership is independent of isolation, and E never repairs a leak."
     },
     {
       "path": "app/api/sessions/runtime-search-native-observer.test.mjs",
@@ -1492,8 +1492,8 @@
     },
     {
       "path": "lib/json-response.test.mjs",
-      "lane": "F",
-      "reason": "Reviewed synthetic requests, injected browser/transport effects and process-local state; no shared server or actual provider request. Private pre-import environment remains required."
+      "lane": "N",
+      "reason": "Private ephemeral loopback HTTP server exercises the real Next response adapter. Response body, forwarding promises and server/connection closure are joined, including failures; no fixed/shared port, source writes or provider requests."
     },
     {
       "path": "lib/live-transcript.test.mjs",
@@ -1624,6 +1624,11 @@
       "path": "lib/node-cli.test.mjs",
       "lane": "F",
       "reason": "Read test and node-cli.ts: injected fileExists and argv construction only; does not launch npm/npx or use network."
+    },
+    {
+      "path": "lib/next-compression-compat.test.mjs",
+      "lane": "N",
+      "reason": "Process-local compressor cache/filters, private temporary guard fixtures, joined child verification and an ephemeral loopback Next HTTP bridge. Bodies, clients, forwarding and server sockets are joined; no shared port, provider request or source-relative write."
     },
     {
       "path": "lib/node-version.test.mjs",

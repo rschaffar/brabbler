@@ -1,23 +1,5 @@
 const MIN_GZIP_BYTES = 1024;
 
-function acceptedEncodingQuality(header: string, encoding: string): number {
-  let wildcardQuality: number | undefined;
-  for (const item of header.split(",")) {
-    const [rawName, ...rawParameters] = item.trim().split(";");
-    const name = rawName.trim().toLowerCase();
-    let quality = 1;
-    for (const rawParameter of rawParameters) {
-      const match = /^\s*q\s*=\s*(.*?)\s*$/i.exec(rawParameter);
-      if (!match) continue;
-      const value = match[1];
-      quality = /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/.test(value) ? Number(value) : 0;
-    }
-    if (name === encoding) return quality;
-    if (name === "*") wildcardQuality = quality;
-  }
-  return wildcardQuality ?? 0;
-}
-
 function appendVary(headers: Headers, value: string): void {
   const current = headers.get("Vary");
   if (!current) {
@@ -30,7 +12,7 @@ function appendVary(headers: Headers, value: string): void {
 }
 
 export function jsonResponse(
-  request: Request,
+  _request: Request,
   data: unknown,
   init: ResponseInit = {},
 ): Response {
@@ -43,14 +25,7 @@ export function jsonResponse(
     appendVary(headers, "Accept-Encoding");
   }
 
-  if (
-    isLargeEnough
-    && acceptedEncodingQuality(request.headers.get("Accept-Encoding") ?? "", "gzip") > 0
-  ) {
-    headers.set("Content-Encoding", "gzip");
-    const compressed = new Blob([body]).stream().pipeThrough(new CompressionStream("gzip"));
-    return new Response(compressed, { ...init, headers });
-  }
-
+  // Next strips Content-Encoding when adapting Web Responses to Node HTTP.
+  // Keep this body decoded; Next's HTTP layer negotiates and applies compression.
   return new Response(body, { ...init, headers });
 }

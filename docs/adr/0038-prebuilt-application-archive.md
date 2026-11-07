@@ -20,10 +20,12 @@ the SDK's old nested Undici; the runtime policy correctly refused it. The owner
 selected root installation over an additional downstream SDK-repackaging scheme.
 
 The initial SDK 1.4.0 installation pins modular Undici through an exact
-parent/version-scoped override to the fixed direct Undici 8.12.2. With SDK 1.5.0,
-upstream pins fixed 8.12.3 itself, so that exception is retired and the direct pin
-is aligned. Preserve the upstream manifest, twelve-target child-environment guard
-and owned-installation/exclusion boundary; do not downgrade the SDK or patch
+parent/version-scoped override to the fixed direct Undici 8.12.2. The SDK 1.5.0
+upgrade initially retired that exception by aligning with upstream's 8.12.3 pin.
+The later 8.12.4 security release requires a new exact SDK-1.5-scoped override,
+with the application and runtime guard aligned at 8.12.4. Preserve the upstream
+manifest, twelve-target child-environment guard and owned-installation/exclusion
+boundary; do not downgrade the SDK or patch
 minified security internals to manufacture an audit pass.
 
 The SDK's standalone bundle embeds affected implementation code independently of

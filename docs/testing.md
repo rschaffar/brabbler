@@ -13,7 +13,9 @@ core/fresh runners and VM fixtures. Core's fail-closed runtime-major check requi
 **24**; changing the runtime means updating that guard deliberately, not accepting
 arbitrary ambient Node. Root/demo use TypeScript **6.0.3** and Node 24 typings.
 The launcher/npm minimum is **24.0.0**; acceptance covers the pinned runtime, not
-every version admitted by that minimum.
+every version admitted by that minimum. The Node 24.22.2/shared-Brotli security
+update is explicitly deferred in [dependency maintenance](dependencies.md); this
+candidate uses the refreshed Nixpkgs recipe without a custom runtime overlay.
 
 From the physical Linux working-tree root:
 

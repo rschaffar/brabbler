@@ -7,12 +7,115 @@ Lockfile changes also require updating `nix/npm-deps.nix`. Nix realizes matching
 built dependencies automatically for packages and acceptance. Writable manual-development
 shells still enforce their checkout dependency marker; never bypass it.
 
-## Pi SDK 1.5.0 compatibility (2026-11-07)
+## Security/runtime maintenance (2026-11-07)
+
+The current dependency baseline uses **Next/eslint-config-next 16.4.5** and
+**Undici 8.12.4**. The [Next release](https://github.com/vercel/next.js/releases/tag/v16.4.5)
+fixes seven moderate advisories; the [Undici release](https://github.com/nodejs/undici/releases/tag/v8.12.4)
+fixes six vulnerabilities, including a high-severity redirect/cache issue. This
+supersedes the earlier 8.12.3 security disposition below. Registry audits reported
+no runtime matches before this update, but that did not establish absence of the
+subsequently reviewed upstream issues. Updating dependencies is not a claim that
+every advisory was reachable in Brabbler.
+
+Pi remains **1.5.0**. The direct Undici pin and exact
+`@earendil-works/pi-coding-agent@1.5.0 → undici: $undici` override resolve both
+modular consumers to **8.12.4**. This is a reviewed downstream exception to the
+SDK's exact 8.12.3 declaration, not an upstream manifest change. Startup requires
+the new resolution; the twelve-target environment patch, SDK manifest/helper
+fingerprints and 83-entry standalone exclusion are unchanged. Keep the pre-framework
+request-header guard; a Next version bump alone does not retire that boundary.
+
+### Next compression compatibility — reassess on every Next update
+
+Next 16.4.5 strips transport/framing headers when adapting a Web `Response` to Node
+HTTP. Brabbler's previous `jsonResponse` helper precompressed large JSON, leaving
+gzip bytes without `Content-Encoding`. Returning decoded JSON alone fixed parsing
+but **did not preserve compression**: Next stores singleton Content-Type arrays,
+while its compressor's default predicate accepts only strings. The initial
+assumption of automatic API compression was retracted after raw-HTTP checks and
+two existing gzip regressions failed.
+
+`bin/next-compression-compat.js` wraps the existing compressor's filter option,
+not the response or the security header filter. Only GET/HEAD catalogue/detail
+JSON with the helper's existing large-response `Vary: Accept-Encoding` marker gets
+a predicate-local scalar view of a singleton Content-Type. Actual headers,
+custom filters/options, MIME values and Next's encoding/framing safeguards remain
+unchanged. `bin/next-compression-preload.js` installs it before managed Next
+`dev`/`start` captures the factory, after the existing request guard. Build/typegen
+are not patched, no vendor bytes/global prototypes are changed, and no Node
+update or external proxy is required.
+
+The temporary profile requires **Next 16.4.5** and SHA-256
+`8e7c2ec6982978c754c00388e0d1d3ff46d7aae99945d060f6f1052954c24e29`
+for `next/dist/compiled/compression/index.js`. Unknown versions/bytes/exports or
+late installation refuse startup; repeat installation is idempotent. This is a
+reviewed internal-module compatibility exception, not a public Next extension.
+
+**On every Next upgrade:**
+
+1. Recheck the Web-response framing filter, singleton Content-Type forwarding and
+   the compressor predicate. Do not blindly update the version/hash guard.
+2. Prefer removing the adapter/preload when upstream makes correct HTTP compression
+   work without it; otherwise explicitly review and qualify a replacement profile.
+3. Run the compatibility, launch and catalogue/detail route checks, then all three
+   complete [Nix acceptance levels](testing.md). Preserve actual wire gzip, identity/
+   refusal, threshold, MIME/error, framing and cleanup evidence. Keep the request
+   guard and SDK installation policy unchanged unless separately reviewed.
+
+The original helper negatives remain. Catalogue/detail compression assertions now
+cross the real Next/HTTP boundary instead of requiring a precompressed Web body;
+decoded-body/header and raw gzip regressions retain the failure distinction.
+
+Nixpkgs advances to `1d060086d60cb76a40cf37109f979d88a5bd6396`, and Home Manager to
+`2c0c1f01521469cf0271180c453c79782d53c2f6`, retaining `nixpkgs.follows`. Their selected
+Chromium/Git/Python definitions advance to **156.0.8078.79 / 2.56.0 / 3.14.8**.
+The selected runtime remains **Node 24.21.0**, from the ordinary refreshed
+Nixpkgs recipe, without equivalent Node-core security backports. The maintainer
+explicitly deferred the Node 24.22.2/shared-Brotli update after stopping its partial
+source build. No runtime overlay or successful Node-build claim is included;
+refreshing these flake inputs is not a Node security update.
+
+**Deferred Node follow-up:** this registry owns adopting a security-fixed Node 24
+and its required [shared-Brotli decoder fix](https://github.com/google/brotli/commit/0ed4268a4401abcb4472096340477cf4af7d1a2b).
+Prefer a reviewed upstream Nixpkgs recipe. If a temporary source recipe is still
+needed, rebuild the actual slim input through the version-sensitive Nixpkgs
+builder, preserve platform patches/compiler selection and replace the wrapper's
+slim input; changing wrapper metadata alone does not update Node. Verify the
+resulting runtime and all three acceptance levels. The interrupted trial is not
+finished-runtime evidence or a complete shared-library security assessment.
+
+Root/demo use **Tailwind and its PostCSS adapter 4.3.5**, **PostCSS 8.5.32**,
+**KaTeX 0.19.1**, **ESLint 10.14.0** and **typescript-eslint 8.72.1**. Root additionally
+updates **remark-cjk-friendly 2.3.4** and **semver 7.8.6**. Matching native/platform
+packages, Lightning CSS 1.33.0, magic-string 1.4.5 and the CJK serializer move through
+their owning declarations. The root lock adds a nested SDK semver 7.8.5, preserving
+that upstream exact pin rather than overriding it. Existing licenses remain in
+their families (including Lightning CSS MPL-2.0); inspect actual redistribution
+and retain notices as described below.
+
+The eight coordinated Pi packages, TypeBox 1.3.27, native PTY, TypeScript 6.0.3,
+Node-24 typings, Mermaid/ELK, Pierre, Playwright, private jsdom and web-push remain
+held. Latest lint parents still request minimatch 10.2.6: updating ESLint does not
+fix the ten known moderate lint-chain matches. No minimatch-major override, forced
+peer resolution, lint suppression or security-clean claim is introduced. Existing
+ESLint-plugin peer-support exceptions and the KaTeX adapter override remain.
+
+The settled maintenance candidate passed complete fresh Linux Nix acceptance:
+**529 core files / 4,495 tests / 14 suites**, all **26 browser/terminal groups /
+60 receipts**, and the genuine Home Manager deployment VM in **404 seconds**.
+Four core workers/four browser sandboxes overlapped; available RAM was below the
+43-GiB twelve/four admission estimate. Preparation, execution windows, exact inputs,
+retained failures and proof limits are recorded in the
+[maintenance record](plans/archived/2026-11-07_runtime-maintenance-plan.md).
+The later archival/status update is not a new application-suite run.
+
+## Pi SDK 1.5.0 compatibility checkpoint (2026-11-07)
 
 The four direct Pi pins and all coordinated packages resolve exactly **1.5.0**:
 agent-core, ai, coding-agent, tui, codemode, mcp, telemetry and the newly introduced
-**pi-schema**. Node 24.21.0, TypeScript 6.0.3, native PTY, flake inputs and the
-independent demo lock remain unchanged. TypeBox **1.3.27**, already used by the
+**pi-schema**. That SDK-only checkpoint left Node 24.21.0, TypeScript 6.0.3,
+native PTY, flake inputs and the independent demo lock unchanged. TypeBox **1.3.27**, already used by the
 SDK, is now an explicit runtime dependency: ordinary SDK consumers import `Type`
 from `typebox`, not pi-ai. The SDK's extension loader still aliases legacy imports
 for external extensions.
@@ -24,9 +127,10 @@ formats are not validation boundaries. Brabbler's schemas use ordinary JSON Sche
 execution-time policy, permission and action-dependent checks remain required.
 Validation diagnostics use the new SDK wording.
 
-Upstream coding-agent now pins fixed **Undici 8.12.3**. The application uses the
-same direct pin, and the old 1.4-only override is removed rather than forcing an
-older library. The exact twelve-target environment patch and private MCP version
+At that checkpoint, upstream coding-agent pinned fixed **Undici 8.12.3**. The
+application used the same direct pin, and the old 1.4-only override was removed
+rather than forcing an older library. The later security update above supersedes
+that resolution. The exact twelve-target environment patch and private MCP version
 guards are rebased to 1.5. The standalone CLI/bundle remains unsupported and excluded
 from this owned installation; its new **83-entry** inventory is fingerprinted in
 full. This exclusion is a support boundary, not a claim that 1.5's bundle retains
@@ -112,9 +216,9 @@ final candidate acceptance and native macOS verification remain separate gates.
 
 Source/fence highlighting continues to use locked `react-syntax-highlighter` **16.1.2**, with no new parser/highlighter library, direct transitive dependency, manifest/lock/hash or toolchain change. Lazy loading uses its own `dist/esm/prism` entry; synchronous rendering uses `dist/esm/prism-light` and `dist/esm/create-element`. Same-core registration, aliases, escaped failure behavior and deep-import packaging are regression/production-package acceptance obligations on future dependency upgrades. The shared grammar import is not a source-content cache. No new-library maintenance exception is introduced.
 
-The root app pins runtime `remark-cjk-friendly` **2.3.2** (parse-only extension) and direct development `@types/mdast` **4.0.4** for CJK emphasis/autolink compatibility. Currency safety wraps remark-math tokenization rather than rewriting source, preserving code/escapes/source coordinates. Root manifests/lock and the Nix npm-cache hash move together; SDK, native PTY and flake/toolchain pins do not change. The static demo retains its independent renderer sources/manifests; this is an application port, not a demo redesign.
+The root app pins runtime `remark-cjk-friendly` **2.3.4** (parse-only extension) and direct development `@types/mdast` **4.0.4** for CJK emphasis/autolink compatibility. Currency safety wraps remark-math tokenization rather than rewriting source, preserving code/escapes/source coordinates. Root manifests/lock and the Nix npm-cache hash move together. The original renderer port left SDK, native PTY and flake/toolchain pins unchanged; the input refresh above is separate. The static demo retains its independent renderer sources/manifests; this is an application port, not a demo redesign.
 
-`instrumentation-node.ts` reads global `httpIdleTimeoutMs` once at startup using SDK-compatible agent-directory resolution and a nonblocking regular-file reader. Missing/invalid settings keep the default; numeric zero or `disabled` disables idle header/body timeouts. Project settings cannot change this process-wide startup setting. Undici 8.12.3 explicitly uses CONNECT for proxied HTTP as well as HTTPS and a **2,000 ms address-family attempt window**, not a total connection deadline. Keep error listeners, fetch-override preservation and once-only configuration. Synthetic tests exercise CONNECT, stalled-body timeout, NO_PROXY and option propagation; native SDK parity tests resolve the agent directory without inspecting operator settings.
+`instrumentation-node.ts` reads global `httpIdleTimeoutMs` once at startup using SDK-compatible agent-directory resolution and a nonblocking regular-file reader. Missing/invalid settings keep the default; numeric zero or `disabled` disables idle header/body timeouts. Project settings cannot change this process-wide startup setting. Undici 8.12.4 explicitly uses CONNECT for proxied HTTP as well as HTTPS and a **2,000 ms address-family attempt window**, not a total connection deadline. Keep error listeners, fetch-override preservation and once-only configuration. Synthetic tests exercise CONNECT, stalled-body timeout, NO_PROXY and option propagation; native SDK parity tests resolve the agent directory without inspecting operator settings.
 
 A historical `npm audit --omit=dev --json` on the follow-up lock reported **3 moderate runtime findings** in the Mammoth/argparse/sprintf-js chain. That dated result is superseded by the release checkpoint above, including advisory withdrawals; it is not the current count or a security-clean claim.
 
@@ -277,7 +381,7 @@ further fixes beyond this Nix channel's package.
 
 ### Pre-framework authentication boundary (2026-10-20)
 
-Next **16.4.2** still skips proxy middleware for a matching build-ID revalidation header. The application does not rely on a distributed build ID as an authentication secret: supported serving entrypoints preload `bin/request-header-guard.js` to reject that unused external protocol before framework dispatch, without modifying immutable packages. This mitigates the application exposure, not the dependency implementation itself. On Node/Next upgrades, review the scoped HTTP/HTTPS dispatch wrapper and Next's reconstruction of dev-worker preload options; preserve the propagation and genuine installed-package regressions. Bare dependency-level/custom serving omits this boundary. See [ADR 0026](adr/0026-request-and-file-reference-boundaries.md).
+The Next **16.4.2** checkpoint showed a proxy-middleware bypass for a matching build-ID revalidation header. The application does not rely on a distributed build ID as an authentication secret: supported serving entrypoints preload `bin/request-header-guard.js` to reject that unused external protocol before framework dispatch, without modifying immutable packages. This mitigates the application exposure, not the dependency implementation itself. On Node/Next upgrades, review the scoped HTTP/HTTPS dispatch wrapper and Next's reconstruction of dev-worker preload options; preserve the propagation and genuine installed-package regressions. Bare dependency-level/custom serving omits this boundary. See [ADR 0026](adr/0026-request-and-file-reference-boundaries.md).
 
 ### Remaining version choices
 
@@ -295,7 +399,8 @@ releases require another inventory, not a perpetual-currentness claim.
 
 Following isolated evaluation and explicit user approval, the Nix development,
 update, package, core/fresh-runner and VM fixture toolchains use **Node 24.21.0**
-from the unchanged pinned nixpkgs revision. The package and native modules share
+from the selected Nixpkgs recipe. The input refresh above retains this Node
+version; the newer Node security update is deferred. The package and native modules share
 that runtime, including a fresh node-pty rebuild. Core's fail-closed runtime-major
 check now requires **24**, not a permissive 22-or-24 fallback. The launcher and
 root/demo manifests require **Node >=24.0.0**; demo CI selects **24.21.0**. This
@@ -304,9 +409,10 @@ intentionally ends the app's advertised Node 22 baseline rather than pairing Nod
 the pinned Linux runtime, not every newer version accepted by the minimum check.
 
 Root/demo resolve **@types/node 24.19.2**, **TypeScript 6.0.3** and its Node-typing
-support dependency **undici-types 7.24.6**. No runtime library resolution, SDK/native
-PTY/locking/math pin, ESLint rule or TypeScript configuration is changed. Nix input
-revisions and Home Manager state version remain fixed. Ordinary engine-strict npm
+support dependency **undici-types 7.24.6**. The original Node/TypeScript adoption
+left runtime libraries, SDK/native PTY/locking/math pins, ESLint rules, TypeScript
+configuration, Nix inputs and Home Manager state version unchanged. The later
+maintenance above refreshes selected libraries and inputs, not that compiler contract. Ordinary engine-strict npm
 resolution needs no force/legacy-peer-deps flags or changed peer declarations.
 
 The Node-only trial preserved TypeScript 5/Node 22 typings; its static checks and
@@ -320,7 +426,7 @@ commands and complete acceptance remain owned by [Testing](testing.md).
 ## Lint compatibility and deferred compiler major
 
 **Earlier ESLint 10 hold withdrawn after verification:** root and demo resolve
-ESLint **10.12.0** with Next **16.4.2** presets; existing lint configuration and
+ESLint **10.14.0** with Next **16.4.5** presets; existing lint configuration and
 rule settings are unchanged. The earlier hold
 treated plugin peer-range exclusions as a runtime blocker; that conclusion was
 too strong. Next documents ESLint 10 compatibility and supplies compatibility
@@ -349,7 +455,7 @@ their original file selection and enabled rule options in the migration comparis
 See [Next's ESLint guide](https://nextjs.org/docs/app/api-reference/config/eslint).
 
 **TypeScript 5 hold withdrawn; TypeScript 7 remains deferred:** typescript-eslint
-8.71.2 declares TypeScript `>=4.8.4 <6.1.0`, which includes the adopted **6.0.3**
+8.72.1 declares TypeScript `>=4.8.4 <6.1.0`, which includes the adopted **6.0.3**
 but excludes 7. Root/demo compatibility trials required no source changes, compiler
 suppression or lint-rule changes. TypeScript 7 still needs a separate migration
 assessment, not a declaration that it necessarily fails. Node types now follow the
@@ -475,7 +581,7 @@ This does not certify every Mermaid diagram grammar or optional layout engine.
 
 ## KaTeX compatibility exception
 
-Both manifests pin KaTeX **0.19.0** and use `"katex": "$katex"` in `overrides`.
+Both manifests pin KaTeX **0.19.1** and use `"katex": "$katex"` in `overrides`.
 This deliberately applies the security-fixed renderer to rehype-katex and Mermaid
 as well as the direct CSS/font dependency. Updating only the direct package leaves
 vulnerable nested copies. The conditional inherited-trust vulnerability
