@@ -29,7 +29,7 @@ export function ActivityFeatureFixture({ ports, sessions, view, privacy, hidden 
   // Test composition captures the ACTUAL instance before any publication/effect work.
   captureOwner?.(controller);
   const { snapshot, markRead, markLater } = useActivityController(controller);
-  useActivityNotifications({ controller, snapshot, sessions, selectedId, refreshCatalogue, onBackgroundTaskDone });
+  useActivityNotifications({ snapshot, sessions, selectedId, refreshCatalogue, onBackgroundTaskDone });
   useEffect(() => { onOwner(controller); }, [controller, onOwner]);
   useEffect(() => { controller.setSessions(sessions); }, [controller, sessions]);
   useEffect(() => { onSnapshot(snapshot); }, [snapshot, onSnapshot]);

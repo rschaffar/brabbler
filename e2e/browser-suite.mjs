@@ -843,7 +843,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "activity") {
-      const activityScenario = inputId === "legacy-desktop" ? "activity/native-toolbar-owned-v5" : inputId === "legacy-mobile" ? "activity/compact-navigation-owned-v6" : "activity/compact-state-recipe-owned-v4";
+      const activityScenario = inputId === "legacy-desktop" ? "activity/main-review-toolbar-v6" : inputId === "legacy-mobile" ? "activity/main-review-navigation-v7" : "activity/main-review-responsive-v5";
       await coverage.run(`${activityScenario}@${inputId}`, async () => {
       const finishActivityStage = stage.start(`activity/${inputId}/chain`);
       // Seed only after the selected chat has loaded, so clicking its newly

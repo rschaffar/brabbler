@@ -16,15 +16,14 @@ export async function checkActivityResponsiveTail(page, width, {
 }) {
   assert.ok(width === 700 || width === 390, "responsive inputs retain their reviewed widths");
   const mobile = width <= 640;
-  const [childA, childB, workingChild] = subagentIds;
+  const [, , workingChild] = subagentIds;
   const completed = seedSubagentCompletions();
   assert.equal(completed.size, 5, "seed the real parent and four existing children");
   const { checkWorktreeBadge, dotColor, checkActionBox, checkControlFits } = activityLayoutChecks(page, width, selected);
   const overview = page.getByRole("region", { name: "Activity", exact: true });
   const starred = page.getByRole("region", { name: "Starred", exact: true });
   const row = (id, status = "ready") => overview.locator(`.activity-item-${status}`).filter({ hasText: id });
-  // Children display "in Branch root" after their reviewed parent leaves the
-  // section. Match the actual session title, not that retained parent metadata.
+  // Match the actual session title, not a working child's parent metadata.
   const parentReady = overview.locator(".activity-item-ready").filter({ has: page.getByText("Branch root", { exact: true }) });
   const syntheticRequestId = "e2e-responsive-layout-only-question";
   const syntheticPauseId = "e2e-responsive-layout-only-pause";
@@ -94,12 +93,11 @@ export async function checkActivityResponsiveTail(page, width, {
     assert.match(await question.getAttribute("aria-label"), /project.*Responsive layout question/);
     assert.equal(await overview.getByRole("button", { name: "Mark Render **E2E markdown** as read", exact: true }).count(), 0,
       "layout-only question is not a readable completion");
-    await row(childB).waitFor();
-    await checkActionBox(row(childB));
+    for (const id of subagentIds) assert.equal(await row(id).count(), 0, "completed children have no Ready controls");
     await row(workingChild, "working").waitFor();
+    await checkActionBox(row(workingChild, "working"));
     assert.equal(await row(workingChild, "working").evaluate((node) => node.classList.contains("activity-nested")), true,
       "working child remains nested in the same section as its visible working parent");
-    await row(childA).waitFor();
     const needsColor = await dotColor(question);
     await page.getByRole("button", { name: "Starred", exact: true }).click();
     const starredNeeds = starred.locator(".activity-starred-item").filter({ hasText: "Render **E2E markdown**" });
@@ -126,8 +124,6 @@ export async function checkActivityResponsiveTail(page, width, {
     await question.waitFor({ state: "hidden", timeout: 15000 });
     await paused.waitFor({ state: "hidden" });
     await parentReady.waitFor();
-    assert.equal(await row(childB).evaluate((node) => node.classList.contains("activity-nested")), true,
-      "ready child remains nested in the same section as its genuine ready parent");
     await checkActivityFamilyUsage(page, width, {
       base, api, selectedSessionId, otherSessionId, subagentIds, overview, parentReady,
       setMetricsChildRunning: (value) => { metricsChildRunning = value; },
@@ -158,7 +154,7 @@ export async function checkActivityResponsiveTail(page, width, {
       // The DOM transition additionally proves application/render projection,
       // rather than treating Playwright headers/body alone as consumption.
       await row(workingChild, "working").waitFor({ state: "hidden", timeout: 15000 });
-      await row(workingChild).waitFor();
+      assert.equal(await row(workingChild).count(), 0, "settled child does not become a Ready item");
       await parentReady.waitFor();
     } catch (error) { naturalFailures.push(error); }
     finally {
@@ -198,9 +194,21 @@ export async function checkActivityResponsiveTail(page, width, {
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByText("Other workspace task", { exact: true }).last().waitFor();
     await page.getByRole("button", { name: /^Activity/ }).click();
-    await row(workingChild).waitFor({ timeout: 15000 });
-    assert.equal(await parentReady.count(), 0, "responsive Read remains durable after real reload");
-    assert.equal(await overview.locator(".activity-item-later").filter({ hasText: "Branch root" }).count(), 0);
+    await overview.waitFor();
+    const reloaded = await observeBrowserReads(page, [{ pathname: "/api/agent/running" }], { natural: true });
+    const reloadFailures = [];
+    try {
+      const reads = await reloaded.wait();
+      assert.ok(reads.length > 0 && reads.every(read => read.outcome === "consumed"), "reload consumes the genuine completion poll");
+      await overview.getByText("No agent activity right now.", { exact: true }).waitFor({ timeout: 15000 });
+      assert.equal(await row(workingChild).count(), 0, "completed child remains absent after reload");
+      assert.equal(await parentReady.count(), 0, "responsive Read remains durable after real reload");
+      assert.equal(await overview.locator(".activity-item-later").filter({ hasText: "Branch root" }).count(), 0);
+    } catch (error) { reloadFailures.push(error); }
+    finally {
+      try { await reloaded.dispose(); } catch (error) { reloadFailures.push(error); }
+    }
+    if (reloadFailures.length) throw new AggregateError(reloadFailures, "Reload completion observation failed");
     console.log(`PASS: ${width}px responsive Activity geometry, shared family usage and genuine completion Later/Read`);
   } catch (error) { failures.push(error); }
   finally {

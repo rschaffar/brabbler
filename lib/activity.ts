@@ -1,6 +1,7 @@
 import type { SessionAttention, SessionInfo } from "./types";
 import type { SessionPauseSnapshot } from "./session-pause";
 import { workspaceKeyOf } from "./workspace-memory";
+import { isCompletionReviewSession } from "./activity-review";
 import { hasResolvedProjectIdentity } from "./hidden-projects";
 
 export type ActivityStatus = "needs-you" | "working" | "queued" | "interrupted" | "ready" | "later" | "pausing" | "paused";
@@ -91,7 +92,7 @@ export function getActivitySections(
       ?? (queuedIds.has(session.id) ? "queued"
         : session.relation?.kind === "subagent" && session.relation.status === "paused" ? "paused"
         : !session.transient && interruptedIds.has(session.id) ? "interrupted"
-        : reviewIds.has(session.id) ? laterIds.has(session.id) ? "later" : "ready" : null));
+        : isCompletionReviewSession(session) && reviewIds.has(session.id) ? laterIds.has(session.id) ? "later" : "ready" : null));
     if (!status) continue;
     statusById.set(session.id, status);
     sections[status].push({ session, status, ...(request ? { attention: request } : {}), ...(pause ? { pause } : {}), nested: false, projectKey });

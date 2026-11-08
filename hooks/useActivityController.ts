@@ -33,8 +33,7 @@ export function useActivityController(controller: ActivityClientController) {
 }
 
 /** Sidebar-only notification/navigation ports, never completion or Read authority. */
-export function useActivityNotifications({ controller, snapshot, sessions, selectedId, refreshCatalogue, onBackgroundTaskDone }: {
-  controller: ActivityClientController;
+export function useActivityNotifications({ snapshot, sessions, selectedId, refreshCatalogue, onBackgroundTaskDone }: {
   snapshot: ActivityClientSnapshot;
   sessions: readonly SessionInfo[];
   selectedId: string | null;
@@ -47,14 +46,13 @@ export function useActivityNotifications({ controller, snapshot, sessions, selec
     const { runningIds, suppressedCompletionIds, pauses } = snapshot;
     const previous = previousRunning.current;
     const completedInBackground = [...previous].filter(id => !runningIds.has(id) && id !== selectedId);
-    const subagents = new Set(sessions.filter(session => session.relation?.kind === "subagent").map(session => session.id));
     const paused = new Set(pauses.map(row => row.sessionId));
     const withNotifications = completedInBackground.filter(id => !previousSuppressed.current.has(id)
-      && !subagents.has(id) && !paused.has(id) && controller.isUnreviewedCompletion(id));
+      && !paused.has(id) && snapshot.reviewIds.has(id));
     const hasUnlistedRunning = [...runningIds].some(id => !previous.has(id) && !sessions.some(session => session.id === id));
     if (completedInBackground.length > 0 || hasUnlistedRunning) refreshCatalogue();
     if (withNotifications.length > 0) onBackgroundTaskDone?.();
     previousRunning.current = runningIds;
-    previousSuppressed.current = new Set([...runningIds].filter(id => suppressedCompletionIds.has(id) || subagents.has(id)));
-  }, [controller, snapshot, sessions, selectedId, refreshCatalogue, onBackgroundTaskDone]);
+    previousSuppressed.current = suppressedCompletionIds;
+  }, [snapshot, sessions, selectedId, refreshCatalogue, onBackgroundTaskDone]);
 }
