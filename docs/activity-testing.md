@@ -17,6 +17,14 @@ SSE/questions, interrupted-journal demand, native SDK and Acceptance remain exis
 owners. Release is replayable; terminal dispose closes admission and joins its own
 complete promises, not independent native work. React unmount is not an I/O join.
 
+Completion review uses one eligible ID set for ordinary sessions and forks.
+Subagent/BTW completions and historical completion deferrals stay out of Ready,
+Later, sidebar unread indicators and Starred status without receipt writes. Actual
+projection/controller/mounted tests cover this exclusion, current catalogue relation
+changes, stale child actions and preserved child live/queued/interrupted/pause states
+and deferred questions. The bulk subagent Read action and its client split are removed;
+server completion history and generic receipt queues remain unchanged.
+
 `ActivityOverview`'s interrupted-journal work remains separate. Optional
 `onRecoveryWork`, forwarded by actual `ActivityViews`, passively observes the same
 original post-catch promise without a new awaited return, request, retry or timer.
@@ -51,9 +59,9 @@ legacy inputs and whole-input trace/context closure before success:
 
 | Receipt | Coverage |
 | --- | --- |
-| `activity/native-toolbar-owned-v5@legacy-desktop` | 1280×800 legacy preferences: complete native question→Later→reload→answer→Ready→Read; actual short completions/archive/new generation/independent peers/bulk receipts; complete subagent, row/global Pause and five-job Acceptance/default-tools/independence chains once. |
-| `activity/compact-state-recipe-owned-v4@legacy-tablet` | 700×800: retained early restoration/Starred/worktree/interruption plus working/question/Ready/control geometry, full shared metrics, natural genuine default observation and actual Enter completion receipts/reload, real Acceptance Settings/status/bounds/Escape/focus. |
-| `activity/compact-navigation-owned-v6@legacy-mobile` | 390×844 touch/legacy preferences: corresponding actual navigation/back/touch fragments, full metrics tap/Enter, real completion tap receipts/reload, real Acceptance Plugins switch/focus/layout and actual Sub-agents model-suffix Settings. Incoming persistent-New assertions stay in the early mobile segment. |
+| `activity/main-review-toolbar-v6@legacy-desktop` | 1280×800 legacy preferences: complete native question→Later→reload→answer→Ready→Read; actual short main completions/archive/new generation/independent peers, excluded completed children without Read writes; complete subagent, row/global Pause and five-job Acceptance/default-tools/independence chains once. |
+| `activity/main-review-responsive-v5@legacy-tablet` | 700×800: retained early restoration/Starred/worktree/interruption plus working/question/Ready/control geometry, full shared metrics, natural genuine default observation and actual Enter completion receipts/reload, real Acceptance Settings/status/bounds/Escape/focus. |
+| `activity/main-review-navigation-v7@legacy-mobile` | 390×844 touch/legacy preferences: corresponding actual navigation/back/touch fragments, full metrics tap/Enter, real completion tap receipts/reload, real Acceptance Plugins switch/focus/layout and actual Sub-agents model-suffix Settings. Incoming persistent-New assertions stay in the early mobile segment. |
 
 `activity-layout.mjs` preserves all original action-box predicates and worktree
 metadata/bounds checks. `activity-family-usage.mjs` retains real four-ID native
@@ -95,7 +103,7 @@ implementation plan's evidence root.
 | A315–369: short native completions, navigation-not-Read, archive/project precedence and independent no-local-marker peer | Existing ledger/projections plus controller/mounted action matrix; real desktop completion/archive/peer/default bridge retained. |
 | A370–410: durable Later success with unusable reply, held confirmation poll/unavailable recovery, peer convergence | Controlled controller/mounted ambiguity cases plus unchanged genuine desktop store/API/lost-response/peer bridge. |
 | A412–470: archived live/question precedence, actual ack, stable emptied filter, reload/new completion invalidation | Real projections/controller/mounted matrix plus complete desktop actual persistence/generation bridge. Responsive synthetic-status geometry is separate from subsequent genuine default polling and real completion input. |
-| A471–488,583–617: real seed, exact bulk eligible targets, B during A, unchanged unrelated receipts and reload absence | Real controller/mounted bulk actions and existing native store; complete two-target genuine desktop bulk/default/reload bridge retained. |
+| A471–488,583–617: real seed, exact bulk eligible targets, B during A, unchanged unrelated receipts and reload absence | Bulk child Read is retired with the feature. Real projection/controller/mounted owners now prove completed-child exclusion without writes; the installed bridge retains real seeds, parent readiness, working children and family usage. Generic B-during-A receipt serialization remains controller-owned. |
 | A490–582: family/header usage/selected toolbar, native tap/Enter/disclosures, reduced motion/count transitions, four-ID store/network no-ack | Actual AgentSessionPanel owns literal arithmetic/currentness/error/selection. All three browser inputs retain native four-ID/default/no-ack and physical disclosures; one desktop selected-toolbar/URL/count bridge remains. ActivityViews alone is not a wider metrics owner. |
 | A618–627: OTHER-reviewed result and shared reset | Actual OTHER assertion desktop only; checked ack-all cleanup every input, never relabelled individual review proof. |
 | S47–185: actual Agent/Git/UUID/history/missing-folder networking/refusal/settings suffix/slot/never-prompted Stop/persistence | Complete genuine desktop native chain unchanged, extracted actual Settings suffix UI additionally mobile. Generic actual mobile More/Stop remains unchanged running-forks/composer owners; combined queued-child scenario is not falsely claimed mobile. |

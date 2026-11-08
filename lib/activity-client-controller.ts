@@ -1,5 +1,5 @@
 import {
-  activityRequestKey, deferredAttentionIds, isCurrentActivityRequest,
+  activityRequestKey, deferredAttentionIds, isCurrentActivityRequest, isCompletionReviewSession,
   loadReviewedRunTimes, mergeReviewedRunTimes, reconcileCompletedRuns,
   REVIEWED_RUN_TIMES_STORAGE_KEY,
 } from "./activity-review";
@@ -9,8 +9,6 @@ import type { SessionPauseSnapshot } from "./session-pause";
 export interface ActivityClientSnapshot {
   readonly runningIds: ReadonlySet<string>;
   readonly queuedIds: ReadonlySet<string>;
-  readonly rootReviewIds: ReadonlySet<string>;
-  readonly subagentReviewIds: ReadonlySet<string>;
   readonly reviewIds: ReadonlySet<string>;
   readonly laterIds: ReadonlySet<string>;
   readonly laterAttentionIds: ReadonlySet<string>;
@@ -51,7 +49,6 @@ export interface ActivityClientController {
   observeCatalogue(listener: (version: number) => Promise<unknown> | void): () => void;
   markRead(id: string, displayedCompletionAt: number | undefined): void;
   markLater(id: string, requestId?: string, displayedCompletionAt?: number): void;
-  isUnreviewedCompletion(id: string): boolean;
 }
 
 type Poll = {
@@ -136,10 +133,9 @@ export function createActivityClientController(overrides: Partial<ActivityClient
     const ready = reconcileCompletedRuns(entries(completed), reviewed, running, sessions);
     return Object.freeze({
       runningIds: new Set(running), queuedIds: new Set(queued),
-      rootReviewIds: ready.rootReady, subagentReviewIds: ready.subagentReady,
-      reviewIds: new Set([...ready.rootReady, ...ready.subagentReady]),
+      reviewIds: ready,
       laterIds: new Set([...later].filter(([id, at]) =>
-        at === completed.get(id) && at > (reviewed.get(id) ?? 0)).map(([id]) => id)),
+        ready.has(id) && at === completed.get(id)).map(([id]) => id)),
       laterAttentionIds: deferredAttentionIds(attention, laterRequests),
       suppressedCompletionIds: new Set(suppressed), completedRunTimes: new Map(completed),
       attention: attention.map((row) => ({ ...row })),
@@ -361,7 +357,8 @@ export function createActivityClientController(overrides: Partial<ActivityClient
 
   function completionMatches(id: string, displayed: number | undefined) {
     return displayed !== undefined && Number.isFinite(displayed) && displayed > 0
-      && completed.get(id) === displayed && displayed > (reviewed.get(id) ?? 0) && !running.has(id);
+      && completed.get(id) === displayed && displayed > (reviewed.get(id) ?? 0) && !running.has(id)
+      && sessions.some(session => session.id === id && isCompletionReviewSession(session));
   }
   function dispose() {
     if (!disposal) {
@@ -438,10 +435,6 @@ export function createActivityClientController(overrides: Partial<ActivityClient
       }
       flush();
       publish();
-    },
-    isUnreviewedCompletion(id) {
-      const at = completed.get(id);
-      return Boolean(at && at > (reviewed.get(id) ?? 0));
     },
   };
 }

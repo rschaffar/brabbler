@@ -365,26 +365,36 @@ test('ambiguous durable Later success renders unavailable then recovers on confi
   assert.doesNotMatch(f.view.container.textContent, /Live status unavailable\. Showing the last known state\./);
 });
 
-test('bulk Read dispatches only eligible ready children in the current project and drains B queued during A', async t => {
-  const sessions = [session('parent'), session('a', 'parent'), session('b', 'parent'), session('live', 'parent'),
+test('completed children disappear from Ready, Later and Starred status without writes, while actionable children remain', async t => {
+  const aside = { ...session('aside'), relation: { kind: 'btw', parentSessionId: 'parent' } };
+  const sessions = [session('parent'), session('done', 'parent'), aside, session('live', 'parent'),
     session('question', 'parent'), session('queued', 'parent'), session('paused', 'parent'), session('interrupted', 'parent'),
-    session('later', 'parent'), session('other', undefined, '/beta'), session('other-child', 'other', '/beta'),
-    session('private', undefined, '/private'), session('private-child', 'private')];
-  const f = await fixture(t, { sessions, interrupted: ['interrupted'], props: { privacy: privacy(['/private']) }, running: {
+    session('later', 'parent'), session('other', undefined, '/beta'), session('other-child', 'other', '/beta')];
+  const f = await fixture(t, { sessions, interrupted: ['interrupted'], stars: { ids: ['parent', 'done', 'aside'] }, running: {
     completedRuns: sessions.map(item => completion(item.id)), runningSessionIds: ['live', 'question'], queuedSessionIds: ['queued'],
-    attention: [attention('question')], pauses: [pause('paused', 'parent')], laterRuns: [completion('later')],
+    attention: [attention('question')], pauses: [pause('paused', 'parent')], laterRuns: [completion('later'), completion('aside')],
   } });
   await f.choose('#activity-project', '/alpha');
-  const held = f.hold('review');
-  await f.click(f.button('Mark all subagents as read')); await held.entered.promise;
-  assert.deepEqual(f.posts().filter(request => request.body.op === 'ack').map(request => request.body.entries), [[completion('a')]]);
-  assert.equal(f.row('a'), undefined); assert.equal(f.row('b'), undefined, 'both clicks update optimistically while A is held');
-  await held.deliver({ reviewedRuns: [completion('a')], laterRuns: [] }); await act(() => f.owner.whenIdle());
-  assert.deepEqual(f.posts().filter(request => request.body.op === 'ack').map(request => request.body.entries), [[completion('a')], [completion('b')]]);
-  for (const id of ['parent', 'live', 'question', 'queued', 'paused', 'interrupted', 'later']) assert.ok(f.row(id), id);
-  assert.equal(f.button('Mark all subagents as read').disabled, true);
-  await f.choose('#activity-project', '/beta'); assert.ok(f.row('other-child'));
-  assert.equal(f.posts().some(request => request.body.entries?.some(entry => ['parent', 'live', 'question', 'queued', 'paused', 'interrupted', 'later', 'other-child', 'private-child'].includes(entry.sessionId))), false);
+  for (const id of ['done', 'aside', 'later']) assert.equal(f.row(id) === undefined, true, `${id} completion is absent`);
+  for (const id of ['parent', 'live', 'question', 'queued', 'paused', 'interrupted']) assert.ok(f.row(id), id);
+  assert.equal([...f.view.container.querySelectorAll('button')].some(button => button.textContent === 'Mark all subagents as read'), false);
+  assert.deepEqual([...f.owner.getSnapshot().reviewIds], ['parent', 'other']);
+  assert.deepEqual([...f.owner.getSnapshot().laterIds], []);
+  await f.click(f.button('Review question later'));
+  assert.equal(f.row('question').classList.contains('activity-deferred-attention'), true, 'child questions can still be deferred');
+  await f.poll({ attention: [], runningSessionIds: [] });
+  assert.equal(f.row('question') === undefined, true, 'answered child never falls back to its old completion');
+  assert.equal(f.row('live') === undefined, true, 'settled child never falls back to its old completion');
+  await f.choose('#activity-project', '/beta');
+  assert.ok(f.row('other')); assert.equal(f.row('other-child') === undefined, true);
+  await f.render({ view: 'starred' });
+  for (const id of ['done', 'aside']) {
+    assert.ok(f.row(id), 'starred children remain navigable');
+    assert.doesNotMatch(f.row(id).getAttribute('aria-label'), /Ready to review/);
+  }
+  assert.match(f.row('parent').getAttribute('aria-label'), /Ready to review/);
+  assert.deepEqual(f.posts().filter(request => request.body.op !== 'import').map(request => request.body),
+    [{ op: 'later-request', entries: [{ sessionId: 'question', requestId: 'question-one' }] }], 'completion exclusion never marks children read');
 });
 
 test('privacy loading/failure, inherited concealment and unresolved identity remain fail closed through current-prop rerenders', async t => {
@@ -504,14 +514,15 @@ test('journal demand stays separate from running polling and ignored-abort old b
   assert.equal(journalCount(), 2);
 });
 
-test('actual Sidebar notification adapter excludes selected, suppressed, child, paused and acknowledged completions', async t => {
-  const sessions = [session('selected'), session('background'), session('child', 'selected'), session('suppressed'), session('paused'), session('reviewed')];
+test('actual Sidebar notification adapter excludes selected, suppressed, subagent, BTW, paused and acknowledged completions', async t => {
+  const sessions = [session('selected'), session('background'), session('child', 'selected'),
+    { ...session('aside'), relation: { kind: 'btw', parentSessionId: 'selected' } }, session('suppressed'), session('paused'), session('reviewed')];
   const ids = sessions.map(item => item.id);
   const f = await fixture(t, { sessions, props: { selectedId: 'selected' }, running: {
     runningSessionIds: ids, completionNotificationSuppressedSessionIds: ['suppressed'],
     completedRuns: [completion('paused', 10)],
   } });
-  await f.poll({ runningSessionIds: [], completedRuns: [completion('selected'), completion('child'), completion('suppressed'), completion('paused', 10), completion('reviewed')],
+  await f.poll({ runningSessionIds: [], completedRuns: [completion('selected'), completion('child'), completion('aside'), completion('suppressed'), completion('paused', 10), completion('reviewed')],
     reviewedRuns: [completion('reviewed')], pauses: [pause('paused')] });
   assert.equal(f.sounds, 0, 'Pause must not turn its older unread completion into a new completion sound');
   assert.equal(f.catalogueRefreshes, 1, 'settled background work refreshes metadata even when silent');

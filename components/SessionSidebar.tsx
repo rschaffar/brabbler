@@ -416,7 +416,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   selectedSessionIdRef.current = selectedSessionId;
   const { snapshot: activity } = useActivityController(activityController);
   const { runningIds: runningSessionIds, queuedIds: queuedSessionIds,
-    rootReviewIds: unreadSessionIds, subagentReviewIds } = activity;
+    reviewIds: unreadSessionIds } = activity;
   const [showArchived, setShowArchived] = useState(false);
   const [sessionFilter, setSessionFilter] = useState<{ project: string; cwd: string } | null>(null);
   const [bulkMoveRequest, setBulkMoveRequest] = useState<BulkMoveRequest | null>(null);
@@ -563,7 +563,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     return () => ro.disconnect();
   }, [sessionSearchActive]);
 
-  useActivityNotifications({ controller: activityController, snapshot: activity, sessions: allSessions,
+  useActivityNotifications({ snapshot: activity, sessions: allSessions,
     selectedId: selectedSessionId, refreshCatalogue: refreshActivityCatalogue, onBackgroundTaskDone });
 
   // Browser storage is unavailable during server rendering. Restore the panel

@@ -203,7 +203,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   const mobile = width <= 640;
   const failures = [], projections = [], peers = [];
   const receipts = activityReceipts(page);
-  let peerContext, peer, questionPending = false, questionOutcome, bulkWindow;
+  let peerContext, peer, questionPending = false, questionOutcome;
   try {
   const { sessions } = await api("/api/sessions?force=1");
   const selected = sessions.find((session) => session.id === selectedSessionId);
@@ -598,7 +598,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   assert.equal(await page.evaluate(() => localStorage.getItem("brabbler:reviewed-run-times")), null);
   await setArchived(false);
   const [childA, childB, workingChild, otherChild] = subagentIds;
-  const completed = seedSubagentCompletions();
+  seedSubagentCompletions();
   let metricsChildRunning = true;
   let metricsProjection = activityProjection(page, snapshot => ({ ...snapshot,
     runningSessionIds: [...new Set([...snapshot.runningSessionIds, ...(metricsChildRunning ? [workingChild] : [])])],
@@ -608,9 +608,9 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   {
     const row = (id, status = "ready") => reloadedOverview.locator(`.activity-item-${status}`).filter({ hasText: id });
     await reloadedOverview.getByRole("combobox", { name: "Project" }).selectOption({ label: "project" });
-    await row(childA).waitFor({ timeout: 15000 });
-    await row(childB).waitFor();
-    await row(workingChild, "working").waitFor();
+    await row(workingChild, "working").waitFor({ timeout: 15000 });
+    for (const id of [childA, childB]) assert.equal(await row(id).count(), 0, "completed children do not enter Ready to review");
+    assert.equal(await reloadedOverview.getByRole("button", { name: "Mark all subagents as read", exact: true }).count(), 0);
     const parentReady = reloadedOverview.locator(".activity-item-ready").filter({ hasText: "Branch root" });
     await parentReady.waitFor();
 
@@ -622,42 +622,16 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
       },
     });
 
-    const before = await api("/api/agent/running");
-    const reviewedBefore = new Map(before.reviewedRuns.map(({ sessionId, at }) => [sessionId, at]));
-    const seededParentAt = completed.get(selectedSessionId);
-    assert.equal(reviewedBefore.get(selectedSessionId), selectedCompletion.at, "pre-bulk actual older parent marker is present");
-    assert.equal(Number.isFinite(seededParentAt), true, "actual seeded parent completion time");
-    assert.equal(before.completedRuns.find(entry => entry.sessionId === selectedSessionId)?.at,
-      seededParentAt, "pre-bulk native ledger contains this exact seeded parent generation");
-    assert.equal(seededParentAt > selectedCompletion.at, true, "seeded parent is newer than its actual reviewed generation");
-    const bulkRead = reloadedOverview.getByRole("button", { name: "Mark all subagents as read", exact: true });
-    const firstBulkRecord = receipts.records.length;
-    bulkWindow = { start: firstBulkRecord, entries: new Map([[childA, completed.get(childA)], [childB, completed.get(childB)]]) };
-    const bulkResults = await receipts.action([
-      { op: "ack", entry: { sessionId: childA, at: completed.get(childA) } },
-      { op: "ack", entry: { sessionId: childB, at: completed.get(childB) } },
-    ], () => bulkRead.click(), { timeout: 15000 }); // preserve the original bulk15s observation bound
-    await row(childA).waitFor({ state: "hidden" });
-    await row(childB).waitFor({ state: "hidden" });
-    assert.equal(await parentReady.isVisible(), true, "bulk review leaves parent sessions unread");
-    assert.equal(await row(workingChild, "working").isVisible(), true, "bulk review leaves running children alone");
-    assert.equal(await bulkRead.isDisabled(), true, "only a parent remains ready in this filter");
-    // Native B's complete durable response is the barrier, not optimistic DOM
-    // disappearance, a100ms server loop or a substituted controller receipt.
-    const bulkWrites = receipts.records.slice(firstBulkRecord).filter(record => record.input?.op === "ack");
-    assert.equal(bulkWrites.length, 2, "both original native acknowledgements arrived");
-    // Native completion ordering is not invented from childA/childB labels.
-    const lastBulk = bulkResults.find(result => result.record === bulkWrites.at(-1));
-    assert.ok(lastBulk);
-    const after = lastBulk.body;
-    for (const id of [childA, childB]) assert.ok(after.reviewedRuns.some(entry => entry.sessionId === id && entry.at === completed.get(id)));
-    assert.equal(after.reviewedRuns.find(entry => entry.sessionId === selectedSessionId)?.at,
-      selectedCompletion.at, "bulk preserves the concrete older parent marker, never undefined versus undefined");
-    for (const id of [workingChild, otherChild]) {
-      assert.equal(after.reviewedRuns.find((entry) => entry.sessionId === id)?.at, reviewedBefore.get(id),
-        `bulk review must not acknowledge ${id}`); // absent working/foreign markers remain legitimate
-    }
-    await page.screenshot({ path: join(artifacts, `activity-bulk-read-${width}.png`) });
+    assert.equal(await parentReady.isVisible(), true, "parent completion remains reviewable");
+    assert.equal(await row(workingChild, "working").isVisible(), true, "live children remain actionable");
+    for (const id of [childA, childB, otherChild]) assert.equal(await row(id).count(), 0);
+    const state = await api("/api/agent/running");
+    assert.equal(state.reviewedRuns.find(entry => entry.sessionId === selectedSessionId)?.at,
+      selectedCompletion.at, "completion exclusion does not acknowledge the newer parent generation");
+    assert.equal(receipts.records.some(record => record.input?.op === "ack"
+      && record.input.entries.some(entry => subagentIds.includes(entry.sessionId))), false,
+    "completed children disappear without acknowledgement writes");
+    await page.screenshot({ path: join(artifacts, `activity-main-review-${width}.png`) });
   }
   await metricsProjection.finish();
   const finalReview = await api("/api/agent/running");
@@ -665,7 +639,7 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
   // Each viewport is a new browser; leave a shared clean baseline for the next
   // viewport after asserting the cross-device unread/read transitions above.
   await post("/api/activity/review", { op: "ack", entries: finalReview.completedRuns });
-  console.log(`PASS: ${width}px Activity native star/layout, question/peer receipts, direct bulk bodies and chat navigation`);
+  console.log(`PASS: ${width}px Activity native star/layout, question/peer receipts, main-only completion review and chat navigation`);
   } catch (error) { failures.push(error); }
   finally {
     // Close each observer's own admission first. No native Acceptance/Pause job
@@ -699,21 +673,6 @@ export async function checkActivityOverview(page, width, { base, api, post, wait
       if (peerFailures.length) failures.push(new AggregateError(peerFailures, "Activity peer errors retained through context closure"));
     }
     try { await receipts.finish(); } catch (error) { if (!failures.includes(error)) failures.push(error); }
-    if (bulkWindow) {
-      try {
-        const writes = receipts.records.slice(bulkWindow.start).filter(record => record.input?.op === "ack");
-        assert.equal(writes.length, 2, "no additional acknowledgement through all native/route/peer/body joins");
-        const seen = new Set();
-        for (const { input } of writes) {
-          assert.equal(input.entries.length, 1);
-          const [{ sessionId, at }] = input.entries;
-          assert.equal(bulkWindow.entries.has(sessionId), true, "never acknowledge parent, running or foreign identity");
-          assert.equal(seen.has(sessionId), false); seen.add(sessionId);
-          assert.deepEqual(input.entries, [{ sessionId, at: bulkWindow.entries.get(sessionId) }]);
-          assert.equal(at, bulkWindow.entries.get(sessionId));
-        }
-      } catch (error) { failures.push(error); }
-    }
     if (failures.length === 1) throw failures[0];
     if (failures.length) throw new AggregateError(failures, "Activity native bridge and independent cleanup failed");
   }

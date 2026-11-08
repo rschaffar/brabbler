@@ -22,21 +22,14 @@ function render(sessions, runningIds, reviewIds, privacy = { keys: new Set(), er
   })));
 }
 
-test("ready subagents are identified even when their parent is working or absent", () => {
+test("completed children are absent even when their parent is working or missing, and no bulk Read control remains", () => {
   const html = render([session("working-parent"), session("ready-child", "working-parent"),
-    session("orphan", "missing-parent"), session("ready-root")], ["working-parent"],
-  ["ready-child", "orphan", "ready-root"]);
-  assert.match(html, /aria-label="ready-child · project · in working-parent · Sub-agent · Ready to review · Review"/);
-  assert.match(html, /aria-label="orphan · project · Sub-agent · Ready to review · Review"/);
-  assert.match(html, /class="activity-item-meta"[^>]*>project · in working-parent<\/span>/);
-  assert.match(html, /class="activity-item-meta"[^>]*>project<\/span>/);
-  assert.equal((html.match(/class="activity-subagent-icon" title="Sub-agent"/g) ?? []).length, 2);
-  assert.doesNotMatch(html, /Sub-agent · project/);
+    session("orphan", "missing-parent"), { ...session("aside"), relation: { kind: "btw", parentSessionId: "working-parent" } },
+    session("ready-root")], ["working-parent"], ["ready-child", "orphan", "aside", "ready-root"]);
+  assert.doesNotMatch(html, /ready-child|orphan|aside|Mark all subagents as read/);
+  assert.match(html, /Ready to review <span>1<\/span>/);
   assert.match(html, /aria-label="ready-root · project · Ready to review · Review"/);
-  assert.doesNotMatch(html, /aria-label="ready-root[^\"]*Sub-agent/);
   assert.match(html, /aria-label="Mark ready-root as read"[^>]*>Read<\/button>/);
-  assert.match(html, /aria-label="Mark ready-child as read"[^>]*>Read<\/button>/);
-  assert.match(html, /class="activity-mark-read activity-mark-all-subagents-read" title="[^"]+">Mark all subagents as read<\/button>/);
 });
 
 test("session titles have no redundant navigation label and real actions follow the metadata outside the navigation button", () => {
@@ -51,14 +44,13 @@ test("session titles have no redundant navigation label and real actions follow 
   assert.match(html, /aria-label="working · project · Working · Open"/);
 });
 
-test("Later follows Ready to review, remains readable and is excluded from bulk ready subagent eligibility", () => {
-  const html = render([session("ready-root"), { ...session("later-child", "ready-root"), archived: true }], [],
-    ["ready-root", "later-child"], undefined, ["later-child"]);
+test("Later follows Ready to review and remains readable for main sessions, not completed children", () => {
+  const html = render([session("ready-root"), { ...session("later-main"), archived: true }, session("later-child", "ready-root")], [],
+    ["ready-root", "later-main", "later-child"], undefined, ["later-main", "later-child"]);
   assert.match(html, /aria-label="Review ready-root later"[^>]*>Later<\/button>/);
-  assert.match(html, /aria-label="later-child · project · in ready-root · Sub-agent · Later · Review"/);
-  assert.match(html, /aria-label="Mark later-child as read"/);
-  assert.doesNotMatch(html, /aria-label="Review later-child later"/);
-  assert.match(html, /activity-mark-all-subagents-read" disabled=""/);
+  assert.match(html, /aria-label="later-main · project · Later · Review"/);
+  assert.match(html, /aria-label="Mark later-main as read"/);
+  assert.doesNotMatch(html, /later-child|aria-label="Review later-main later"/);
   assert.ok(html.indexOf('aria-label="Later"') > html.indexOf('aria-label="Ready to review"'));
   const concealed = render([{ ...session("private-later"), archived: true }], [], ["private-later"],
     { keys: new Set(["/project"]), error: false }, ["private-later"]);
@@ -76,27 +68,15 @@ test("deferred Needs you keeps the yellow-dot class, question details and answer
   assert.doesNotMatch(html, /aria-label="Mark question as read"|aria-label="Review question later"/);
 });
 
-test("worktree metadata accompanies ready roots and nested subagents without changing review actions", () => {
+test("worktree metadata accompanies working nested subagents while main sessions retain review actions", () => {
   const linked = (id, parent) => ({ ...session(id, parent), isWorktree: true, branch: "feature/topic", cwd: "/project-worktrees/topic" });
-  const html = render([linked("parent"), linked("child", "parent"), session("main")], [], ["parent", "child", "main"]);
+  const html = render([linked("parent"), linked("child", "parent"), session("main")], ["parent", "child"], ["main"]);
   assert.equal((html.match(/title="Worktree: \/project-worktrees\/topic"/g) ?? []).length, 2);
   assert.equal((html.match(/>feature\/topic<\/span>/g) ?? []).length, 2);
   assert.match(html, /activity-nested/);
-  assert.match(html, /aria-label="child · project · feature\/topic · in parent · Sub-agent · Ready to review · Review"/);
-  assert.match(html, /aria-label="Mark child as read"/);
-});
-
-test("bulk subagent read is disabled when only parent sessions are ready", () => {
-  const html = render([session("ready-root"), session("working-child", "ready-root")], ["working-child"], ["ready-root", "working-child"]);
-  assert.match(html, /class="activity-mark-read activity-mark-all-subagents-read" disabled=""/);
-});
-
-test("concealed ready subagents do not enable the bulk read action", () => {
-  const hiddenParent = { ...session("hidden-parent"), cwd: "/private", projectRoot: "/private" };
-  const html = render([hiddenParent, session("hidden-child", "hidden-parent"), session("ready-root")], [],
-    ["hidden-child", "ready-root"], { keys: new Set(["/private"]), error: false });
-  assert.doesNotMatch(html, /hidden-child|hidden-parent/);
-  assert.match(html, /class="activity-mark-read activity-mark-all-subagents-read" disabled=""/);
+  assert.match(html, /aria-label="child · project · feature\/topic · in parent · Sub-agent · Working · Open"/);
+  assert.match(html, /aria-label="Mark main as read"/);
+  assert.doesNotMatch(html, /aria-label="Mark child as read"/);
 });
 
 test("concealed projects have no rows, options, titles, summaries or section counts in the rendered HTML", () => {
@@ -145,7 +125,7 @@ test("pausing rows stay visibly pending and never offer premature Resume", () =>
 });
 
 test("nested subagents retain their indentation and icon", () => {
-  const html = render([session("ready-parent"), session("nested", "ready-parent")], [], ["ready-parent", "nested"]);
-  assert.match(html, /class="activity-item activity-item-ready activity-nested"[^>]*aria-label="nested · project · in ready-parent · Sub-agent · Ready to review · Review"/);
+  const html = render([session("parent"), session("nested", "parent")], ["parent", "nested"], []);
+  assert.match(html, /class="activity-item activity-item-working activity-nested"[^>]*aria-label="nested · project · in parent · Sub-agent · Working · Open"/);
   assert.equal((html.match(/class="activity-subagent-icon" title="Sub-agent"/g) ?? []).length, 1);
 });
