@@ -1,6 +1,6 @@
 # Architecture and source map
 
-Implementation reference moved from `AGENTS.md`; repository-relative code paths remain unchanged. Read the relevant section before modifying that area. Focused user guides and ADRs linked below retain their existing scopes.
+Implementation reference moved from `AGENTS.md`; repository-relative code paths remain unchanged. Read the relevant section before modifying that area. Focused user guides and ADRs linked below retain their existing scopes. [ADR 0042](adr/0042-browser-memory-lifetimes.md) records reader-aware retention, preview disposal and disposable Mermaid realm tradeoffs.
 
 ## Architecture
 
