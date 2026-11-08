@@ -18,7 +18,9 @@ import { isHistoryOnlySession } from "@/lib/session-directory";
 import { clearQuestionDraft, reconcileQuestionDrafts } from "@/lib/question-set-drafts";
 import { useI18n } from "./useI18n";
 import { normalizeToolCalls } from "@/lib/normalize";
-import { appendCompletedMessage } from "@/lib/live-transcript";
+import { completedMessageUpdate, mergeCanonicalTranscript } from "@/lib/live-transcript";
+import { retainTranscriptTail } from "@/lib/transcript-retention";
+import { deferMessageThinking, deferToolResultBase64Images } from "@/lib/session-context";
 import { isModelSpeed, type ModelSpeed } from "@/lib/model-speed";
 import { appendOperationReceipt, collapseOperationReceipts, operationReceiptMessage } from "@/lib/operation-receipts";
 import { appendInteractionReceipt, interactionReceiptMessage, mergeInteractionReceiptHistory, receiptBranchContains } from "@/lib/interaction-receipts";
@@ -355,6 +357,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // events batched with live messages that do not have persisted IDs yet.
   const transcriptRevisionRef = useRef(0);
   const pendingHistoryReadsRef = useRef(0);
+  const [retentionCheck, setRetentionCheck] = useState(0);
+  const retentionAllowedRef = useRef(!opts.deferInitialScroll);
+  const activeToolCallsRef = useRef(new Set<string>());
+  const historyWindowRevisionRef = useRef(0);
   const [{ messages, entryIds }, updateTranscript] = useState<UiTranscript>({ messages: [], entryIds: [] });
   const setTranscript = useCallback((update: SetStateAction<UiTranscript>) => {
     transcriptRevisionRef.current += 1;
@@ -539,6 +545,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // streaming content follows the tail.
     container.scrollTo({ top: container.scrollHeight, behavior });
     previousScrollTopRef.current = container.scrollTop;
+    const resumeRetention = !retentionAllowedRef.current;
+    retentionAllowedRef.current = true;
+    if (resumeRetention) setRetentionCheck(current => current + 1);
   }, []);
 
   // StreamingReply invokes this after its chunk has reached the DOM. The SSE
@@ -633,7 +642,31 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } satisfies SessionStatsInfo;
   }, [messages, sessionStatsOverride, contextUsage, data?.context.messages, data?.filePath, data?.totalActiveMs, data?.stats, session?.id, session?.name]);
 
-  const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false, options?: { force?: boolean; fresh?: boolean }, shouldApply?: () => boolean) => {
+  useLayoutEffect(() => {
+    // Deliberate scrollback is user-owned growth. Never shrink that window or
+    // compete with an in-flight page/restore; returning to the live tail opts
+    // back into retention. No SSE/session runtime lifetime changes here.
+    if (!retentionAllowedRef.current || !isNearBottomRef.current || pendingHistoryReadsRef.current) return;
+    const current = { messages, entryIds };
+    const retained = retainTranscriptTail(current, activeToolCallsRef.current, undefined, agentRunningRef.current || rpcPromptPendingRef.current || sdkAgentActiveRef.current);
+    if (retained === current) return;
+    const cursor = retained.entryIds[0];
+    historyWindowRevisionRef.current++;
+    setTranscript(retained);
+    historyCursorRef.current = cursor;
+    hasEarlierMessagesRef.current = true;
+    setHistoryCursor(cursor);
+    setHasEarlierMessages(true);
+    setData(previous => previous ? { ...previous,
+      stats: mergeSessionStats(previous.stats, previous.context.messages, messages),
+      context: { ...previous.context, ...retained, oldestEntryId: cursor, hasMore: true },
+    } : previous);
+    // The old cache must not remain a second owner of the discarded window.
+    if (sessionIdRef.current) deleteSessionViewSnapshot(sessionIdRef.current);
+    pendingScrollToBottomRef.current = true;
+  }, [messages, entryIds, retentionCheck, setTranscript]);
+
+  const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false, options?: { force?: boolean; fresh?: boolean; confirmedIdle?: boolean }, shouldApply?: () => boolean) => {
     const selectionVersionAtRead = modelSelectionVersionRef.current;
     // Single-flight: concurrent reads for the same session (mount + SSE settle +
     // reconcile) share one request unless the caller asks for a fresh read.
@@ -686,19 +719,37 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         && cached?.revision === d.snapshotRevision
         && cached.entryIds.length >= (d.context.entryIds ?? []).length,
       );
-      const persistedMessages = revisionUnchanged ? messagesRef.current : d.context.messages;
-      const nextData = revisionUnchanged
-        ? {
-            ...d,
-            context: {
-              ...d.context,
-              messages: messagesRef.current,
-              entryIds: entryIdsRef.current,
-              oldestEntryId: historyCursorRef.current,
-              hasMore: hasEarlierMessagesRef.current,
-            },
-          }
-        : d;
+      const preserveReader = !showLoading && !isNearBottomRef.current && messagesRef.current.length > 0
+        && followsLiveAtRead && receiptBranchContains(d.tree, d.leafId, viewLeafAtRead);
+      let canonical = d.context;
+      if (preserveReader) {
+        // Recover missed events too. Fill a gap back to the loaded reader before
+        // joining windows; never concatenate disjoint saved ranges silently.
+        const known = new Set(entryIdsRef.current.filter(Boolean));
+        while (known.size && !canonical.entryIds.some(id => known.has(id)) && canonical.hasMore && canonical.oldestEntryId) {
+          const cursor = canonical.oldestEntryId;
+          const query = new URLSearchParams({ deferThinking: "1", deferMedia: "1", before: cursor });
+          if (d.leafId) query.set("leafId", d.leafId);
+          const olderResponse = await fetch(`/api/sessions/${encodeURIComponent(sid)}/context?${query}`);
+          if (!olderResponse.ok) throw new Error(`HTTP ${olderResponse.status}`);
+          const older = await olderResponse.json() as { context: SessionData["context"] };
+          if (sessionIdRef.current !== sid || branchViewRevisionRef.current !== viewRevisionAtRead
+            || modelSelectionVersionRef.current !== selectionVersionAtRead || (shouldApply && !shouldApply())) return "superseded";
+          if (older.context.oldestEntryId === cursor) throw new Error("History cursor did not advance");
+          canonical = { ...canonical, ...collapseOperationReceipts({
+            messages: [...older.context.messages, ...canonical.messages], entryIds: [...older.context.entryIds, ...canonical.entryIds],
+          }), oldestEntryId: older.context.oldestEntryId, hasMore: older.context.hasMore };
+        }
+      }
+      const preserveWindow = revisionUnchanged || preserveReader;
+      const keepUnpersisted = !options?.confirmedIdle && (rpcPromptPendingRef.current || sdkAgentActiveRef.current);
+      const reader = preserveWindow ? mergeCanonicalTranscript({ messages: messagesRef.current, entryIds: entryIdsRef.current }, canonical, keepUnpersisted) : null;
+      const persistedMessages = canonical.messages;
+      const nextData = reader ? { ...d,
+        stats: mergeSessionStats(d.stats, canonical.messages, [...canonical.messages, ...reader.extraMessages]),
+        context: { ...d.context, ...collapseOperationReceipts(reader.transcript),
+          oldestEntryId: historyCursorRef.current, hasMore: hasEarlierMessagesRef.current },
+      } : { ...d, context: canonical };
       dataRef.current = nextData;
       if (speedRevisionAtRead === modelSpeedRevisionRef.current && !modelSpeedChangingRef.current) {
         modelSpeedRef.current = isModelSpeed(d.modelSpeed) ? d.modelSpeed : "standard";
@@ -707,26 +758,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       activeLeafIdRef.current = d.leafId;
       setData(nextData);
       setActiveLeafId(d.leafId);
-      if (revisionUnchanged) {
-        // Refresh the cached snapshot with the newest leaf/tree/stats while
-        // preserving the wider loaded window.
-        setSessionViewSnapshot({
-          sessionId: sid,
-          revision: d.snapshotRevision!,
-          messages: messagesRef.current,
-          entryIds: entryIdsRef.current,
-          leafId: d.leafId,
-          oldestEntryId: historyCursorRef.current,
-          hasMore: hasEarlierMessagesRef.current,
-          summaryTree: d.tree,
-          thinkingLevel: d.context.thinkingLevel,
-          modelSpeed: d.modelSpeed,
-          model: d.context.model,
-          stats: d.stats,
-          totalActiveMs: d.totalActiveMs,
-          loadedEntryIds: entryIdsRef.current,
-        });
+      if (preserveWindow) {
+        setTranscript(current => collapseOperationReceipts(mergeCanonicalTranscript(current, canonical, keepUnpersisted).transcript));
       } else {
+        historyWindowRevisionRef.current++;
         const preserveRecentReceipts = followsLiveAtRead && branchViewRevisionRef.current === viewRevisionAtRead
           && receiptBranchContains(d.tree, d.leafId, viewLeafAtRead);
         const latestSnapshotTimestamp = persistedMessages.reduce((latest, message) =>
@@ -737,8 +772,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           // was captured. Never carry receipts across a branch-view change.
           return preserveRecentReceipts ? mergeInteractionReceiptHistory(saved, current, latestSnapshotTimestamp) : saved;
         });
-        setHistoryCursor(d.context.oldestEntryId);
-        setHasEarlierMessages(d.context.hasMore);
+        historyCursorRef.current = canonical.oldestEntryId;
+        hasEarlierMessagesRef.current = canonical.hasMore;
+        setHistoryCursor(canonical.oldestEntryId);
+        setHasEarlierMessages(canonical.hasMore);
       }
       // Tool-preset state is independent of the view cache: it must be applied
       // on every read, cached window or not (#700).
@@ -747,22 +784,22 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setCurrentModelOverride((current) => modelSwitchPendingRef.current ? current : null);
       setCurrentThinkingOverride(null);
       setError(null);
-      if (!revisionUnchanged && d.treeFormat === "summary" && d.snapshotRevision) {
+      if (d.treeFormat === "summary" && d.snapshotRevision) {
         setSessionViewSnapshot({
           sessionId: sid,
           revision: d.snapshotRevision,
-          messages: persistedMessages,
-          entryIds: d.context.entryIds ?? [],
+          messages: nextData.context.messages,
+          entryIds: nextData.context.entryIds,
           leafId: d.leafId,
-          oldestEntryId: d.context.oldestEntryId,
-          hasMore: d.context.hasMore,
+          oldestEntryId: nextData.context.oldestEntryId,
+          hasMore: nextData.context.hasMore,
           summaryTree: d.tree,
           thinkingLevel: d.context.thinkingLevel,
           modelSpeed: d.modelSpeed,
           model: d.context.model,
-          stats: d.stats,
+          stats: nextData.stats,
           totalActiveMs: d.totalActiveMs,
-          loadedEntryIds: d.context.entryIds ?? [],
+          loadedEntryIds: nextData.context.entryIds,
         });
       }
       if (d.wrapperRebuilt) {
@@ -807,6 +844,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       return "error";
     } finally {
       if (!shouldApply) pendingHistoryReadsRef.current -= 1;
+      if (sessionHookMountedRef.current) setRetentionCheck(current => current + 1);
       if (showLoading && !messagesLoaded) setLoading(false);
     }
     })();
@@ -851,6 +889,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [setTranscript]);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null, before?: string | null, options?: { tail?: number; signal?: AbortSignal }) => {
+    const windowRevision = historyWindowRevisionRef.current;
+    const branchRevision = branchViewRevisionRef.current;
+    if (before) retentionAllowedRef.current = false;
     transcriptRevisionRef.current += 1;
     pendingHistoryReadsRef.current += 1;
     try {
@@ -865,7 +906,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const d = await res.json() as { context: SessionData["context"] };
       if (sessionIdRef.current !== sid || options?.signal?.aborted || !sessionHookMountedRef.current
-        || activeLeafIdRef.current !== leafId) return;
+        || activeLeafIdRef.current !== leafId || historyWindowRevisionRef.current !== windowRevision
+        || branchViewRevisionRef.current !== branchRevision || (before && historyCursorRef.current !== before)) return;
+      historyCursorRef.current = d.context.oldestEntryId;
+      hasEarlierMessagesRef.current = d.context.hasMore;
+      if (!before) historyWindowRevisionRef.current++;
       setHistoryCursor(d.context.oldestEntryId);
       setHasEarlierMessages(d.context.hasMore);
       setData((prev) => {
@@ -894,6 +939,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!options?.signal?.aborted) console.error("Failed to load context:", e);
     } finally {
       pendingHistoryReadsRef.current -= 1;
+      if (sessionHookMountedRef.current) setRetentionCheck(current => current + 1);
     }
   }, [setMessages, setEntryIds, setTranscript]);
 
@@ -1252,6 +1298,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const settleUiStage = useCallback(() => {
     const wasRunning = agentRunningRef.current;
     agentRunningRef.current = false;
+    activeToolCallsRef.current.clear();
+    setRetentionCheck(current => current + 1);
     setAgentRunning(false);
     setAgentPhase(null);
     setRetryInfo(null);
@@ -1342,7 +1390,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // must not overwrite the messages of the run currently streaming.
     if (promptRunIdRef.current !== runId) return;
     try {
-      if (sid) await loadSession(sid);
+      if (sid) await loadSession(sid, false, false, { fresh: true, confirmedIdle: true }, () => promptRunIdRef.current === runId);
     } finally {
       if (promptRunIdRef.current !== runId) return;
       const promptWasPending = rpcPromptPendingRef.current;
@@ -1654,11 +1702,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           const delivered = normalizeToolCalls(completed);
           const optimisticKey = optimisticUserMessageKeyRef.current;
           optimisticUserMessageKeyRef.current = null;
-          setTranscript((current) => appendCompletedMessage(current, delivered,
-            typeof event.entryId === "string" ? event.entryId : "", optimisticKey));
+          setTranscript(completedMessageUpdate(delivered, typeof event.entryId === "string" ? event.entryId : "", optimisticKey));
         } else if (completed) {
-          setTranscript((current) => appendCompletedMessage(current, normalizeToolCalls(completed),
-            typeof event.entryId === "string" ? event.entryId : ""));
+          const entryId = typeof event.entryId === "string" ? event.entryId : "";
+          let display = normalizeToolCalls(completed);
+          if (entryId && sessionIdRef.current) display = deferMessageThinking(deferToolResultBase64Images(display, sessionIdRef.current, entryId));
+          setTranscript(completedMessageUpdate(display, entryId));
         }
         dispatch({ type: "end" });
         setAgentPhase({ kind: "waiting_model" });
@@ -1668,6 +1717,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (typeof event.parentToolCallId === "string" && event.parentToolCallId) break;
         const id = event.toolCallId as string;
         const name = event.toolName as string;
+        activeToolCallsRef.current.add(id);
         setAgentPhase((prev) => {
           const tools = prev?.kind === "running_tools" ? [...prev.tools] : [];
           if (!tools.some((t) => t.id === id)) tools.push({ id, name });
@@ -1714,6 +1764,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "tool_execution_end": {
         if (typeof event.parentToolCallId === "string" && event.parentToolCallId) break;
         const id = event.toolCallId as string;
+        activeToolCallsRef.current.delete(id);
         setActiveToolResults((prev) => {
           if (!prev.has(id)) return prev;
           const next = new Map(prev);
@@ -2768,6 +2819,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           : CHAT_SCROLL_TAIL_TOLERANCE,
       );
       isNearBottomRef.current = isAttached;
+      if (isAttached) {
+        retentionAllowedRef.current = true;
+        if (!wasAttached) setRetentionCheck(current => current + 1);
+      }
       previousScrollTopRef.current = scrollTop;
       const shouldShow = shouldShowScrollToLatest(scrollTop, clientHeight, scrollHeight);
       setShowScrollToBottom((previous) => (previous === shouldShow ? previous : shouldShow));

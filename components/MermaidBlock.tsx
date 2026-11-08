@@ -12,12 +12,13 @@ import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
 import { getRemoteImagesEnabled, useRemoteImages } from "@/hooks/useRemoteImages";
 import { RemoteImageNotice } from "./RemoteImageGate";
+import { renderMermaid } from "@/lib/mermaid-render-client";
 
 interface MermaidBlockProps {
   code: string;
   isStreaming?: boolean;
   defaultPreview?: boolean;
-  /** Observe the original import/parse/render/publication handler without changing its lifetime. */
+  /** Observe the complete disposable-render/publication handler, including cancellation. */
   onWork?: (work: Promise<unknown>) => void;
 }
 
@@ -66,35 +67,21 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false, onWork
   const previewVisible = showPreview && !isStreaming;
 
   useEffect(() => {
-    if (!previewVisible || resourcesBlocked) return;
+    if (!previewVisible || resourcesBlocked) {
+      setRenderState(null);
+      setZoomOpen(false);
+      return;
+    }
 
     let cancelled = false;
+    const controller = new AbortController();
     setRenderState({ key: currentKey, status: "loading" });
 
     const render = async () => {
-      const { default: mermaid } = await import("mermaid");
-      // Visibility/unmount still owns the originally admitted terminal work.
-      // Only a new privacy refusal cancels pre-render resource admission.
-      if (mermaidNeedsImagePermission(code) && !getRemoteImagesEnabled()) return;
-      mermaid.initialize({
-        startOnLoad: false,
-        securityLevel: "strict",
-        suppressErrorRendering: true,
-        theme: isDark ? "dark" : "default",
-      });
-
-      const parsed = await mermaid.parse(code, { suppressErrors: true });
-      if (!parsed) throw new Error("Invalid Mermaid diagram");
-      if (mermaidNeedsImagePermission(code) && !getRemoteImagesEnabled()) return;
-
-      const id =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? `mermaid-${crypto.randomUUID()}`
-          : `mermaid-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const result = await mermaid.render(id, code);
-      if (!cancelled) {
-        setRenderState({ key: currentKey, status: "ready", svg: result.svg });
-      }
+      const svg = await renderMermaid({ code, dark: isDark, allowImages: remoteImagesEnabled,
+        isAllowed: () => !mermaidNeedsImagePermission(code) || getRemoteImagesEnabled(),
+      }, controller.signal);
+      if (!cancelled) setRenderState({ key: currentKey, status: "ready", svg });
     };
 
     const work = render().catch(() => {
@@ -104,6 +91,7 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false, onWork
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [code, currentKey, isDark, previewVisible, remoteImagesEnabled, resourcesBlocked]);
 
@@ -126,7 +114,7 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = false, onWork
   const body = resourcesBlocked ? (
       <div className="mermaid-block"><RemoteImageNotice label={t("chat.diagramImagesBlocked")} /></div>
     ) : renderState?.key === currentKey && renderState.status === "error" ? (
-      <div className="mermaid-block mermaid-block-error">{t("i18n.invalidMermaid")}</div>
+      <div className="mermaid-block mermaid-block-error">{t("chat.diagramUnavailable")}</div>
     ) : renderState?.key !== currentKey || renderState.status !== "ready" ? (
       <div className="mermaid-block mermaid-block-loading" aria-label={t("i18n.renderingMermaid")} />
     ) : (

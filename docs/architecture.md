@@ -1,6 +1,6 @@
 # Architecture and source map
 
-Implementation reference moved from `AGENTS.md`; repository-relative code paths remain unchanged. Read the relevant section before modifying that area. Focused user guides and ADRs linked below retain their existing scopes.
+Implementation reference moved from `AGENTS.md`; repository-relative code paths remain unchanged. Read the relevant section before modifying that area. Focused user guides and ADRs linked below retain their existing scopes. [ADR 0042](adr/0042-browser-memory-lifetimes.md) records reader-aware retention, preview disposal and disposable Mermaid realm tradeoffs.
 
 ## Architecture
 
@@ -94,6 +94,7 @@ app/api/
 bin/
   next-launch.js       shared installed/npm auth checks and child-process supervision; native agent inheritance
   command-env.js        child hygiene for server login/control fields, preserving public socket and account env
+  build-mermaid-renderer.mjs build-time locked Mermaid/CSS asset, isolated package builder or manual dev shell
   patch-sdk-command-env.js install-only exact-version SDK patcher and read-only startup verifier
   sdk-command-env-payload.js twelve modular SDK recipes/original-patched fingerprints and self-contained filter
 
@@ -120,6 +121,9 @@ lib/
   markdown.ts          shared Markdown pipelines/source-preserving normalization
   markdown-compat.ts   currency/CJK parsing and document-scoped fragment/heading helpers
   message-signatures.ts  copy-on-write browser projection, never provider/durable mutation
+  transcript-retention.ts reader-aware live-tail suffix budget and dependency protection
+  mermaid-render-client.ts bounded one-realm diagram admission and disposable frame/port lifetime
+  mermaid-renderer-entry.ts trusted child-only Mermaid entry, bundled separately from parent application
   subagent-extension-selectors.ts  alias ownership/longest-match grants and conservative denials
   delimited-table.ts   client-safe CSV/TSV parsing and virtual table layout
   node-cli.ts          locate bundled npm-cli.js / npx-cli.js so npm/npx spawn without a shell (Windows npm.cmd)

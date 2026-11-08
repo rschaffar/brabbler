@@ -397,11 +397,16 @@ export async function checkFilePanel(page, filePath) {
       assert.equal(await page.locator("#session-sidebar").evaluate(el => el.inert), false);
     }
     await toggle.click();
+    const detached = page.waitForEvent("framedetached", { predicate: candidate => candidate === frame });
     await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
+    await detached;
     await page.getByRole("button", { name: "Show file panel", exact: true }).click();
     assert.equal(await toggle.getAttribute("aria-pressed"), "false", "Reopening returns to the split layout");
     assert.equal(await width(), originalWidth);
-    assert.equal(await frame.evaluate(() => window.previewInstance), instance);
+    assert.equal(frame.isDetached(), true, "hiding releases the executable preview realm");
+    const replacement = await (await panel.locator("iframe").elementHandle()).contentFrame();
+    await replacement.waitForFunction(() => typeof window.previewInstance === "number");
+    assert.notEqual(await replacement.evaluate(() => window.previewInstance), instance, "reveal recreates only the native preview, not the Files layout");
   }
   await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
   console.log(`PASS: file panel width and preview state at ${page.viewportSize().width}px`);

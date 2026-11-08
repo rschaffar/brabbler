@@ -16,9 +16,10 @@ let
       builtins.match ".*\\.(test|fixture)\\.(mjs|cjs|js|jsx|ts|tsx|mts|cts)$" file.name == null
       && !(lib.hasPrefix ".env" file.name)
     ) (root + "/${name}")) [ "app" "components" "hooks" "lib" "plugins" "public" "bin" ]));
-  application = fileset.difference applicationFiles (paths [ "lib/testing" ]);
+  application = fileset.difference applicationFiles (paths [ "lib/testing" "public/mermaid-renderer" ]);
   tests = fileset.intersection
-    (fileset.fileFilter (file: !(lib.hasPrefix ".env" file.name)) root)
+    (fileset.difference (fileset.fileFilter (file: !(lib.hasPrefix ".env" file.name)) root)
+      (paths [ "public/mermaid-renderer" ]))
     (fileset.union application (paths [
     "app" "components" "hooks" "lib" "plugins" "public" "e2e" "nix" "docs" ".github"
     "tools/migrations/git-operation-reviews"

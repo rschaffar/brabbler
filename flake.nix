@@ -118,12 +118,13 @@
       lib.browserCapsule = forSystems linuxSystems (pkgs: (tests pkgs).browser.mkCapsule);
       devShells = forSystems linuxSystems (pkgs: {
         default = pkgs.mkShell {
-          packages = [ pkgs.nodejs_24 pkgs.git pkgs.python3 ];
+          packages = [ pkgs.nodejs_24 pkgs.git pkgs.python3 pkgs.esbuild ];
           shellHook = ''
             source ${pkgs.replaceVars ./nix/dev-shell.sh {
               lockFile = ./package-lock.json;
               sourceModules = "${modules pkgs}/node_modules";
             }} || exit 1
+            node bin/build-mermaid-renderer.mjs || exit 1
           '';
         };
         update = pkgs.mkShell { packages = [ pkgs.nodejs_24 pkgs.git ]; };

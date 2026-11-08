@@ -60,6 +60,13 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        source: "/mermaid-renderer/:path*",
+        headers: [
+          { key: "Cache-Control", value: "private, no-cache, max-age=0, must-revalidate" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+        ],
+      },
+      {
         source: "/",
         headers: [
           { key: "Cache-Control", value: "private, no-cache, max-age=0, must-revalidate" },

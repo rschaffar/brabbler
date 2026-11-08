@@ -187,6 +187,28 @@ test('clean tab remount restores Workspace-stored mode, wrap and scroll while ta
   runtime.assertHealthy();
 });
 
+test('reverted clean editors do not remain mounted in parked workspaces', async t => {
+  const { read, editable, click, type, button } = await import('./file-viewer-harness.fixture.mjs');
+  const h = await stateWorkspace(t), { view, runtime } = h;
+  const location = { filePath: '/root/revert.txt', label: 'revert.txt', cwd: '/root', sourceSessionId: 'session-a' };
+  const reads = [readPlan(runtime, location), readPlan(runtime, location)];
+  await h.open(location);
+  const edit = runtime.expect({ type: 'edit', path: location.filePath, sessionId: location.sourceSessionId });
+  await reads[1].deliver(read('baseline', editable)); await reads[0].deliver(readReply('obsolete'));
+  await edit.deliver({ content: 'baseline', revision: 'r', writable: true, editIdentity: 'revert-identity' });
+  await click(view, button(view.container, 'Edit'));
+  const editor = view.container.querySelector('textarea');
+  await type(view, editor, 'unsaved');
+  await h.render({ workspaceKey: 'B' });
+  assert.equal(editor.isConnected, true, 'dirty owner remains mounted across workspaces');
+  await h.render({ workspaceKey: 'A' });
+  await type(view, editor, 'baseline');
+  await h.render({ workspaceKey: 'B' });
+  assert.equal(editor.isConnected, false, 'clean reverted owner releases its viewer');
+  assert.equal(view.container.querySelector('textarea') === null, true);
+  assert.doesNotMatch(view.container.textContent, /revert.txt —/);
+});
+
 // F-CONFLICT: one actual Workspace/provider/store/TabBar graph, not held-Save typing.
 test('entered external revisions preserve actual Workspace drafts/tabs, disable Save and discard into the next PUT revision', async t => {
   const { read, editable, click, type, button } = await import('./file-viewer-harness.fixture.mjs');
@@ -272,6 +294,12 @@ test('entered external revisions preserve actual Workspace drafts/tabs, disable 
     assert.equal(tab.getAttribute('aria-label'), `${row.label} — Unsaved changes`);
     assert.match(host.textContent, /File changed on disk/);
     assert.equal(button(host, 'Save').disabled, true, 'external-change Save-disabled conjunction');
+    const oldBaseline = row.clean ?? row.baseline;
+    await type(view, editor, oldBaseline);
+    assert.equal(editor.value, oldBaseline, 'typing the obsolete baseline is still unsaved input, not permission to replace it with external bytes');
+    assert.equal(tab.getAttribute('aria-label'), `${row.label} — Unsaved changes`, 'conflicted baseline remains protected in the real workspace');
+    assert.equal(button(host, 'Save').disabled, true);
+    await type(view, editor, row.draft);
 
     const reloadRead = readPlan(runtime, location), reloadEdit = probe(location);
     const confirmsBefore = confirmations.length;

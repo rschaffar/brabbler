@@ -1,4 +1,4 @@
-import type { FileEditDraft } from "./file-viewer-state";
+import { isFileDraftDirty, type FileEditDraft } from "./file-viewer-state";
 
 export interface FileEditSession { owner?: string; draft?: FileEditDraft; saving: boolean }
 const EMPTY: FileEditSession = Object.freeze({ saving: false });
@@ -33,11 +33,14 @@ export class FileEditSessions {
     if (!draft && session.owner !== view) return;
     if (draft && !this.claim(view)) return;
     const key = this.bindings.get(view)!;
-    this.sessions.set(key, { ...this.snapshot(view), draft }); this.emit();
+    const retained = !session.saving && !isFileDraftDirty(draft) ? undefined : draft;
+    this.sessions.set(key, { ...this.snapshot(view), draft: retained }); this.emit();
   }
   saving(view: string, saving: boolean) {
     if (!this.claim(view)) return;
-    this.sessions.set(this.bindings.get(view)!, { ...this.snapshot(view), saving }); this.emit();
+    const session = this.snapshot(view);
+    const draft = !saving && !isFileDraftDirty(session.draft) ? undefined : session.draft;
+    this.sessions.set(this.bindings.get(view)!, { ...session, draft, saving }); this.emit();
   }
   close(view: string): boolean {
     const session = this.snapshot(view);
@@ -46,6 +49,6 @@ export class FileEditSessions {
     this.bindings.delete(view); this.emit(); return true;
   }
   get dirty(): boolean {
-    return [...this.sessions.values()].some(session => session.saving || (session.draft && session.draft.content !== session.draft.baseline));
+    return [...this.sessions.values()].some(session => session.saving || isFileDraftDirty(session.draft));
   }
 }

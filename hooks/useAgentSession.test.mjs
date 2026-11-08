@@ -83,7 +83,7 @@ test("only the session-mount load probes disk for external appends", () => {
     source.indexOf("// Load session on mount"),
     source.indexOf("sessionHookMountedRef.current = false"),
   );
-  match(loadSessionSource, /options\?: \{ force\?: boolean; fresh\?: boolean \}/);
+  match(loadSessionSource, /options\?: \{ force\?: boolean; fresh\?: boolean; confirmedIdle\?: boolean \}/);
   match(loadSessionSource, /if \(options\?\.force\) params\.set\("force", "1"\)/);
   match(loadSessionSource, /d\.wrapperRebuilt[\s\S]*?eventConnectionRef\.current\?\.close\(\)[\s\S]*?maintain\(sid\)/);
   match(source, /const historyOnly = isHistoryOnlySession\(session\)/);

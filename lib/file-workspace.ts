@@ -1,4 +1,5 @@
 import type { FileTab } from "./file-tab";
+import { isFileDraftDirty } from "./file-viewer-state";
 import type { FileLineTarget } from "./file-links";
 
 export interface FileLocation {
@@ -59,7 +60,7 @@ export function patchFileView(state: FileWorkspaceState, id: string, patch: Part
   const view = state.views[id];
   if (!view) return state;
   const next = { ...view, ...patch };
-  if (next.saving || (next.draft && next.draft.content !== next.draft.baseline)) next.preview = false;
+  if (next.saving || isFileDraftDirty(next.draft)) next.preview = false;
   return { ...state, views: { ...state.views, [id]: next } };
 }
 export function selectFileView(state: FileWorkspaceState, groupId: string, viewId?: string): FileWorkspaceState {

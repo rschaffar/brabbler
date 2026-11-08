@@ -130,6 +130,106 @@ for (const name of ["bash", "powershell", "codemode"]) test(`tools: ${name} part
   assert.equal(f.current.agentPhase.tools.some(tool => tool.id === "call/1"), false);
 });
 
+test("retention: live tail is bounded, deliberate scrollback keeps newer output and returning releases old pages", options, async t => {
+  const f = await sessionFixture(t, { viewport: true });
+  await f.mountReady(f.existingOptions());
+  const viewport = f.view.container.querySelector('[data-testid="hook-viewport"]');
+  Object.defineProperties(viewport, { scrollHeight: { configurable: true, value: 10000 }, clientHeight: { configurable: true, value: 500 } });
+  viewport.scrollTop = 9500;
+  await f.view.dispatch(viewport, new f.view.window.Event('scroll'));
+  await f.event(source(f), { type: 'agent_start' });
+  for (let i = 0; i < 300; i++) await f.event(source(f), { type: 'message_end', entryId: `e${i}`, message: assistant([{ type: 'text', text: `answer ${i}` }]) });
+  assert.equal(f.current.messages.length, 200, 'real hook drops older completed payloads at the live tail');
+  assert.equal(f.current.entryIds[0], 'e100');
+  assert.equal(f.current.historyCursor, 'e100');
+  assert.equal(f.current.hasEarlierMessages, true);
+  assert.equal(f.current.data.context.messages.length <= 200, true, 'secondary data owner is pruned too');
+  viewport.scrollTop = 1000;
+  await f.view.dispatch(viewport, new f.view.window.Event('scroll'));
+  const older = f.hold(request => request.query.get('before') === 'e100');
+  const loading = await f.start('explicit older page', value => value.loadContext(f.savedId, null, 'e100'));
+  await older.entered.promise;
+  await f.finish(loading, () => older.resolve({ context: page(Array.from({ length: 50 }, (_, i) => user(`older ${i}`)), Array.from({ length: 50 }, (_, i) => `old${i}`), 'old0', false) }));
+  for (let i = 300; i < 349; i++) await f.event(source(f), { type: 'message_end', entryId: `e${i}`, message: assistant([{ type: 'text', text: `answer ${i}` }]) });
+  assert.equal(f.current.messages.length, 299, 'explicit reader window can grow and keeps the newer output');
+  const row = f.record(f.savedId);
+  row.messages = Array.from({ length: 50 }, (_, i) => assistant([{ type: 'text', text: `canonical ${i + 300}` }]));
+  row.entryIds = Array.from({ length: 50 }, (_, i) => `e${i + 300}`); row.revision++;
+  await f.event(source(f), { type: 'agent_end' }); await f.settleMaintenance();
+  assert.equal(f.current.entryIds[0], 'old0', 'canonical recovery preserves loaded older history');
+  assert.equal(f.current.entryIds.at(-1), 'e349', 'missing final SSE output is recovered even while detached');
+  assert.equal(f.current.messages.at(-1).content[0].text, 'canonical 349');
+  await f.event(source(f), { type: 'agent_settled' }); await f.settleMaintenance();
+  await f.run('return to live tail', value => value.scrollToBottom('auto'));
+  await f.view.dispatch(viewport, new f.view.window.Event('scroll'));
+  assert.equal(f.current.messages.length, 200);
+  assert.equal(f.current.entryIds.at(-1), 'e349');
+  assert.equal(f.current.entryIds.some(id => id.startsWith('old')), false);
+});
+
+test("context: duplicate old-cursor responses and same-leaf replacements cannot prepend stale pages", options, async t => {
+  const f = await sessionFixture(t), row = f.record(f.savedId);
+  row.messages = [user('current')]; row.entryIds = ['current-id'];
+  await f.mountReady(f.existingOptions());
+  const first = f.hold(request => request.query.get('before') === 'current-id');
+  const a = await f.start('first old page', value => value.loadContext(f.savedId, null, 'current-id'));
+  await first.entered.promise;
+  const second = f.hold(request => request.query.get('before') === 'current-id');
+  const b = await f.start('duplicate old page', value => value.loadContext(f.savedId, null, 'current-id'));
+  await second.entered.promise;
+  await f.finish(a, () => {
+    first.resolve({ context: page([user('old')], ['old'], 'old', true) });
+    second.resolve({ context: page([user('duplicate')], ['duplicate'], 'bad', true) });
+  });
+  await f.finish(b);
+  assert.deepEqual(f.current.entryIds, ['old', 'current-id']);
+  const stale = f.hold(request => request.query.get('before') === 'old');
+  const pending = await f.start('same-leaf stale page', value => value.loadContext(f.savedId, null, 'old'));
+  await stale.entered.promise;
+  row.messages = [user('replacement')]; row.entryIds = ['replacement'];
+  await f.run('authoritative same-leaf replacement', value => value.loadContext(f.savedId, null));
+  await f.finish(pending, () => stale.resolve({ context: page([user('obsolete')], ['obsolete'], 'obsolete', true) }));
+  assert.deepEqual(f.current.entryIds, ['replacement']);
+});
+
+test("recovery: disjoint canonical backfill clips overshoot, preserves its cursor and counts only the concurrent live delta", options, async t => {
+  const f = await sessionFixture(t, { viewport: true }), row = f.record(f.savedId);
+  row.messages = Array.from({ length: 7 }, (_, i) => user(`reader ${i + 103}`));
+  row.entryIds = Array.from({ length: 7 }, (_, i) => `e${i + 103}`);
+  await f.mountReady(f.existingOptions());
+  const viewport = f.view.container.querySelector('[data-testid="hook-viewport"]');
+  Object.defineProperties(viewport, { scrollHeight: { configurable: true, value: 10000 }, clientHeight: { configurable: true, value: 500 } });
+  viewport.scrollTop = 9500; await f.view.dispatch(viewport, new f.view.window.Event('scroll'));
+  viewport.scrollTop = 0; await f.view.dispatch(viewport, new f.view.window.Event('scroll'));
+  assert.equal(f.current.showScrollToBottom, true, 'fixture genuinely detaches before canonical recovery');
+  await f.event(source(f), { type: 'agent_start' });
+  const canonical = f.hold(request => request.path === `/api/sessions/${f.savedId}`);
+  const gap = f.hold(request => request.query.get('before') === 'e200');
+  const overshoot = f.hold(request => request.query.get('before') === 'e150');
+  await f.event(source(f), { type: 'agent_end' }); await canonical.entered.promise;
+  row.messages = Array.from({ length: 50 }, (_, i) => user(`canonical ${i + 200}`));
+  row.entryIds = Array.from({ length: 50 }, (_, i) => `e${i + 200}`); row.revision++;
+  const stats = { userMessages: 250, assistantMessages: 0, toolCalls: 0, toolResults: 0, totalMessages: 250,
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
+  await f.event(source(f), { type: 'message_end', entryId: 'e250', message: user('concurrent live', 2) });
+  await f.deliver(canonical, f.snapshot(f.savedId, { stats, context: page(row.messages, row.entryIds, 'e200', true) }));
+  await gap.entered.promise;
+  await f.deliver(gap, { context: page(Array.from({ length: 50 }, (_, i) => user(`gap ${i + 150}`)), Array.from({ length: 50 }, (_, i) => `e${i + 150}`), 'e150', true) });
+  await overshoot.entered.promise;
+  await f.deliver(overshoot, { context: page(Array.from({ length: 50 }, (_, i) => user(`gap ${i + 100}`)), Array.from({ length: 50 }, (_, i) => `e${i + 100}`), 'e100', true) });
+  await f.settleMaintenance();
+  assert.equal(f.current.entryIds[0], 'e103', 'backfill does not extend behind the retained exclusive cursor');
+  assert.equal(f.current.entryIds.at(-1), 'e250');
+  assert.equal(f.current.historyCursor, 'e103');
+  assert.equal(f.current.sessionStats.userMessages, 251, 'older reader prefix is already counted, concurrent live record is not');
+  const older = f.hold(request => request.query.get('before') === 'e103');
+  const loading = await f.start('page after backfill overshoot', value => value.loadContext(f.savedId, null, 'e103'));
+  await older.entered.promise;
+  await f.finish(loading, () => older.resolve({ context: page(Array.from({ length: 50 }, (_, i) => user(`older ${i + 53}`)), Array.from({ length: 50 }, (_, i) => `e${i + 53}`), 'e53', true) }));
+  assert.equal(new Set(f.current.entryIds).size, f.current.entryIds.length, 'exclusive reload contains no backfill duplicates');
+  assert.equal(f.current.entryIds[0], 'e53');
+});
+
 test("context: server cursor/hasMore beat rendered entry IDs; admitted older page prepends both data and transcript", options, async t => {
   const f = await sessionFixture(t), sid = `${f.savedId} /?#%`;
   const row = f.declareSession(sid); row.leaf = "leaf /?#%";
