@@ -54,6 +54,7 @@ import { checkHighlightFailure } from "./highlight-failure.mjs";
 import { createOwnedRoutes } from "./owned-routes.mjs";
 import { seedToolArguments, checkToolArguments } from "./tool-arguments.mjs";
 import { checkHistoryBranch } from "./history-branch.mjs";
+import { checkBrowserMemoryLifetimes } from "./browser-memory.mjs";
 import { seedReadmeScreenshot, captureReadmeScreenshot } from "./readme-screenshot.mjs";
 
 // Validate one-hot ownership before the harness or any fixture side effects.
@@ -795,10 +796,18 @@ let nativeToolsFixture;
       await harness.closeContext(context); context = undefined; page = undefined;
       finishMarkdownStage();
       });
+      if (inputId === "legacy-desktop") await coverage.run(`markdown/browser-memory-lifetimes-v1@${inputId}`, async () => {
+        context = await newInputContext(inputId);
+        page = await context.newPage(); page.setDefaultTimeout(30_000);
+        const memoryErrors = harness.errorsFor(context);
+        await checkBrowserMemoryLifetimes(page, { base, sessionId: LONG, markdownFile, previewFile, artifacts });
+        assert.deepEqual(memoryErrors, [], "Browser errors during repeated resource lifetimes");
+        await harness.closeContext(context); context = undefined; page = undefined;
+      });
       continue;
     }
     if (group === "file-edit") {
-      await coverage.run(`file-edit/native-upload-preview-notice-v5@${inputId}`, async () => {
+      await coverage.run(`file-edit/native-upload-preview-release-v6@${inputId}`, async () => {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       await checkFilePanel(page, previewFile);

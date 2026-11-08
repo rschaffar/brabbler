@@ -215,7 +215,7 @@ def snapshot(root_fd, destination_fd=None, expected=None):
                         # protected descendants or claim their complete census.
                         omissions.append(child_rel)
                     continue
-                if excluded(child):
+                if excluded(child) or child_rel == 'public/mermaid-renderer':
                     omissions.append(child_rel)
                     continue
                 require(not child.startswith('.'), f'Unapproved hidden source entry: {child_rel}')

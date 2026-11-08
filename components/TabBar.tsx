@@ -4,6 +4,7 @@ import { useState } from "react";
 import { getFileIcon } from "./FileIcons";
 import { useI18n } from "@/hooks/useI18n";
 import type { FileTab as Tab } from "@/lib/file-tab";
+import { isFileDraftDirty } from "@/lib/file-viewer-state";
 export type { FileTab as Tab } from "@/lib/file-tab";
 
 interface Props {
@@ -44,7 +45,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onKeepTab, 
             id={getPanelId ? `${getPanelId(tab.id)}-tab` : undefined}
             aria-controls={getPanelId?.(tab.id)}
             aria-label={tab.kind === "terminal" ? t("terminal.tabLabel", { name: tab.label }) :
-              tab.draft && tab.draft.content !== tab.draft.baseline ? `${tab.label} — ${t("files.unsaved")}` : tab.label}
+              isFileDraftDirty(tab.draft) ? `${tab.label} — ${t("files.unsaved")}` : tab.label}
             aria-selected={isActive}
             tabIndex={isActive || (!activeTabId && tabs[0].id === tab.id) ? 0 : -1}
             onKeyDown={(event) => {
@@ -108,7 +109,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onKeepTab, 
               }}
               title={tab.filePath}
             >
-              {tab.label}{tab.draft && tab.draft.content !== tab.draft.baseline ? " ●" : ""}
+              {tab.label}{isFileDraftDirty(tab.draft) ? " ●" : ""}
             </span>
             <button
               disabled={tab.closing || tab.saving}

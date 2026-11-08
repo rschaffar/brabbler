@@ -377,6 +377,7 @@ export const enLocale: LocalePlugin = {
     "settings.remoteImagesDescription": "Off by default. Enabling loads remote images in all chats and Markdown previews in this browser. Image hosts receive your IP address and the requested URL. Disable here to stop further automatic loads.",
     "chat.remoteImageBlocked": "Remote image blocked.",
     "chat.diagramImagesBlocked": "Diagram resource-capable syntax blocked. Enable remote images to preview, or view Source.",
+    "chat.diagramUnavailable": "Diagram preview unavailable. Check Source, then try Preview again.",
     "chat.remoteImageBlockedAlt": "Remote image blocked: {alt}.",
     "chat.enableRemoteImages": "Enable remote images",
     "chat.remoteImageSettingsHint": "Enable remote images in Settings → General → Chat.",

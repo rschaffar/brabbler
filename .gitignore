@@ -20,6 +20,7 @@
 
 # production
 /build
+/public/mermaid-renderer/
 
 # local code-intelligence index (initialized in agent-created worktrees)
 /.codegraph/

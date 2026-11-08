@@ -332,6 +332,37 @@ test('actual held PUT preserves typing back to old baseline, edit ownership and 
   runtime.assertHealthy();
 });
 
+test('typing back to an old baseline survives an ambiguous Save failure and a refused retry', async t => {
+  const h = await open(t);
+  const { view, runtime, props, store, initial: [replay, initial] } = h;
+  const edit = expectEdit(runtime, props);
+  await initial.deliver(read('A', editable)); await replay.deliver(read('obsolete'));
+  await edit.deliver({ content: 'A', revision: 'r1', writable: true, editIdentity: 'identity' });
+  await click(view, button(reader(view), 'Edit'));
+  const field = reader(view).querySelector('textarea');
+  await type(view, field, 'B');
+  const save = runtime.expect({ type: 'save', path: props.filePath, sessionId: props.sourceSessionId,
+    body: { content: 'B', expectedRevision: 'r1', expectedEditIdentity: 'identity' } });
+  await click(view, button(reader(view), 'Save'));
+  await type(view, field, 'A');
+  await save.rejectHeaders(new Error('controlled ambiguous acknowledgement'));
+  assert.equal(field.value, 'A');
+  assert.equal(store.snapshot('reader').draft.content, 'A');
+  assert.equal(store.snapshot('reader').draft.conflicted, true);
+  assert.equal(store.dirty, true, 'the unconfirmed old baseline is not a clean draft');
+  await type(view, field, 'X');
+  await type(view, field, 'A');
+  assert.equal(field.value, 'A');
+  assert.equal(store.snapshot('reader').draft?.conflicted, true, 'uncertainty survives subsequent edits until authoritative resolution');
+  const retry = runtime.expect({ type: 'save', path: props.filePath, sessionId: props.sourceSessionId,
+    body: { content: 'A', expectedRevision: 'r1', expectedEditIdentity: 'identity' } });
+  await click(view, button(reader(view), 'Save'));
+  await retry.deliver({ error: 'controlled revision conflict' }, { status: 409 });
+  assert.equal(field.value, 'A');
+  assert.equal(store.snapshot('reader').draft.content, 'A');
+  assert.equal(button(reader(view), 'Save').disabled, true);
+});
+
 test('real Markdown default preview, current link callback and stable focused blocked trigger survive watcher reads', async t => {
   const oldOpened = [], opened = [];
   const markdown = '[blocked](../../escape.md)\n\n[chapter](chapter.md#L4-L7)\n\n[pdf](../manual.pdf#page=3)';
@@ -455,6 +486,18 @@ test('HTML Preview explains single-file limits outside the sandbox and retains S
   assert.equal(notice.closest('.file-viewer-content') === null, true, 'notice stays outside the scrolling preview');
   assert.equal(root.querySelector('iframe').getAttribute('sandbox'), 'allow-scripts');
   assert.equal(root.querySelector('iframe').getAttribute('srcdoc'), content);
+  const contentHost = root.querySelector('.file-viewer-content');
+  for (let cycle = 0; cycle < 8; cycle++) {
+    const frame = root.querySelector('iframe');
+    await h.render({ ...h.props, active: false });
+    assert.equal(root.querySelector('iframe') === null, true, 'hidden executable document is unmounted');
+    assert.equal(frame.isConnected, false);
+    assert.equal(root.querySelector('.file-viewer-content') === contentHost, true, 'reader/navigation owner survives');
+    await h.render({ ...h.props, active: true });
+    assert.equal(root.querySelectorAll('iframe').length, 1);
+    assert.equal(root.querySelector('iframe') !== frame, true);
+    assert.equal(root.querySelector('iframe').getAttribute('srcdoc'), content);
+  }
   const download = root.querySelector('a[download="study.html"]');
   assert.equal(Boolean(download), true);
   assert.equal(new URL(download.href).searchParams.get('type'), 'download');

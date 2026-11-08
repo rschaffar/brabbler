@@ -313,6 +313,11 @@ export function filesRuntime({ menu = false, dialog = false, idle = false } = {}
       listenerRemovals.push(() => window.removeEventListener('unhandledrejection', reportError));
       replace(window, 'fetch', fetchCapability);
       replace(window, 'EventSource', WatchSource);
+      // jsdom cannot decode/play media. Observe native release calls without
+      // claiming decoder/network closure; the installed-browser bridge owns it.
+      for (const name of ['pause', 'load']) replace(window.HTMLMediaElement.prototype, name, function () {
+        this.dataset[`${name}Calls`] = String(Number(this.dataset[`${name}Calls`] ?? 0) + 1);
+      });
       for (const name of ['WebSocket', 'XMLHttpRequest', 'Worker', 'SharedWorker']) replace(window, name, deny(`window.${name}`));
       replace(window.navigator, 'sendBeacon', deny('navigator.sendBeacon'));
       // LocalFileLink always checks this selector even for an ordinary click.

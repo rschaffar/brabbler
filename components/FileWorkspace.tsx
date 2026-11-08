@@ -5,6 +5,7 @@ import { FileViewer } from "./FileViewer";
 import { TabBar } from "./TabBar";
 import { FileEditContext } from "@/hooks/useFileEditSession";
 import { FileEditSessions } from "@/lib/file-edit-sessions";
+import { isFileDraftDirty } from "@/lib/file-viewer-state";
 import { FileWorkspaceStore } from "@/lib/file-workspace-store";
 import { FileLinkMenuContext } from "./LocalFileLink";
 import { useI18n } from "@/hooks/useI18n";
@@ -191,7 +192,7 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
     if (ids.some(id => protect(key, id).saving)) return false;
     return ids.every(id => {
       const draft = protect(key, id).draft;
-      return !draft || draft.content === draft.baseline || window.confirm(t("files.discardConfirm"));
+      return !isFileDraftDirty(draft) || window.confirm(t("files.discardConfirm"));
     });
   };
   const closeView = (id: string) => {
@@ -216,7 +217,7 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
   const parkedEditors = Object.entries(bank).flatMap(([key, workspace]) => key === props.workspaceKey ? []
     : Object.values(workspace.views).flatMap(view => {
       const owner = composite(key, view.id), session = edits.snapshot(owner);
-      return session.owner === owner && (session.saving || (session.draft && session.draft.content !== session.draft.baseline))
+      return session.owner === owner && (session.saving || isFileDraftDirty(session.draft))
         ? [{ owner, label: `${view.label} — ${view.cwd ?? view.filePath}` }] : [];
     }));
   const contextFor = (key: string, id: string) => ({ store: edits, viewId: composite(key, id), focusView });
@@ -229,7 +230,7 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
     // Hiding/expanding the outer panel and responsive projection retain each
     // group's selected reader. Inactive tab panels keep their ARIA target, not
     // a reader/subscription; edit owners remain alive until safe settlement.
-    const renderViewer = selected || Boolean(session.draft || session.saving);
+    const renderViewer = selected || session.saving || isFileDraftDirty(session.draft);
     if (key !== props.workspaceKey && !renderViewer) return [];
     const rect = geometry.groups[groupId] ?? { x: 0, y: 0, width: 0, height: 0 };
     return [<div key={composite(key, view.id)} id={`file-view-${encodeURIComponent(composite(key, view.id))}`} role="tabpanel" aria-label={`${t("workspace.pane", { number: groupId.slice(5) })} — ${view.label}`}
@@ -245,7 +246,7 @@ export const FileWorkspace = forwardRef<FileWorkspaceHandle, Props>(function Fil
             reviewDestination={visible && props.active ? props.reviewDestination : undefined}
             onReviewBatchDraft={visible && props.active ? props.onReviewBatchDraft : undefined}
             navigationId={view.viewerRevision} initialDisplayMode={view.initialDisplayMode} initialState={view.viewerState}
-            initialPage={view.page} initialLineTarget={view.lineTarget} watchEnabled={visible && props.active}
+            initialPage={view.page} initialLineTarget={view.lineTarget} watchEnabled={visible && props.active} active={visible && props.active}
             onEditingChange={() => commit(key, state => patchFileView(state, view.id, { preview: false }))}
             onDraftChange={draft => commit(key, state => patchFileView(state, view.id, { draft }))}
             onSavingChange={saving => commit(key, state => {

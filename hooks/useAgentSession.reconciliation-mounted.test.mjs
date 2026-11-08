@@ -365,6 +365,30 @@ for (const mode of ["lost ACK", "slash command"]) test(`settlement: ${mode} owns
   assert.equal(source(f).readyState, 1, "selected session stays warm after confirmed finish");
 });
 
+test("settlement: confirmed idle while reading replaces a transformed optimistic envelope after missed user SSE", options, async t => {
+  const time = policyClockFixture(), { f } = await nativeTimedFixture(t, { policyTime: time, viewport: true });
+  const row = f.record(f.savedId);
+  row.messages = [{ role: 'user', content: 'older reader', timestamp: 1 }]; row.entryIds = ['older'];
+  await f.mountReady(f.existingOptions());
+  const viewport = f.view.container.querySelector('[data-testid="hook-viewport"]');
+  Object.defineProperties(viewport, { scrollHeight: { configurable: true, value: 10000 }, clientHeight: { configurable: true, value: 500 } });
+  const prompt = f.hold(command('prompt'));
+  const idle = f.hold(stateRead);
+  const send = await f.start('transformed slash prompt', value => value.handleSend('/extension original input'));
+  await prompt.entered.promise;
+  await f.finish(send, () => prompt.resolve(ok({})));
+  viewport.scrollTop = 0; await f.view.dispatch(viewport, new f.view.window.Event('scroll'));
+  row.messages = [row.messages[0], { role: 'user', content: 'server transformed input', timestamp: 2 },
+    { role: 'assistant', content: [{ type: 'text', text: 'saved final answer' }], timestamp: 3 }];
+  row.entryIds = ['older', 'transformed', 'answer']; row.revision++;
+  await idle.entered.promise;
+  const join = await f.start('confirmed idle canonical reconciliation', () => f.maintenanceHandle());
+  await f.finish(join, () => idle.resolve({ running: false, state: f.live(f.savedId) }));
+  assert.equal(f.current.agentRunning, false);
+  assert.deepEqual(f.current.entryIds, ['older', 'transformed', 'answer']);
+  assert.equal(f.current.messages.some(message => message.content === '/extension original input'), false, 'obsolete unreconciled input cannot pin the tail after confirmed settlement');
+});
+
 test("settlement: confirmed fresh slash completion starts its native grace rather than closing the unselected source", options, async t => {
   const time = policyClockFixture(), { timers, f } = await nativeTimedFixture(t, { policyTime: time });
   await f.mountReady();

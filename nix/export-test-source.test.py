@@ -59,6 +59,17 @@ class SourceExportTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(self.manifest.stat().st_mode), 0o600)
         self.assertEqual(json.loads(self.manifest.read_text())['contentModeSha256'], report['contentModeSha256'])
 
+    def test_generated_diagram_assets_are_not_source_inputs(self):
+        self.put('public/mermaid-renderer/v1/render.js', 'generated code')
+        self.put('public/mermaid-renderer/v1/render.css', 'generated css')
+        self.put('lib/mermaid-renderer-entry.ts', 'maintained source')
+        self.put('public/ordinary.js', 'ordinary source')
+        report = self.run_export()
+        self.assertIn('public/mermaid-renderer', report['omittedNames'])
+        self.assertFalse((self.output / 'public/mermaid-renderer').exists())
+        self.assertIn('lib/mermaid-renderer-entry.ts', report['before'])
+        self.assertIn('public/ordinary.js', report['before'])
+
     def test_public_source_materials_and_contributor_guides_are_preserved(self):
         files = ['CONTRIBUTING.md', 'SECURITY.md',
                  'nix/third-party/elkjs-0.9.3/patches/change.patch',

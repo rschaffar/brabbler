@@ -47,6 +47,38 @@ async function openMedia(t, kind) {
   };
 }
 
+for (const kind of kinds) test(`${kind.ext} native preview is released on hide and recreated without accumulating owners`, async t => {
+  const h = await openMedia(t, kind);
+  const { view, runtime, root, props } = h;
+  for (const ticket of h.initial) await ticket.deliver({ size: 10 });
+  for (let cycle = 0; cycle < 8; cycle++) {
+    const previous = root().querySelector(kind.selector);
+    assert.equal(Boolean(previous), true);
+    await h.render({ ...props, active: false });
+    assert.equal(root().querySelector(kind.selector) === null, true, 'no hidden native preview');
+    assert.equal(previous.isConnected, false, 'old resource owner unmounted');
+    if (kind.selector === 'audio' || kind.selector === 'video') {
+      assert.equal(previous.hasAttribute('src'), false, 'decoder source detached');
+      assert.equal(Number(previous.dataset.pauseCalls) > 0, true);
+      assert.equal(Number(previous.dataset.loadCalls) > 0, true);
+    }
+    const reads = kind.ext === 'pdf' ? [meta(runtime, props), meta(runtime, props)] : [];
+    await h.render({ ...props, active: true });
+    for (const ticket of reads) await ticket.deliver({ size: 10 });
+    assert.equal(root().querySelectorAll(kind.selector).length, 1);
+    assert.equal(root().querySelector(kind.selector) !== previous, true);
+  }
+  let hidden = true;
+  Object.defineProperty(view.window.document, 'hidden', { configurable: true, get: () => hidden });
+  await view.dispatch(view.window.document, new view.window.Event('visibilitychange'));
+  assert.equal(root().querySelector(kind.selector) === null, true, 'background document releases previews too');
+  const reads = kind.ext === 'pdf' ? [meta(runtime, props), meta(runtime, props)] : [];
+  hidden = false;
+  await view.dispatch(view.window.document, new view.window.Event('visibilitychange'));
+  for (const ticket of reads) await ticket.deliver({ size: 10 });
+  assert.equal(root().querySelectorAll(kind.selector).length, 1);
+});
+
 test('Files audio shares speed controls and reapplies the preference when the native player is replaced', async t => {
   const h = await openMedia(t, { ext: 'wav', selector: 'audio' });
   const { view, runtime, root, props } = h;

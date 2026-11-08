@@ -28,6 +28,7 @@ import { markdownPreviewRehypePlugins, normalizeDisplayMathWithSourceMap } from 
 import { FileMarkdownBody } from "./FileMarkdownBody";
 import { NativeDocumentPreview } from "./NativeDocumentPreview";
 import { AudioSpeedControl } from "./AudioSpeedControl";
+import { releaseMarkdownMedia } from "@/lib/markdown-media";
 import type { ReviewBatchDraft, ReviewChatDestination } from "@/lib/review-handoff";
 import { GuidedReviewEntry } from "./GuidedReviewReader";
 import { DelimitedTable } from "./DelimitedTable";
@@ -40,6 +41,7 @@ import { createDiffReview } from "@/lib/git-diff-review";
 import { useI18n } from "@/hooks/useI18n";
 import {
   resolveInitialFileDisplayMode,
+  isFileDraftDirty,
   type FileViewerDisplayMode as DisplayMode,
   type FileViewerState,
   type FileEditDraft,
@@ -74,6 +76,8 @@ interface Props {
   onDraftChange?: (draft: FileEditDraft | undefined) => void;
   onSavingChange?: (saving: boolean) => void;
   watchEnabled?: boolean;
+  /** Whether the pane is visible and uncovered. Hidden native previews are disposable. */
+  active?: boolean;
   /** Observe complete admitted work without cancelling it when a reader is hidden or removed. */
   onWork?: (work: Promise<unknown>, kind?: "grammar" | "diff-highlighter") => void;
 }
@@ -491,6 +495,16 @@ function formatDuration(seconds: number): string {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
+function FileMedia({ tag: Tag, mediaRef, ...props }: ComponentProps<"video"> & { tag: "audio" | "video"; mediaRef?: { current: HTMLMediaElement | null } }) {
+  const ref = useRef<HTMLMediaElement | null>(null);
+  useEffect(() => {
+    const media = ref.current;
+    if (media && typeof props.src === "string" && media.getAttribute("src") !== props.src) media.setAttribute("src", props.src);
+    return () => { if (media) releaseMarkdownMedia(media); };
+  }, [props.src]);
+  return <Tag {...props} ref={node => { ref.current = node; if (mediaRef) mediaRef.current = node; }} />;
+}
+
 function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true, onWork }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const observeWork = useFileWork(onWork);
@@ -631,8 +645,9 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true, onWo
               {error}
             </div>
           )}
-          <audio
-            ref={audioRef}
+          <FileMedia
+            tag="audio"
+            mediaRef={audioRef}
             key={src}
             controls
             preload="metadata"
@@ -788,7 +803,8 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true, onWo
               {error}
             </div>
           )}
-          <video
+          <FileMedia
+            tag="video"
             key={src}
             controls
             playsInline
@@ -999,8 +1015,19 @@ export function FileViewer({
   onDraftChange,
   onSavingChange,
   watchEnabled = true,
+  active = true,
   onWork,
 }: Props) {
+  const [pageVisible, setPageVisible] = useState(true);
+  useEffect(() => {
+    const update = () => setPageVisible(!document.hidden);
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+  const previewActive = active && pageVisible;
+  watchEnabled = watchEnabled && previewActive;
+  if (!previewActive && (isImagePath(filePath) || isAudioPath(filePath) || isVideoPath(filePath) || isDocumentPreviewPath(filePath))) return null;
   if (isImagePath(filePath)) {
     return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} onWork={onWork} />;
   }
@@ -1035,6 +1062,7 @@ export function FileViewer({
       onDraftChange={onDraftChange}
       onSavingChange={onSavingChange}
       watchEnabled={watchEnabled}
+      active={previewActive}
       onWork={onWork}
     />
   );
@@ -1062,6 +1090,7 @@ function TextFileViewer({
   onDraftChange,
   onSavingChange,
   watchEnabled = true,
+  active = true,
   onWork,
 }: Props) {
   const observeWork = useFileWork(onWork);
@@ -1120,9 +1149,14 @@ function TextFileViewer({
   });
   const onStateChangeRef = useRef(onStateChange);
   const [selectedLineRange, setSelectedLineRange] = useState<SelectedLineRange | null>(null);
-  const [editSnapshot, setEditSnapshot] = useState<{ content: string; revision: string; writable: boolean } | null>(
+  const [editSnapshot, storeEditSnapshot] = useState<{ content: string; revision: string; writable: boolean } | null>(
     initialDraft ? { content: initialDraft.baseline, revision: initialDraft.revision, writable: true } : null,
   );
+  const editSnapshotRef = useRef(editSnapshot);
+  const setEditSnapshot = useCallback((next: typeof editSnapshot) => {
+    editSnapshotRef.current = next;
+    storeEditSnapshot(next);
+  }, []);
   const editSession = useFileEditSession();
   const { draft, setDraft, saving, setSaving, bind: bindEditIdentity, identity: editIdentity } = editSession;
   const savingRef = useRef(saving);
@@ -1132,18 +1166,31 @@ function TextFileViewer({
   onDraftChangeRef.current = onDraftChange;
   const onSavingChangeRef = useRef(onSavingChange);
   onSavingChangeRef.current = onSavingChange;
-  const [editing, setEditing] = useState(Boolean(!initialLineTarget && draft && draft.content !== draft.baseline));
+  const [editing, setEditing] = useState(Boolean(!initialLineTarget && isFileDraftDirty(draft)));
   const savingElsewhere = Boolean(savePending && !saving);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [externalChange, setExternalChange] = useState(false);
+  const [externalChange, storeExternalChange] = useState(false);
+  const externalChangeRef = useRef(false);
+  const setExternalChange = useCallback((next: boolean) => {
+    externalChangeRef.current = next;
+    storeExternalChange(next);
+  }, []);
   const editRequestRef = useRef(0);
-  const dirty = Boolean(draft && draft.content !== draft.baseline);
+  const dirty = isFileDraftDirty(draft);
   draftRef.current = draft;
 
   const setFileDraft = useCallback((next: FileEditDraft | undefined) => {
-    draftRef.current = next;
-    setDraft(next);
-    onDraftChangeRef.current?.(next);
+    // Reverting is clean, except during an admitted save: that old baseline
+    // may differ from the in-flight submission and must survive it.
+    const snapshot = editSnapshotRef.current;
+    const prior = draftRef.current;
+    const unresolved = prior?.conflicted && next?.conflicted !== false && prior.revision === next?.revision && prior.baseline === next?.baseline;
+    const checked = next && (unresolved || externalChangeRef.current || (snapshot && (snapshot.revision !== next.revision || snapshot.content !== next.baseline)))
+      ? { ...next, conflicted: true } : next;
+    const retained = !savingRef.current && !isFileDraftDirty(checked) ? undefined : checked;
+    draftRef.current = retained;
+    setDraft(retained);
+    onDraftChangeRef.current?.(retained);
   }, [setDraft]);
 
   const navigationRestoreRef = useRef({ state: restoredState, mode: initialDisplayMode });
@@ -1244,7 +1291,7 @@ function TextFileViewer({
     if (!eligible.edit) {
       setEditSnapshot(null);
       setEditing(false);
-      if (draftRef.current && draftRef.current.content !== draftRef.current.baseline) setExternalChange(true);
+      if (isFileDraftDirty(draftRef.current)) setExternalChange(true);
       return;
     }
     try {
@@ -1252,7 +1299,7 @@ function TextFileViewer({
       const next = await response.json() as { content?: string; revision?: string; writable?: boolean; editIdentity?: string };
       if (requestId !== editRequestRef.current || savingRef.current) return;
       if (!response.ok || typeof next.content !== "string" || typeof next.revision !== "string") {
-        if (draftRef.current && draftRef.current.content !== draftRef.current.baseline) setExternalChange(true);
+        if (isFileDraftDirty(draftRef.current)) setExternalChange(true);
         else setEditSnapshot(null);
         return;
       }
@@ -1263,19 +1310,22 @@ function TextFileViewer({
         return;
       }
       setEditSnapshot({ content: next.content, revision: next.revision, writable: next.writable === true && Boolean(next.editIdentity) });
-      if (currentDraft && currentDraft.content !== currentDraft.baseline) {
+      if (currentDraft && isFileDraftDirty(currentDraft)) {
         setExternalChange(next.revision !== currentDraft.revision);
+        if (currentDraft.conflicted && next.revision === currentDraft.revision && next.content === currentDraft.baseline) {
+          setFileDraft({ ...currentDraft, conflicted: false });
+        }
       } else {
         if (currentDraft) setFileDraft(undefined);
         setExternalChange(false);
       }
     } catch {
       if (requestId === editRequestRef.current) {
-        if (draftRef.current && draftRef.current.content !== draftRef.current.baseline) setExternalChange(true);
+        if (isFileDraftDirty(draftRef.current)) setExternalChange(true);
         else setEditSnapshot(null);
       }
     }
-  })()), [sourceSessionId, cwd, setFileDraft, bindEditIdentity, observeWork]);
+  })()), [sourceSessionId, cwd, setFileDraft, bindEditIdentity, observeWork, setEditSnapshot, setExternalChange]);
 
   const fetchGitDiff = useCallback((targetPath: string) => observeWork((async () => {
     const eligible = probeEligibilityRef.current;
@@ -1308,7 +1358,7 @@ function TextFileViewer({
   const saveDraft = useCallback(() => observeWork((async () => {
     const current = draftRef.current;
     const eligible = probeEligibilityRef.current;
-    if (!current || current.content === current.baseline || saving || savingElsewhere || !eligible?.edit
+    if (!current || !isFileDraftDirty(current) || saving || savingElsewhere || !eligible?.edit
       || eligible.path !== filePath || eligible.cwd !== cwd || eligible.sessionId !== sourceSessionId) return;
     editRequestRef.current += 1;
     savingRef.current = true;
@@ -1328,23 +1378,29 @@ function TextFileViewer({
         return;
       }
       setEditSnapshot({ content: current.content, revision: result.revision, writable: true });
+      setExternalChange(false);
       // Keep keystrokes typed during the request as a new draft.
       const latest = draftRef.current;
       setFileDraft(latest && latest.content !== current.content
         ? { content: latest.content, baseline: current.content, revision: result.revision }
         : undefined);
-      setExternalChange(false);
       void fetchContent(filePath);
       void fetchGitDiff(filePath);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
     } finally {
+      // A lost/failed acknowledgement cannot certify the old baseline. Typing
+      // back to it while Save was held must survive an uncertain write too.
+      const latest = draftRef.current;
+      if (latest && latest.content !== current.content && latest.content === latest.baseline) {
+        setFileDraft({ ...latest, conflicted: true });
+      }
       editRequestRef.current += 1;
       savingRef.current = false;
       setSaving(false);
       onSavingChangeRef.current?.(false);
     }
-  })()), [filePath, cwd, sourceSessionId, saving, savingElsewhere, editIdentity, setSaving, setFileDraft, fetchContent, fetchGitDiff, observeWork]);
+  })()), [filePath, cwd, sourceSessionId, saving, savingElsewhere, editIdentity, setSaving, setFileDraft, fetchContent, fetchGitDiff, observeWork, setEditSnapshot, setExternalChange]);
 
   // Reset and load the file itself when its identity changes. Live watching is
   // managed separately so pausing it never clears the displayed content.
@@ -1932,7 +1988,7 @@ function TextFileViewer({
           <CommittedPatchDiff key={`${filePath}:${gitDiff.revision ?? gitDiff.patch}`} patch={gitDiff.patch!} hasBinaryChanges={false} onWork={observeDiffWork} onReadWork={observeWork}
             before="HEAD" after="Working tree" reviewModel={diffReview} loadContext={gitDiff.revision ? loadWorkingContext : undefined}
             onRefresh={() => void fetchGitDiff(filePath)} />
-        ) : isHtml && effectiveDisplayMode === "preview" ? (
+        ) : isHtml && effectiveDisplayMode === "preview" ? (active &&
           <iframe
             srcDoc={content}
             sandbox="allow-scripts"

@@ -1,10 +1,10 @@
-{ lib, stdenv, makeWrapper, nodejs, git, util-linux, noto-fonts, src, manifest, modules, thirdPartySources }:
+{ lib, stdenv, makeWrapper, nodejs, esbuild, git, util-linux, noto-fonts, src, manifest, modules, thirdPartySources }:
 stdenv.mkDerivation {
   pname = "brabbler";
   version = manifest.version;
   inherit src;
   outputs = [ "out" "tarball" ];
-  nativeBuildInputs = [ nodejs makeWrapper ];
+  nativeBuildInputs = [ nodejs esbuild makeWrapper ];
   # The only dependency installation/native rebuild is the manifest-keyed
   # modules derivation. Next's build gets a private physical copy; runtime uses
   # the exact immutable output. Never install over a working checkout.
@@ -23,6 +23,7 @@ stdenv.mkDerivation {
     chmod -R u+w node_modules
     cp ${thirdPartySources}/SOURCE-AVAILABILITY.json public/third-party/
     node ${./collect-notices.mjs} node_modules public/third-party public/third-party/SOURCE-AVAILABILITY.json
+    node bin/build-mermaid-renderer.mjs
     npm run build
     runHook postBuild
   '';

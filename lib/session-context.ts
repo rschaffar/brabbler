@@ -177,7 +177,7 @@ function base64ImageInfo(block: unknown): { bytes: number; mime?: string } | nul
   return { bytes: Math.max(0, Math.floor(data.length * 3 / 4) - padding), mime };
 }
 
-function deferToolResultBase64Images(
+export function deferToolResultBase64Images(
   message: AgentMessage,
   sessionId: string | undefined,
   entryId: string,
@@ -224,6 +224,19 @@ function deferToolResultBase64Images(
   return { ...message, content };
 }
 
+/** Shared by saved history and persisted live completions. Original block indices
+ * remain intact so the existing entry-scoped thinking reader can reload the body. */
+export function deferMessageThinking(message: AgentMessage): AgentMessage {
+  if (message.role !== "assistant") return message;
+  let changed = false;
+  const content = message.content.map(block => {
+    if (block.type !== "thinking" || block.deferred || !block.thinking.trim()) return block;
+    changed = true;
+    return { ...block, thinking: getThinkingPreview(block.thinking), deferred: true };
+  });
+  return changed ? { ...message, content } : message;
+}
+
 // Convert a session entry on the active branch into a UI message.
 // Returns null for entries that do not map to chat history (metadata, non-message types).
 function entryToUiMessage(
@@ -248,16 +261,7 @@ function entryToUiMessage(
       if (typeof legacyContent === "string") {
         message = { ...message, content: [{ type: "text", text: legacyContent }] } as AgentMessage;
       }
-      if (!options.deferThinking || message.role !== "assistant") return message;
-      const content = message.content;
-      return {
-        ...message,
-        content: content.map((block) => (
-          block.type === "thinking" && block.thinking.trim() !== ""
-            ? { ...block, thinking: getThinkingPreview(block.thinking), deferred: true }
-            : block
-        )),
-      };
+      return options.deferThinking ? deferMessageThinking(message) : message;
     }
     case "compaction":
       return {

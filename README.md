@@ -220,6 +220,8 @@ Nix realizes prerequisites automatically; no preparation ceremony, checkout depe
 
 **Never run `next build` or `npm run build` in a working checkout.** Isolated Nix package builds are supported for acceptance and cannot interfere with a manual development server's `.next`. Manual development remains separate, not an acceptance mode. Settled runs clean only their own regenerable bulk while retaining evidence; see [testing](./docs/testing.md) for resource budgets, diagnostics and retention.
 
+The default `nix develop` shell prepares dependencies and regenerates the disposable Mermaid renderer's ignored `public/mermaid-renderer/` assets using flake-pinned esbuild. After changing its entry, rerun `node bin/build-mermaid-renderer.mjs` inside that shell. This is a renderer-asset preparation step, not a checkout production build. Package acceptance generates the same assets inside its isolated builder; packaged runtime needs no bundler.
+
 The flake pins nixpkgs, Home Manager, Node and Chromium through `flake.lock`.
 The current Nix baseline is Node **24.21.0**, with TypeScript **6.0.3** and Node 24
 typings in root/demo. The launcher and both manifests require Node **24.0.0 or

@@ -4,6 +4,12 @@ export interface FileEditDraft {
   content: string;
   baseline: string;
   revision: string;
+  /** The old baseline is no longer current; equal text is still unsaved input. */
+  conflicted?: boolean;
+}
+
+export function isFileDraftDirty(draft?: FileEditDraft): boolean {
+  return Boolean(draft && (draft.conflicted || draft.content !== draft.baseline));
 }
 
 export interface FileViewerState {
