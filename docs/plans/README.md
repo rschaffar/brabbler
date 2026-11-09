@@ -26,6 +26,18 @@ Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
 
+## Notebook-wide reference refresh
+
+The [implementation record](archived/2026-11-09_notebook-refresh-plan.md) closes the
+initial tooling slice: revision-bound target inventory, mapping-scoped bulk
+refresh, explicit source destinations and bounded diagnostics. Independent reviews
+closed; complete Nix acceptance passed **534 files / 4,637 tests**, all **26
+browser/terminal groups / 61 input chains** and genuine deployment. The
+[notebook guide](../review-notebooks.md) owns current contracts. This archive is an
+implementation handoff, not proof of Git integration: mandatory local integration
+and cleanup remain owned by the native lifecycle and its exact-state receipts.
+Derived assets and automatic correspondence remain outside this slice.
+
 ## Contextual model settings and shared thinking defaults
 
 The [verified UI follow-up](archived/2026-11-02_model-settings-ux-plan.md) places catalog account selection in provider detail and shared native per-model thinking defaults on the model rows. It preserves account-bound catalogs, shared preferences, project/pin precedence, explicit conversation intent and durable/read-only recovery. After the independent Copilot tool-schema integration, complete Nix acceptance passed **523 files / 4,429 tests**, all **26 browser/terminal groups / 58 inputs** and the genuine Home Manager VM in **517 seconds**, including realization, at resource-admitted four/four overlap. [Model/account contracts](../model-internals.md) owns current behavior. Exact local integration, deployment, publication and resource cleanup retain separate gates; archival is not their receipt. The adjacent account-catalog plan retains its distinct consuming-input follow-up.

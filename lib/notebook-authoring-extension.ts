@@ -9,6 +9,8 @@ type RefreshResult = Awaited<ReturnType<typeof analyzeNotebookReferences>> | Awa
 const filePath = () => Type.String({ minLength: 1, maxLength: 4096, description: "Explicit absolute physical path; does not grant file access" });
 const stableId = () => Type.String({ pattern: "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$" });
 const revision = () => Type.String({ pattern: "^[a-f0-9]{64}$" });
+const pageFields = { offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 512 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 32 })) };
+const referenceBindingSchema = Type.Object({ version: Type.Literal(1), digest: revision() }, { additionalProperties: false });
 export const notebookBindingSchema = Type.Object({
   indexPath: filePath(), notebookId: stableId(), manifestRevision: revision(),
   chapterPath: filePath(), chapterRevision: revision(), stepId: stableId(),
@@ -34,35 +36,38 @@ export function createNotebookAuthoringExtension(roots: () => Promise<Set<string
     pi.on("session_shutdown", () => { retired = true; });
     pi.registerTool(defineTool({
       name: "notebook_inspect", label: "Inspect notebook", exposure: "direct", annotations: { readOnlyHint: true },
-      description: "Inspect a guided Markdown notebook's compact outline and validation. Supply a stable stepId to obtain that complete step's source, pinned references and revision binding. Reads only declared index/chapters, not assets, Git or saved review records. Requires active read permission; no browser pane needed.",
-      parameters: Type.Object({ indexPath: filePath(), stepId: Type.Optional(stableId()) }, { additionalProperties: false }),
+      description: "Inspect a guided Markdown notebook's outline, or supply inventory for target definitions in 1–32-item/48-KiB complete-response pages (continue with its revision). Supply stepId instead for complete step source and edit binding. Reads only declared index/chapters, not assets, Git or saved records. Requires read; paths grant no access.",
+      parameters: Type.Object({ indexPath: filePath(), stepId: Type.Optional(stableId()), inventory: Type.Optional(Type.Object({ ...pageFields, revision: Type.Optional(revision()) }, { additionalProperties: false })) }, { additionalProperties: false }),
       async execute(_id, params, signal) {
         const check = () => assertGrant("notebook_inspect", false, signal);
+        if (params.stepId !== undefined && params.inventory !== undefined) throw new Error("Choose a step or inventory, not both");
         check(); const admitted = await roots(); check();
-        return result(inspectNotebook(params.indexPath, admitted, params.stepId));
+        return result(inspectNotebook(params.indexPath, admitted, params.stepId, params.inventory));
       },
     }));
     pi.registerTool(defineTool({
       name: "notebook_refresh_references", label: "Refresh notebook references", exposure: "direct", executionMode: "sequential",
-      description: "Analyze explicit repository-scoped one-to-one full-OID mappings for named notebook targets. Returns conservative metadata proposals, unresolved cases and a binding; never infers commit correspondence or changes Git. Then explicitly apply acceptedTargets with the same mappings/binding after inspecting affected prose. Analyze needs read; apply additionally needs edit and revalidates evidence, repository/branch identities and notebook revisions. Equal excerpts/patches never upgrade old test claims. Partial file results stop without rollback; reread before any retry.",
+      description: "Analyze explicit checkout-scoped one-to-one full-OID maps for named targets or targetIds:'mapped' (discover only mapped Git targets in that checkout). Optional source destinations explicitly override path/range; no rename/correspondence guessing. Analyzes the whole selection (max 512) under unchanged Git budgets; returns summary, full-selection binding and 1–32-item/48-KiB complete-response report pages. Continue with report.binding; detail:'full' shows proposals/source previews, filter:'attention' shows exceptions. Apply explicit acceptedTargets with the same mappings/binding after prose review; report is analyze-only. Read required; apply also needs edit and fresh package/repository/evidence validation. Partial saves stop without rollback/replay. No Git mutations/tests; historical claims remain pinned.",
       parameters: Type.Object({
         mode: Type.Union([Type.Literal("analyze"), Type.Literal("apply")]), indexPath: filePath(),
-        mappings: Type.Array(Type.Object({ cwd: filePath(), targetIds: Type.Array(stableId(), { minItems: 1, maxItems: 32 }),
+        mappings: Type.Array(Type.Object({ cwd: filePath(), targetIds: Type.Union([Type.Array(stableId(), { minItems: 1, maxItems: 512 }), Type.Literal("mapped")]),
           pairs: Type.Array(Type.Object({ oldOid: Type.String({ pattern: "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" }), newOid: Type.String({ pattern: "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" }) }, { additionalProperties: false }), { minItems: 1, maxItems: 64 }),
+          destinations: Type.Optional(Type.Array(Type.Object({ targetId: stableId(), path: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })), start: Type.Optional(Type.Integer({ minimum: 1 })), end: Type.Optional(Type.Integer({ minimum: 1 })) }, { additionalProperties: false }), { minItems: 1, maxItems: 512 })),
         }, { additionalProperties: false }), { minItems: 1, maxItems: 8 }),
-        binding: Type.Optional(Type.Object({ version: Type.Literal(1), digest: revision() }, { additionalProperties: false })),
-        acceptedTargets: Type.Optional(Type.Array(stableId(), { minItems: 1, maxItems: 32 })),
+        report: Type.Optional(Type.Object({ ...pageFields, filter: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("attention")])), detail: Type.Optional(Type.Union([Type.Literal("compact"), Type.Literal("full")])), binding: Type.Optional(referenceBindingSchema) }, { additionalProperties: false })),
+        binding: Type.Optional(referenceBindingSchema),
+        acceptedTargets: Type.Optional(Type.Array(stableId(), { minItems: 1, maxItems: 512 })),
       }, { additionalProperties: false }),
       async execute(_id, params, signal) {
         const apply = params.mode === "apply";
         if (params.mode !== "analyze" && !apply) throw new Error("Unknown reference refresh mode");
-        if (apply ? !params.binding || !params.acceptedTargets : params.binding !== undefined || params.acceptedTargets !== undefined) throw new Error("Analyze takes mappings only; apply requires its binding and explicit accepted targets");
+        if (apply ? !params.binding || !params.acceptedTargets || params.report !== undefined : params.binding !== undefined || params.acceptedTargets !== undefined) throw new Error("Analyze takes mappings/report only; apply requires binding and explicit accepted targets, without report");
         const read = () => assertGrant("notebook_refresh_references", false, signal);
         const write = () => assertGrant("notebook_refresh_references", true, signal);
         const check = apply ? write : read;
         check(); const admitted = await roots(); check();
         const access = { roots: admitted, assertRead: read, assertWrite: write, signal };
-        if (!apply) return result<RefreshResult>(await analyzeNotebookReferences(params.indexPath, params.mappings, access));
+        if (!apply) return result<RefreshResult>(await analyzeNotebookReferences(params.indexPath, params.mappings, access, params.report));
         const applied = await applyNotebookReferences(params.indexPath, params.mappings, params.binding!, params.acceptedTargets!, access);
         return { ...result<RefreshResult>(applied), ...(applied.status === "applied" ? {} : { isError: true }) };
       },

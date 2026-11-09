@@ -406,6 +406,14 @@ operations below need no browser pane or original conversation.
   objects, browser storage or `review-data/`. Malformed packages refuse explicitly.
 - Add `stepId` to obtain that complete step's Markdown (including its leading
   `brabbler-step` fence), pinned reference definitions, writability and `binding`.
+- Alternatively pass `inventory: {}` for target definitions, stable target/step IDs,
+  chapter paths, counts and a whole-package `revision`, without loading Git or assets.
+  Inventory replaces the outline; it cannot be combined with `stepId`. Continue
+  with `inventory: { offset: page.nextOffset, revision }`; a positive offset requires
+  that revision, and any changed chapter/manifest/edit identity refuses continuation.
+  Optional `limit` is 1–32 (default 32). The complete JSON response, including its
+  envelope, is bounded to 48 KiB UTF-8, so always follow `nextOffset`, not a presumed
+  fixed page width.
 - `notebook_update_step({ indexPath, stepId, binding, source })` replaces exactly
   that step. Pass the unmodified binding from a fresh inspection and the complete
   replacement source, retaining its stable ID and a separator before its neighbor.
@@ -430,22 +438,59 @@ passed tests. Ask the reader to **Reload guide** after an explicit saved revisio
 
 Use `notebook_refresh_references` in two explicit phases. First supply
 `mode: "analyze"`, `indexPath` and `mappings`: one entry per physical checkout,
-with its `cwd`, named `targetIds`, and `pairs` of full `oldOid`/`newOid` values.
-For a comparison, map **both** endpoints; an unchanged endpoint uses an explicit
-identity pair. The agent must first establish correspondence through authorized
-local Git inspection. Subjects, similar patches and branch tips are not mappings.
+with its `cwd`, `targetIds` and `pairs` of full `oldOid`/`newOid` values. Select
+explicit stable target IDs, or use `targetIds: "mapped"` to discover matching Git
+references throughout the declared notebook. Discovery includes only that exact
+checkout's targets with at least one old OID in the supplied map; it excludes
+file/web targets and other checkouts, even with identical OIDs. A partially mapped
+comparison is selected but unresolved, not silently omitted. For a comparison,
+map **both** endpoints; an unchanged endpoint uses an explicit identity pair. The
+agent must first establish correspondence through authorized local Git inspection. Subjects, similar patches and branch tips are not mappings.
 
-Analysis returns each original/proposed target, separate byte-evidence axes,
-unresolved cases, and an opaque `binding`. It reads explicit locally present old
-objects even when unreachable, while new references must satisfy normal reader
-admission. It never infers checkout, branch or path changes. Multiple entries for the same checkout,
+Analysis processes the **whole selection**, then returns whole-selection counts,
+a bounded result page and an opaque full-selection `binding`. Paging is presentation,
+not a smaller analysis or acceptance scope. Named-target calls default to full
+results; mapped discovery defaults to compact rows. Use optional
+`report: { detail: "full", filter: "attention", limit: 8 }` for proposals and source
+previews of unresolved or prose-review targets. The filter is optional (`all` by
+default); `detail: "compact"` omits repeated reference/repository data and previews.
+Each row retains its stable target/step IDs and chapter location. Full results
+include original/proposed targets, separate byte-evidence axes and unresolved cases.
+Source previews contain at most 2,048 bytes per side, an explicit truncation flag,
+complete excerpt byte length and SHA-256; a preview is not the complete excerpt
+when truncated.
+
+Follow `page.nextOffset` with `report: { offset, binding, ... }`, using the original
+mappings and the prior full-selection binding. A positive offset requires that
+binding. Every page reanalyzes current admitted inputs; package, mapping, destination,
+repository or branch changes refuse stale continuation. Filters/detail/width do not
+change the binding. Pages contain at most 32 rows and the complete JSON response
+is at most 48 KiB UTF-8; a byte-limited page can be shorter. An individual full row
+that cannot fit refuses with a diagnostic; use compact detail and inspect the step. No plan database, background job or cross-call
+Git cache is introduced. To reduce Git work, select a smaller named target set,
+not a smaller report page.
+
+Analysis reads explicit locally present old objects even when unreachable, while
+new references must satisfy normal reader admission. It never infers checkout, branch or path changes. Multiple entries for the same checkout,
 repeated/split/squashed mappings, missing objects, invalid destinations,
 ambiguous relocation and incomplete/unsupported evidence remain unresolved. Other
-independently valid targets remain available.
+independently valid targets remain available. Analysis never guesses a new path.
+
+For a known source destination, add `destinations` to its checkout mapping, for
+example `[{ "targetId": "reader-source", "path": "src/reader.ts", "start": 24,
+"end": 39 }]`. Each entry names a selected source target and overrides its path,
+range, or both. Paths remain literal repository-relative Git paths; ranges require
+both endpoints and the existing 1–400-line/actual-EOF bounds. Duplicate, unselected,
+empty or malformed destinations refuse; non-source overrides are unresolved. A
+path-only override may still propose a unique exact multiline relocation. An
+explicit range is used exactly, never replaced by an inferred match elsewhere.
+All overrides enter the full analysis/application binding and destination admission.
+Equal bytes at an explicitly changed path/range are `moved`, not `unchanged`; changed
+excerpt bytes are `changed`. Neither proves semantic equivalence.
 
 - Source results distinguish exact excerpt bytes, location, surrounding-file
   identity and that file's first-parent material. `unchanged` for a source means
-  the **excerpt at the same coordinates**, not equivalent behavior or an unchanged
+  the **excerpt at the same path and coordinates**, not equivalent behavior or an unchanged
   surrounding file. Only a unique complete multi-line byte span can propose new
   coordinates; a single-line match cannot relocate a reference.
 - Commit equality requires the complete bounded canonical changed-file inventory,
@@ -453,7 +498,10 @@ independently valid targets remain available.
   tree. Rename-aware reader presentation is not equivalence evidence.
 - Comparisons retain explicit endpoint-tree and delete/add semantics. Both new
   endpoints must be reachable, ordered by ancestry, and the path must change.
-- `proseReviewRequired` highlights changed evidence/context. Even exact bytes do
+- `evidenceScope` distinguishes `source-excerpt`, `whole-commit-first-parent` and
+  `comparison-path`; structured `reviewReasons` distinguish changed path/range,
+  excerpt, surrounding file, first-parent inventory or comparison endpoint files.
+  `proseReviewRequired` highlights changed evidence/context. Even exact bytes do
   not prove semantic equivalence or rerun tests. Old test claims remain pinned to
   their original candidate; no tool rewrites those claims automatically.
 
@@ -473,10 +521,28 @@ not-written failures, attempted-but-unknown outcomes and unattempted files. Stop
 on partial/uncertain results, reread, and analyze anew. Never replay a possibly
 completed save or roll back over newer changes. Use **Reload guide** after saving.
 
-Bounds are intentionally conservative: at most 8 checkout mappings, 32 named
-targets total and 64 OID pairs per mapping; existing notebook limits still apply.
-Git analysis/application shares a 60-second, 2,048-process, 32-MiB aggregate output
-budget, with joined cancellation and per-read limits. Commit metadata is capped
+Bounds remain conservative: at most 8 checkout mappings, 512 selected/accepted
+stable targets total and 64 OID pairs per mapping; existing notebook limits still
+apply. Apply accepts explicit target IDs, not an entire report page or status class.
+`report` is analyze-only. The same bindings and original mappings are required for
+application, including every explicit source destination.
+
+Git analysis/application still shares one 60-second, 2,048-process, 32-MiB aggregate
+output budget, with joined cancellation and per-read limits. Verified immutable
+commit/blob/tree/first-parent material is reused only during that operation, with
+an additional 8,192-entry ceiling. Binary/symlink blobs remain valid for complete
+commit inventories; source text uses the ordinary reader's decoder/type/line rules.
+Reachability reuse includes the captured head and physical repository identity.
+Current grants, physical-root admission and mutable repository/ref probes are never
+cached: analysis captures each used checkout/branch once and freshly guards every
+capture before returning, including targets with unresolved evidence. Apply starts
+fresh and guards the distinct repositories again before each file save. Aggregate
+work exhaustion is sticky even through translated Explorer errors and cannot yield
+an applicable incomplete analysis; use a smaller explicit target selection rather
+than resetting budgets per page or repository. Cache-heavy analysis yields to the
+event loop between bounded target batches so pending cancellation can be delivered.
+The 512-target selection bound is not a guarantee that arbitrary large objects or
+comparisons fit the work budget. Commit metadata is capped
 at 64 KiB/16 parents, complete commit inventories at 256 changed paths, and each
 blob at 1 MiB; text readers retain their line/type limits. Unsupported submodule
 objects cannot establish whole-commit equality. Bound exhaustion never counts as
