@@ -3,6 +3,7 @@ import path from "node:path";
 import { GUIDED_LIMITS, notebookMetadataRanges, parseNotebookChapter, parseNotebookIndex, validateNotebook, type GuidedNotebook, type GuidedStep } from "./guided-review";
 import { readNotebookBytes, NotebookReadError } from "./guided-review-server";
 import { loadEditableFile, saveEditableFile } from "./file-edit";
+import { notebookPage, type NotebookPageOptions } from "./notebook-report";
 
 export interface NotebookFile {
   path: string;
@@ -72,8 +73,19 @@ export function locateNotebookStep(package_: AuthoringNotebook, stepId: string) 
   };
   return { chapterIndex, stepIndex, step, file, start, end, binding, source: file.source.slice(start, end) };
 }
-export function inspectNotebook(indexPath: string, roots: Set<string>, stepId?: string) {
+export const notebookPackageIdentity = (package_: AuthoringNotebook) => [package_.manifest, ...package_.chapters].map(file => ({ path: file.path, revision: file.revision, editIdentity: file.editIdentity, writable: file.writable }));
+export function inspectNotebook(indexPath: string, roots: Set<string>, stepId?: string, inventory?: NotebookPageOptions & { revision?: string }) {
+  if (stepId !== undefined && inventory !== undefined) throw new Error("Choose a selected step or target inventory, not both");
   const package_ = readAuthoringNotebook(indexPath, roots);
+  if (inventory !== undefined) {
+    if ((inventory.offset ?? 0) > 0 && inventory.revision === undefined) throw new Error("Continue notebook inventory with its revision");
+    const revision = notebookDigest(JSON.stringify(notebookPackageIdentity(package_)));
+    if (inventory.revision !== undefined && inventory.revision !== revision) throw new Error("Notebook inventory changed; inspect again before paging");
+    const targets = package_.notebook.chapters.flatMap(chapter => chapter.steps.flatMap(step => step.targets.map(reference => ({ chapterPath: chapter.path, stepId: step.id, targetId: reference.id, reference }))));
+    const summary = { targets: targets.length, gitTargets: targets.filter(target => ["source", "commit", "compare"].includes(target.reference.kind)).length };
+    return notebookPage(targets, inventory, (targets, page) => ({ indexPath, notebookId: package_.notebook.index.id, title: package_.notebook.index.title, revision,
+      diagnostics: [] as string[], targets, page, summary }));
+  }
   const selected = stepId === undefined ? undefined : locateNotebookStep(package_, stepId);
   return {
     indexPath, notebookId: package_.notebook.index.id, title: package_.notebook.index.title,

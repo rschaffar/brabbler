@@ -8,10 +8,19 @@ export const GIT_READ_LIMITS = { processes: 2048, bytes: 32 * 1024 * 1024, milli
 interface Scope {
   signal: AbortSignal; check: () => void; processes: number; bytes: number; closed: boolean;
   pending: Set<Promise<Buffer>>;
+  failure?: GitReadLimitError;
 }
 const scopes = new AsyncLocalStorage<Scope>();
 export const hasGitReadScope = () => scopes.getStore() !== undefined;
 export class GitReadLimitError extends Error { readonly code = "GIT_READ_LIMIT"; }
+/** Budget failures survive adapters which translate native errors. Call before
+ * publishing read-only analysis; do not erase partial write-outcome reporting. */
+export function assertGitReadBudget() {
+  const scope = scopes.getStore();
+  if (!scope || scope.closed) throw new Error("A live Git read scope is required");
+  if (scope.failure) throw scope.failure;
+  scope.signal.throwIfAborted();
+}
 
 /** Opt-in aggregate ownership for notebook analysis. No scope grants path/Git
  * access; check() is the caller's live permission/cancellation guard. Narrower
@@ -40,7 +49,8 @@ export function scopedGitRead(cwd: string, args: string[], limit = 256 * 1024, s
   const scope = scopes.getStore();
   if (!scope || scope.closed) throw new Error("A live Git read scope is required");
   scope.signal.throwIfAborted(); signal?.throwIfAborted(); scope.check();
-  if (--scope.processes < 0 || scope.bytes <= 0) throw new GitReadLimitError("Git analysis exceeded its aggregate work budget");
+  if (scope.failure) throw scope.failure;
+  if (--scope.processes < 0 || scope.bytes <= 0) throw (scope.failure = new GitReadLimitError("Git analysis exceeded its aggregate work budget"));
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 2 * 1024 * 1024 || input && Buffer.byteLength(input) > 4096) throw new Error("Invalid Git read size");
   const owned = signal ? AbortSignal.any([signal, scope.signal]) : scope.signal;
   const safeArgs = ["diff", "diff-tree", "show", "log"].includes(args[0])
@@ -61,6 +71,7 @@ export function scopedGitRead(cwd: string, args: string[], limit = 256 * 1024, s
       encoding: "buffer", maxBuffer: limit,
     }, (error, stdout, stderr) => { result = { error, stdout, stderr }; finish(); });
     const stop = (error: unknown) => {
+      if (error instanceof GitReadLimitError) scope.failure ??= error;
       failure ??= error;
       if (closed) return;
       child.kill("SIGTERM"); escalation ??= setTimeout(() => { if (!closed) child.kill("SIGKILL"); }, 1000);
