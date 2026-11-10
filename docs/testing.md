@@ -71,7 +71,7 @@ evidence as a new-tip run.
 | --- | --- | --- |
 | `checks.<system>.core` | Exporter contracts, genuine Next type generation, TypeScript, lint, recursive core and bundled-plugin tests | Ordinary Nix sandbox, shared immutable modules |
 | `checks.<system>.e2e` | All 25 browser groups plus terminal, preserving existing scenario/input chains and deadlines | One ordinary Nix sandbox per whole group, installed production launcher, pinned Chromium and fonts |
-| `checks.<system>.service` | Genuine Home Manager activation/default-target startup, environment/permissions, durable HTTP writes/restart, real HTTP PTY and shutdown ownership | Small restricted-network, closure-only NixOS/KVM guest |
+| `checks.<system>.service` | Genuine Home Manager activation/default-target startup, environment/permissions, durable HTTP writes/restart, real HTTP PTY/shutdown ownership, and complete offline converter/native metadata coverage | Small restricted-network, closure-only NixOS/KVM guest |
 
 Core does not depend on the production bundle, Chromium or VM. Browser and service
 acceptance use the same Nix-built production package and installed launcher, not
@@ -86,7 +86,7 @@ namespace requirements are not supported by the current hosted-runner setup.
 Keep the Home Manager module and genuine deployment check available locally with
 `nix run .#test -- service`. Complete local acceptance (`all` or `nix flake check`)
 still includes all three levels; a green GitHub CI run alone is not complete
-Home Manager deployment evidence. Do not relax sandboxing or substitute the host
+Home Manager deployment or positive offline-conversion evidence. Do not relax sandboxing or substitute the host
 service to make hosted CI pass.
 
 Package and tests share a manifest/toolchain/platform-keyed dependency output,
@@ -128,10 +128,23 @@ review compatibility code is admitted only under the exact
 `tools/migrations/git-operation-reviews/` subtree, through its classified core bridge
 and test/static filesets. Other `tools/` contents are not traversed/admitted; the
 application and packed runtime exclude the entire tools tree. Synthetic codec/converter data is generated privately, not admitted through broader
-fixture-data extensions. The existing classified migration bridge exercises real
-filesystem/native/SDK conversion, byte/graph/model projection, branch-local proof,
-durable interruption/resume/restore and no-follow/refusal cases; it never admits a
-real history dataset. Operational copied-data rehearsal runs outside builders in
+fixture-data extensions. The classified migration bridge retains codec/import and actual metadata-refusal
+cases. A test-only additive child filter always exercises unavailable listing,
+even on an older daemon; EPERM exercises real Python query-error mapping. Missing,
+signaled and failed external probes also remain refusals with fixed diagnostics.
+The service VM runs all 29 original converter cases and three real empty-query,
+user-xattr and POSIX-ACL cases as an ordinary user, preserving byte/graph/model
+projection, branch-local proof, durable interruption/resume/restore and no-follow
+assertions. Its source layout references the same immutable modules, never another
+installation or modules copy. Neither owner admits a real history dataset.
+
+Nix 2.35.4 denies listing calls that 2.34.9 permitted. The external daemon owns
+that sandbox policy independently of the flake's client; identical dependencies
+alone do not imply identical capabilities. Never treat ENOTSUP as proof of absent
+metadata or weaken filters for a green check. The converter's positive owner must
+remain outside a builder filter. Mandatory guest case titles/input identities,
+complete TAP, root-private artifact hashes and separate converter/service cgroup
+settlement are checked before accepting service evidence. Operational copied-data rehearsal runs outside builders in
 the supported Node 24 Nix environment, not as an application acceptance fallback.
 
 Application inputs exclude `*.test.*`, `*.fixture.*` and `lib/testing`; test/static
