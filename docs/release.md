@@ -9,7 +9,7 @@ this is not an upstream release.
 - Repository selected by the owner: `https://github.com/rschaffar/brabbler`.
   Selection/local remote configuration does not create or remotely verify it.
 - Initial Brabbler version: **0.1.0**; Pi SDK compatibility is recorded separately
-  as **1.5.0**, including the guarded downstream policies below.
+  as **1.5.1**, including the guarded downstream policies below.
 - The root manifest remains `private: true`. No npm registry publication or
   package-name ownership is assumed. There is no automatic update query,
   release-upload job or demo deployment.
@@ -65,12 +65,14 @@ The archive contains `/third-party/NOTICE.md`, full legal texts, original legal
 text collected from pinned build dependencies and a generated source locator/hash.
 The application advertises the notice via `rel="license"`.
 
-ELK remains the Mermaid 12.2 default. Its source asset follows upstream elkjs
-0.9.3's documented ELK 0.9.1 + PR955 lineage: seven exactly applied patches,
-editable Java/JS/GWT sources, runtime source JARs, original build configuration,
-notices and input/tree hashes. Upstream did not record its external ELK checkout;
-no positive mismatch or additional change was found. No legal certification,
-independent upstream compilation or bit-identical regeneration is claimed.
+ELK remains enabled for normal Mermaid 12.3 layouts. Its source asset follows
+upstream elkjs 0.12.1's declared ELK 0.12.1 release: immutable source trees,
+editable Java/JS/Xtend/GWT, runtime source JARs and source-bearing adapters,
+original build configuration/notices and input/tree hashes. No PR955 patches
+apply. All twelve npm files match the elkjs release commit; publishing provenance
+does not identify the worker's external compilation checkout or mutable Gradle
+snapshot inputs. No legal certification, signature verification, independent
+upstream compilation or bit-identical regeneration is claimed.
 See [source access](../public/third-party/SOURCE-AVAILABILITY.md).
 
 Inspect the **actual** archive and generated browser/server chunks,
@@ -89,8 +91,9 @@ need separate review/authorization.
 
 The modular SDK retains the existing exact-byte child-environment patch.
 The application pins modular Undici **8.12.4**. A parent/version-scoped override
-also updates SDK 1.5.0's declared 8.12.3 dependency for the newer security fixes;
-the exact manifest and child-environment fingerprints remain unchanged. The
+also updates SDK 1.5.1's declared 8.12.3 dependency for the newer security fixes.
+The 1.5.1 manifest, twelve child-environment targets/helper and complete 85-entry
+standalone inventory are fingerprinted from actual upstream bytes. The
 owner-approved exclusion of the standalone `dist/bundle/` tree and its own `pi` CLI link remains the support
 boundary for Brabbler-owned installations, with a refreshed exact inventory. It is
 not a claim that the new bundle retains the old vulnerabilities. The modular embedded
@@ -107,12 +110,33 @@ See [dependency dispositions](dependencies.md) for scope and remaining obligatio
 
 ## Current evidence and release gates
 
-The later dependency/Nix maintenance candidate, keeping Node **24.21.0**, passed
+The November 10 dependency refresh (Node 24.22.2/shared Brotli 1.2.1, Pi 1.5.1,
+Next 16.4.6 and Mermaid 12.3/ELK 0.12.1) passed complete Linux acceptance:
+**534 core files / 4,638 tests / 14 suites**, **26 browser/terminal groups /
+61 receipts**, and the genuine Home Manager VM. Separate fresh command times
+were 304s / 350s / 99s, with preparation/execution envelopes recorded in the
+[maintenance record](plans/archived/2026-11-10_dependency-refresh-plan.md).
+A later narrow test-only ownership fix passed its complete changed-file/support
+selection and current static checks; unchanged evidence is reused by input identity,
+not relabelled as a fresh run. The exact archive also passed ordinary Linux
+Node 24.22.2 installation, SDK policy, auth/restart/HTTP PTY and source/notice smoke.
+
+Application SHA-256:
+`444626e00d656a7c55856fd44cba887f0337e8e41bb2a441ac8850b585729ec1`.
+Accompanying source SHA-256:
+`d7213b6a8a2be8c8ca196180c4e50067c8472b035276d4a13e5ac48ee56a381d`.
+The owner explicitly allowed this update's local integration without a new native
+macOS archive smoke; that check remains mandatory **before publication**. No
+publication, remote CI dispatch or installed-service activation occurred.
+
+The November 7 dependency/Nix maintenance candidate, keeping Node **24.21.0**, passed
 complete fresh Linux Nix acceptance: **529 core files / 4,495 tests / 14 suites**,
 all **26 browser/terminal groups / 60 receipts**, and genuine Home Manager
-deployment in **404 seconds**, including in-run realization. JSON API gzip remains
-supported through the exact-version/source-guarded Next compressor filter; review
-or remove it on the next Next upgrade as required by [dependency maintenance](dependencies.md).
+deployment in **404 seconds**, including in-run realization. JSON API gzip
+was supported there through the exact-version/source-guarded Next compressor
+filter. The current Next 16.4.6 update retires that adapter in favour of native
+compression; [dependency maintenance](dependencies.md) records the owner's
+small-response behaviour decision and current verification status.
 The [verified maintenance record](plans/archived/2026-11-07_runtime-maintenance-plan.md)
 binds inputs, phase timings, failures and limits. This is not a new native-macOS
 archive smoke, host activation, publication or resolution of the deferred Node

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { ownJsdomRenderingIntervals } from '../lib/testing/jsdom-rendering-intervals.fixture.mjs';
 import { createElement as h, act } from 'react';
 import { createJiti } from 'jiti';
 import { mount } from '../lib/testing/react.fixture.mjs';
@@ -12,6 +13,7 @@ const scalarError = error => error instanceof Error ? `${error.name}: ${error.me
  * Does not claim browser networking, layout, SDK, native auth or persistence.
  */
 export async function settingsFixture(t, { beforeRestore, loadGraph, capabilities, audioContext } = {}) {
+  const renderingIntervals = ownJsdomRenderingIntervals();
   const failures = [], descriptors = [], routes = [], requests = [], works = [], gates = [], continuations = [], timers = new Map();
   const realmDisposers = [], capabilitySettlers = [], realmDescriptors = [];
   let view, graph, admission = true, autoBodies = false, timerId = 0, disposed = false;
@@ -170,6 +172,7 @@ export async function settingsFixture(t, { beforeRestore, loadGraph, capabilitie
     await attempt(async () => { await view?.unmount(); });
     await attempt(beforeDispose);
     for (const dispose of realmDisposers) await attempt(dispose);
+    await attempt(() => renderingIntervals.close());
     for (const restore of descriptors.toReversed()) await attempt(restore);
     process.off('unhandledRejection', onRejection);
     process.off('uncaughtExceptionMonitor', onException);
@@ -180,7 +183,13 @@ export async function settingsFixture(t, { beforeRestore, loadGraph, capabilitie
   for (const name of ['EventSource', 'WebSocket', 'XMLHttpRequest', 'Worker', 'Audio', 'AudioContext']) save(globalThis, name, name === 'AudioContext' && audioContext ? audioContext : deny(`host ${name}`));
   save(globalThis, 'setTimeout', (callback, delay) => { const id = ++timerId; timers.set(id, { callback, delay }); return id; });
   save(globalThis, 'clearTimeout', id => timers.delete(id));
-  save(globalThis, 'setInterval', deny('host interval'));
+  const denyHostInterval = deny('host interval');
+  save(globalThis, 'setInterval', (callback, delay, ...args) => {
+    // jsdom's rendering/focus cadence is not an application interval capability.
+    if (delay === 1000 / 60) return renderingIntervals.start(callback, ...args);
+    return denyHostInterval();
+  });
+  save(globalThis, 'clearInterval', handle => renderingIntervals.clear(handle));
   // These APIs are explicit unsupported geometry/scheduling capabilities, not native layout.
   save(globalThis, 'requestAnimationFrame', callback => { const id = ++timerId; timers.set(id, { callback: () => callback(0), delay: 'frame' }); return id; });
   save(globalThis, 'cancelAnimationFrame', id => timers.delete(id));
@@ -224,7 +233,8 @@ export async function settingsFixture(t, { beforeRestore, loadGraph, capabilitie
       view = await mount({ after(dispose) { realmDisposers.push(dispose); } }, wrap(element), { beforeDispose, setup: async window => {
         for (const name of ['EventSource', 'WebSocket', 'XMLHttpRequest', 'Worker', 'Audio', 'AudioContext']) saveRealm(window, name, name === 'AudioContext' && audioContext ? audioContext : deny(`realm ${name}`));
         saveRealm(window, 'fetch', fetchDouble);
-        for (const name of ['setTimeout', 'clearTimeout', 'setInterval', 'requestAnimationFrame', 'cancelAnimationFrame']) saveRealm(window, name, globalThis[name]);
+        for (const name of ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame']) saveRealm(window, name, globalThis[name]);
+        saveRealm(window, 'setInterval', deny('realm interval'));
         saveRealm(globalThis, 'localStorage', window.localStorage);
         saveRealm(window.navigator, 'sendBeacon', deny('beacon'));
         saveRealm(window, 'open', deny('popup'));

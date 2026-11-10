@@ -22,29 +22,36 @@ interface RuntimeSdk {
 }
 const nativeImport = (file: string) => import(/* webpackIgnore: true */ pathToFileURL(file).href);
 function distribution(): string {
-  // SDK 1.5 exposes neither its pure validator nor credential-store constructor.
+  // SDK 1.5.1 exposes neither its Pi-specific validator nor credential-store constructor.
   // Keep this version-scoped bridge separate from host policy and native engines.
   const manifest = findPackageJSON("@earendil-works/pi-coding-agent", pathToFileURL(join(__dirname, "brabbler-native-mcp.mjs")).href);
-  if (!manifest || JSON.parse(readFileSync(manifest, "utf8")).version !== "1.5.0") throw new Error("Unsupported native MCP SDK version");
+  if (!manifest || JSON.parse(readFileSync(manifest, "utf8")).version !== "1.5.1") throw new Error("Unsupported native MCP SDK version");
   return join(dirname(manifest), "dist");
 }
+function transportEntry(dist: string): string {
+  const manifest = findPackageJSON("@earendil-works/pi-mcp", pathToFileURL(join(dist, "index.js")).href);
+  if (!manifest || JSON.parse(readFileSync(manifest, "utf8")).version !== "1.5.1") throw new Error("Unsupported native MCP transport version");
+  return join(dirname(manifest), "dist/index.js");
+}
 let configuration: Promise<ConfigurationSdk> | undefined;
-/** Pure parsing only: no runtime, credential store, transport or session import. */
+/** Parsing only: evaluates the public MCP entry, but constructs no transports,
+ * credential stores or sessions and never imports the session runtime. */
 export function nativeMcpConfigurationSdk(): Promise<ConfigurationSdk> {
   return configuration ??= (async () => {
-    const core = await nativeImport(join(distribution(), "core/mcp-servers.js"));
-    if (typeof core.validateMcpServerConfig !== "function" || typeof core.mcpNamespace !== "function") throw new Error("Unsupported native MCP configuration surface");
-    return { validateServer: core.validateMcpServerConfig, namespace: core.mcpNamespace };
+    const dist = distribution();
+    const [core, naming] = await Promise.all([
+      nativeImport(join(dist, "core/mcp-servers.js")), nativeImport(transportEntry(dist)),
+    ]);
+    if (typeof core.validateMcpServerConfig !== "function" || typeof naming.mcpNamespace !== "function") throw new Error("Unsupported native MCP configuration surface");
+    return { validateServer: core.validateMcpServerConfig, namespace: naming.mcpNamespace };
   })();
 }
 let runtime: Promise<RuntimeSdk> | undefined;
 export function nativeMcpRuntimeSdk(): Promise<RuntimeSdk> {
   return runtime ??= (async () => {
     const dist = distribution();
-    const manifest = findPackageJSON("@earendil-works/pi-mcp", pathToFileURL(join(dist, "index.js")).href);
-    if (!manifest || JSON.parse(readFileSync(manifest, "utf8")).version !== "1.5.0") throw new Error("Unsupported native MCP transport version");
     const [native, transports] = await Promise.all([
-      nativeImport(join(dist, "extensions/mcp/runtime.js")), nativeImport(join(dirname(manifest), "dist/index.js")),
+      nativeImport(join(dist, "extensions/mcp/runtime.js")), nativeImport(transportEntry(dist)),
     ]);
     if ([native.createDefaultTransport, native.McpOAuthCredentialStore, transports.StdioTransport, transports.StreamableHttpTransport].some(value => typeof value !== "function")) throw new Error("Unsupported native MCP runtime surface");
     return { createDefaultTransport: native.createDefaultTransport, CredentialStore: native.McpOAuthCredentialStore,

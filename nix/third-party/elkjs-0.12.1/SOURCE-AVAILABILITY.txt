@@ -1,0 +1,18 @@
+ELK / elkjs source availability
+
+These materials preserve upstream elkjs 0.12.1's declared ELK 0.12.1 basis,
+editable JS/Java/Xtend/GWT sources, original build configuration, declared
+runtime sources, notices and exact input/tree hashes. No downstream ELK patches
+are required; the old 0.9.1 + PR955 payload is not reused.
+
+ELK/elkjs declare EPL-2.0 OR GPL-3.0-or-later; Brabbler continues under EPL-2.0.
+EMF-GWT common/ecore 2.12.4 retains EPL-1.0; Xbase/Xtend 2.36.0 retains EPL-2.0.
+GWT 2.13.0 and Guava 31.1-jre retain original Apache/additional notices.
+
+The npm publishing commit is identified and all 12 npm files match that commit.
+The external ELK checkout used to compile the worker remains unrecorded by the
+publishing workflow. See README.md and MANIFEST.json for full traceability limits.
+No independent build, exact compiler-input proof, byte-identical regeneration,
+attestation signature verification or legal certification is claimed.
+
+This proposed seed/recipe was not assembled or built during research.

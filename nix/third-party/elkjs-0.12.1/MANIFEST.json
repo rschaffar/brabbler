@@ -1,0 +1,301 @@
+{
+  "schemaVersion": 1,
+  "component": "elkjs 0.12.1 source materials",
+  "archive_root": "elkjs-0.12.1-source-materials",
+  "status": "Pinned source materials; assembly verifies original inputs and editable source-tree hashes",
+  "elkjs_gitHead": "624ae90aa37110033a8af59c5ccbb292708b4317",
+  "elk_base_tag": "v0.12.1",
+  "elk_base_commit": "3aa3b9fb98d8f9a41285b3061cff5efe79ed2ba4",
+  "patch_series": [],
+  "components": {
+    "elkjs": "0.12.1",
+    "elk": "0.12.1",
+    "emfGwt": "2.12.4",
+    "xbaseXtend": "2.36.0",
+    "gwt": "2.13.0",
+    "guava": "31.1-jre"
+  },
+  "source_archives": {
+    "elk": "originals/elk-v0.12.1-source.tar.gz",
+    "elkjs": "originals/elkjs-0.12.1-source.tar.gz"
+  },
+  "source_trees": {
+    "elk": {
+      "files": 2212,
+      "sha256_of_sorted_file_hash_listing": "1161c4bd81bd4fa3cbd0290278a9eb6d0d1d9016b2c97152e5623a3b58661080"
+    },
+    "elkjs": {
+      "files": 64,
+      "sha256_of_sorted_file_hash_listing": "a1c329fdd6113fee7ca1647bf2a797de593888732395854928588f5d2ba653d6"
+    }
+  },
+  "runtime_sources": {
+    "EMF-GWT common/ecore": "2.12.4 (EPL-1.0 headers)",
+    "Xbase/Xtend": "2.36.0 (EPL-2.0 headers); include GWT adapter JARs with Java super-sources",
+    "GWT": "2.13.0; source JAR and source-bearing gwt-user artifact for module/resources",
+    "Guava": "31.1-jre; source JAR and source-bearing guava-gwt artifact"
+  },
+  "build_configuration_preserved": {
+    "gradle_wrapper": "distributionBase=GRADLE_USER_HOME\ndistributionPath=wrapper/dists\ndistributionUrl=https\\://services.gradle.org/distributions/gradle-8.10-bin.zip\nzipStoreBase=GRADLE_USER_HOME\nzipStorePath=wrapper/dists",
+    "java_guard": "[8,21] in build.gradle; comment says GWT runs on 11 through 21; CI uses 17",
+    "meta_compiler": "0.13.0-SNAPSHOT (unlocked build tool, not ELK runtime version)",
+    "xtext_gradle_plugin": "4.0.0",
+    "repository": "jcenter() plus central.sonatype.com/repository/maven-snapshots"
+  },
+  "source_basis": "Upstream elkjs 0.12.1 release declares ELK 0.12.1; immutable ELK/elkjs commit source archives, all 12 npm files identical to the elkjs release commit, declared runtime source JARs and source-bearing GWT adapter artifacts. No downstream ELK patches.",
+  "traceability_limitation": "The npm provenance identifies the elkjs publishing commit, not compilation inputs for the checked-in worker. The external ELK checkout and resolved Gradle snapshot/toolchain inputs used for compilation are not recorded by that publish workflow. ELK v0.12.1 is the upstream-declared source basis, not an independently proven exact compiler input. No exhaustive generated-code/source mapping, independent upstream build, signature verification, byte-identical regeneration or legal certification is claimed.",
+  "inputs": [
+    {
+      "file": "originals/EPL-1.0.txt",
+      "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/EPL-1.0.txt",
+      "final_url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/EPL-1.0.txt",
+      "bytes": 11345,
+      "sha256": "f3d8dc494be2e7ea9cd31ac2fb902e35dce7ff8181b9b30d05861b47c339cb25"
+    },
+    {
+      "file": "originals/elk-v0.12.1-commit.json",
+      "url": "https://api.github.com/repos/eclipse-elk/elk/commits/3aa3b9fb98d8f9a41285b3061cff5efe79ed2ba4",
+      "final_url": "https://api.github.com/repos/eclipse-elk/elk/commits/3aa3b9fb98d8f9a41285b3061cff5efe79ed2ba4",
+      "bytes": 123295,
+      "sha256": "16f7aafa3513624c8bc02cc348ef1c8910d970ddf7fef8b7442e7f3f7fad1f48"
+    },
+    {
+      "file": "originals/elk-v0.12.1-source.tar.gz",
+      "url": "https://codeload.github.com/eclipse-elk/elk/tar.gz/3aa3b9fb98d8f9a41285b3061cff5efe79ed2ba4",
+      "final_url": "https://codeload.github.com/eclipse-elk/elk/tar.gz/3aa3b9fb98d8f9a41285b3061cff5efe79ed2ba4",
+      "bytes": 9435594,
+      "sha256": "cee46035f0a691b0dd1813967b445b9fbf9385869bd280caf9574315f858f701"
+    },
+    {
+      "file": "originals/elk-v0.12.1-tag.json",
+      "url": "https://api.github.com/repos/eclipse-elk/elk/git/ref/tags/v0.12.1",
+      "final_url": "https://api.github.com/repos/eclipse-elk/elk/git/ref/tags/v0.12.1",
+      "bytes": 341,
+      "sha256": "d7ba03eb6f6e36604c4cc0c41e57e42fd74c6faf064bd8e55a03119d44c20559"
+    },
+    {
+      "file": "originals/elkjs-0.12.1-attestations.json",
+      "url": "https://registry.npmjs.org/-/npm/v1/attestations/elkjs@0.12.1",
+      "final_url": "https://registry.npmjs.org/-/npm/v1/attestations/elkjs@0.12.1",
+      "bytes": 14477,
+      "sha256": "e1422807d3018b674679051a0e08b4c5ec461ab2bf860a3bb6040660e3a08cd5"
+    },
+    {
+      "file": "originals/elkjs-0.12.1-commit.json",
+      "url": "https://api.github.com/repos/kieler/elkjs/commits/624ae90aa37110033a8af59c5ccbb292708b4317",
+      "final_url": "https://api.github.com/repos/kieler/elkjs/commits/624ae90aa37110033a8af59c5ccbb292708b4317",
+      "bytes": 3957,
+      "sha256": "bcbe73566c3cd15b2c6a032f4674dc952f64efe1f1b2d87309f36ef524642d38"
+    },
+    {
+      "file": "originals/elkjs-0.12.1-registry.json",
+      "url": "https://registry.npmjs.org/elkjs/0.12.1",
+      "final_url": "https://registry.npmjs.org/elkjs/0.12.1",
+      "bytes": 3058,
+      "sha256": "c7407b99872eabf5f0b57c7590a20c4ee34778dee9816389eadf8256c4287ee7"
+    },
+    {
+      "file": "originals/elkjs-0.12.1-release.json",
+      "url": "https://api.github.com/repos/kieler/elkjs/releases/tags/0.12.1",
+      "final_url": "https://api.github.com/repos/kieler/elkjs/releases/tags/0.12.1",
+      "bytes": 2243,
+      "sha256": "a849991db26cf5384e75061d33f01f922108eeb66fd9ea9a756b86f96c0009c7"
+    },
+    {
+      "file": "originals/elkjs-0.12.1-source.tar.gz",
+      "url": "https://codeload.github.com/kieler/elkjs/tar.gz/624ae90aa37110033a8af59c5ccbb292708b4317",
+      "final_url": "https://codeload.github.com/kieler/elkjs/tar.gz/624ae90aa37110033a8af59c5ccbb292708b4317",
+      "bytes": 1935018,
+      "sha256": "ef323ac645876f9ea1c3392d691bc4c4b773c6231c5ffc6731dce78de5bcc469"
+    },
+    {
+      "file": "originals/elkjs-0.12.1-tag.json",
+      "url": "https://api.github.com/repos/kieler/elkjs/git/ref/tags/0.12.1",
+      "final_url": "https://api.github.com/repos/kieler/elkjs/git/ref/tags/0.12.1",
+      "bytes": 333,
+      "sha256": "dd145d203fb467ea6deccd57d60493ea3b75f1955473448c4e4c7d1752e23a77"
+    },
+    {
+      "file": "originals/elkjs-0.12.1.tgz",
+      "url": "https://registry.npmjs.org/elkjs/-/elkjs-0.12.1.tgz",
+      "final_url": "https://registry.npmjs.org/elkjs/-/elkjs-0.12.1.tgz",
+      "bytes": 1724113,
+      "sha256": "7a017dd56e31e4963ad5c4b9deb3230db5c37edf53a82dc507a8599f2f01122f"
+    },
+    {
+      "file": "originals/emf-common-2.12.4-sources.jar",
+      "url": "https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-common/2.12.4/emf-common-2.12.4-sources.jar",
+      "final_url": "https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-common/2.12.4/emf-common-2.12.4-sources.jar",
+      "bytes": 138710,
+      "sha256": "8dfc4e97ca8eee5474927e2b0c5f3bdbd9a52dcd5dff8c0b433b1e938b843bbe"
+    },
+    {
+      "file": "originals/emf-common-2.12.4.pom",
+      "url": "https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-common/2.12.4/emf-common-2.12.4.pom",
+      "final_url": "https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-common/2.12.4/emf-common-2.12.4.pom",
+      "bytes": 423,
+      "sha256": "bc4d22657ecb9c2d334421067fbd50e749d3c7d67ea1a6974f2e6db1e4939b6f"
+    },
+    {
+      "file": "originals/emf-ecore-2.12.4-sources.jar",
+      "url": "https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-ecore/2.12.4/emf-ecore-2.12.4-sources.jar",
+      "final_url": "https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-ecore/2.12.4/emf-ecore-2.12.4-sources.jar",
+      "bytes": 655830,
+      "sha256": "dd3b8c1c3bd0a27c1fbba908bcf0ff21a999148da4e68b3546bcde1dbce7b13a"
+    },
+    {
+      "file": "originals/emf-ecore-2.12.4.pom",
+      "url": "https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-ecore/2.12.4/emf-ecore-2.12.4.pom",
+      "final_url": "https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-ecore/2.12.4/emf-ecore-2.12.4.pom",
+      "bytes": 608,
+      "sha256": "086b5b55a9eec9f42dbf4691d912410e18d29655b5c6f9bab134778c36be50bc"
+    },
+    {
+      "file": "originals/emf-parent-2.12.4.pom",
+      "url": "https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-parent/2.12.4/emf-parent-2.12.4.pom",
+      "final_url": "https://repo.maven.apache.org/maven2/com/genmymodel/emf/gwt/emf-parent/2.12.4/emf-parent-2.12.4.pom",
+      "bytes": 5431,
+      "sha256": "f3688fb1dcc98b2a87893214a0cf0c1607178bbd7200071594ae7bfc26c14b0d"
+    },
+    {
+      "file": "originals/guava-31.1-jre-sources.jar",
+      "url": "https://repo.maven.apache.org/maven2/com/google/guava/guava/31.1-jre/guava-31.1-jre-sources.jar",
+      "final_url": "https://repo.maven.apache.org/maven2/com/google/guava/guava/31.1-jre/guava-31.1-jre-sources.jar",
+      "bytes": 1827642,
+      "sha256": "8ab1853cdaf936ec88be80c17302b7c20abafbd4f54d4fb54d7011c529e3a44a"
+    },
+    {
+      "file": "originals/guava-31.1-jre.pom",
+      "url": "https://repo.maven.apache.org/maven2/com/google/guava/guava/31.1-jre/guava-31.1-jre.pom",
+      "final_url": "https://repo.maven.apache.org/maven2/com/google/guava/guava/31.1-jre/guava-31.1-jre.pom",
+      "bytes": 10981,
+      "sha256": "9193d07bf4f660108d7358e58b27d21b44e34e80d6734e98e21916376f270de2"
+    },
+    {
+      "file": "originals/guava-gwt-31.1-jre.jar",
+      "url": "https://repo.maven.apache.org/maven2/com/google/guava/guava-gwt/31.1-jre/guava-gwt-31.1-jre.jar",
+      "final_url": "https://repo.maven.apache.org/maven2/com/google/guava/guava-gwt/31.1-jre/guava-gwt-31.1-jre.jar",
+      "bytes": 1212667,
+      "sha256": "1f84944b947395d6a4302475284ccfedc5876be354e0926fbe794e41f8acfd23"
+    },
+    {
+      "file": "originals/guava-gwt-31.1-jre.pom",
+      "url": "https://repo.maven.apache.org/maven2/com/google/guava/guava-gwt/31.1-jre/guava-gwt-31.1-jre.pom",
+      "final_url": "https://repo.maven.apache.org/maven2/com/google/guava/guava-gwt/31.1-jre/guava-gwt-31.1-jre.pom",
+      "bytes": 18182,
+      "sha256": "2ecbef37886c9a9a47a8a1719ee47b7d50cadc7560b114adf6266d4dbcddea42"
+    },
+    {
+      "file": "originals/guava-v31.1-COPYING.txt",
+      "url": "https://raw.githubusercontent.com/google/guava/0a17f4a429323589396c38d8ce75ca058faa6c64/COPYING",
+      "final_url": "https://raw.githubusercontent.com/google/guava/0a17f4a429323589396c38d8ce75ca058faa6c64/COPYING",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "file": "originals/guava-v31.1-tag.json",
+      "url": "https://api.github.com/repos/google/guava/git/ref/tags/v31.1",
+      "final_url": "https://api.github.com/repos/google/guava/git/ref/tags/v31.1",
+      "bytes": 327,
+      "sha256": "19290feba767227a78fc82f386618c49d7c2ca393fe19dbbb8bf9bcc0e5d68f7"
+    },
+    {
+      "file": "originals/gwt-2.13.0-COPYING.txt",
+      "url": "https://raw.githubusercontent.com/gwtproject/gwt/b7117c157bbb3bcfcc022433e307722a8e12fb33/distro-source/core/src/COPYING",
+      "final_url": "https://raw.githubusercontent.com/gwtproject/gwt/b7117c157bbb3bcfcc022433e307722a8e12fb33/distro-source/core/src/COPYING",
+      "bytes": 12371,
+      "sha256": "12c6d37dfddf0b524ab8e10b1702a77da71d0e708ba35fefd86d16a15a9200ef"
+    },
+    {
+      "file": "originals/gwt-2.13.0-about.txt",
+      "url": "https://raw.githubusercontent.com/gwtproject/gwt/b7117c157bbb3bcfcc022433e307722a8e12fb33/distro-source/core/src/about.txt",
+      "final_url": "https://raw.githubusercontent.com/gwtproject/gwt/b7117c157bbb3bcfcc022433e307722a8e12fb33/distro-source/core/src/about.txt",
+      "bytes": 1143,
+      "sha256": "732bbfb02df4bedb5ab5ff18a7d5b7d1f5342fc8c6e9c47ceb199e807faf2af4"
+    },
+    {
+      "file": "originals/gwt-2.13.0-tag.json",
+      "url": "https://api.github.com/repos/gwtproject/gwt/git/ref/tags/2.13.0",
+      "final_url": "https://api.github.com/repos/gwtproject/gwt/git/ref/tags/2.13.0",
+      "bytes": 333,
+      "sha256": "a4c5f4afe53bacae6d29abeed1b6721a918fdb2abc1810706a4f4dbfdd83d193"
+    },
+    {
+      "file": "originals/gwt-user-2.13.0-sources.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/gwtproject/gwt-user/2.13.0/gwt-user-2.13.0-sources.jar",
+      "final_url": "https://repo.maven.apache.org/maven2/org/gwtproject/gwt-user/2.13.0/gwt-user-2.13.0-sources.jar",
+      "bytes": 6563091,
+      "sha256": "3d306a865b59ece234e0e4acbb56f39ad14b4e79feec84d53caa3259bd7b1984"
+    },
+    {
+      "file": "originals/gwt-user-2.13.0.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/gwtproject/gwt-user/2.13.0/gwt-user-2.13.0.jar",
+      "final_url": "https://repo.maven.apache.org/maven2/org/gwtproject/gwt-user/2.13.0/gwt-user-2.13.0.jar",
+      "bytes": 17382635,
+      "sha256": "ef34031b7a71b2de06708395dbc7a3c126f76fe6cbbb0ef587f8fada6c56c11b"
+    },
+    {
+      "file": "originals/gwt-user-2.13.0.pom",
+      "url": "https://repo.maven.apache.org/maven2/org/gwtproject/gwt-user/2.13.0/gwt-user-2.13.0.pom",
+      "final_url": "https://repo.maven.apache.org/maven2/org/gwtproject/gwt-user/2.13.0/gwt-user-2.13.0.pom",
+      "bytes": 1485,
+      "sha256": "91f8b88d1b128266aa34ed8598f5728eb99eb3f7e337af1dd4633dc631dd11b0"
+    },
+    {
+      "file": "originals/xtend-lib-2.36.0-sources.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib/2.36.0/org.eclipse.xtend.lib-2.36.0-sources.jar",
+      "final_url": "https://repo.maven.apache.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib/2.36.0/org.eclipse.xtend.lib-2.36.0-sources.jar",
+      "bytes": 125962,
+      "sha256": "c06d94fbce7b4c831282f5ec818798e970cc893a498ed6524d9e1e47347d362f"
+    },
+    {
+      "file": "originals/xtend-lib-2.36.0.pom",
+      "url": "https://repo.maven.apache.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib/2.36.0/org.eclipse.xtend.lib-2.36.0.pom",
+      "final_url": "https://repo.maven.apache.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib/2.36.0/org.eclipse.xtend.lib-2.36.0.pom",
+      "bytes": 1164,
+      "sha256": "adc290c598ce48c636e91a2598911dc61d50c36ec043b92a516a061bd68f9661"
+    },
+    {
+      "file": "originals/xtend-lib-gwt-2.36.0.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib.gwt/2.36.0/org.eclipse.xtend.lib.gwt-2.36.0.jar",
+      "final_url": "https://repo.maven.apache.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib.gwt/2.36.0/org.eclipse.xtend.lib.gwt-2.36.0.jar",
+      "bytes": 40421,
+      "sha256": "28249652e1ed76fd6d6bd90670013d4f103239867b516d8b1f6e5fa8b4c53624"
+    },
+    {
+      "file": "originals/xtend-lib-gwt-2.36.0.pom",
+      "url": "https://repo.maven.apache.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib.gwt/2.36.0/org.eclipse.xtend.lib.gwt-2.36.0.pom",
+      "final_url": "https://repo.maven.apache.org/maven2/org/eclipse/xtend/org.eclipse.xtend.lib.gwt/2.36.0/org.eclipse.xtend.lib.gwt-2.36.0.pom",
+      "bytes": 4418,
+      "sha256": "43b03113f422b6a2ca8ddb5b8b7eafc4ee69d8f2cf9209f99ca0f64903b825e4"
+    },
+    {
+      "file": "originals/xtext-xbase-lib-2.36.0-sources.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/eclipse/xtext/org.eclipse.xtext.xbase.lib/2.36.0/org.eclipse.xtext.xbase.lib-2.36.0-sources.jar",
+      "final_url": "https://repo.maven.apache.org/maven2/org/eclipse/xtext/org.eclipse.xtext.xbase.lib/2.36.0/org.eclipse.xtext.xbase.lib-2.36.0-sources.jar",
+      "bytes": 109222,
+      "sha256": "5e06e3cfc74663d11e0debe4cce88e1134d00eba8122b90712fccbb3a5f6754a"
+    },
+    {
+      "file": "originals/xtext-xbase-lib-2.36.0.pom",
+      "url": "https://repo.maven.apache.org/maven2/org/eclipse/xtext/org.eclipse.xtext.xbase.lib/2.36.0/org.eclipse.xtext.xbase.lib-2.36.0.pom",
+      "final_url": "https://repo.maven.apache.org/maven2/org/eclipse/xtext/org.eclipse.xtext.xbase.lib/2.36.0/org.eclipse.xtext.xbase.lib-2.36.0.pom",
+      "bytes": 726,
+      "sha256": "d3fe93f60e3d0ad01eb8f412c1c4dfe9f168de1c2be475eddedd818c8e748f36"
+    },
+    {
+      "file": "originals/xtext-xbase-lib-gwt-2.36.0.jar",
+      "url": "https://repo.maven.apache.org/maven2/org/eclipse/xtext/org.eclipse.xtext.xbase.lib.gwt/2.36.0/org.eclipse.xtext.xbase.lib.gwt-2.36.0.jar",
+      "final_url": "https://repo.maven.apache.org/maven2/org/eclipse/xtext/org.eclipse.xtext.xbase.lib.gwt/2.36.0/org.eclipse.xtext.xbase.lib.gwt-2.36.0.jar",
+      "bytes": 106861,
+      "sha256": "cc4cdec01056d5142e0b49e743bdd5b298ce3386ba45d58cdca5ada13b3c6039"
+    },
+    {
+      "file": "originals/xtext-xbase-lib-gwt-2.36.0.pom",
+      "url": "https://repo.maven.apache.org/maven2/org/eclipse/xtext/org.eclipse.xtext.xbase.lib.gwt/2.36.0/org.eclipse.xtext.xbase.lib.gwt-2.36.0.pom",
+      "final_url": "https://repo.maven.apache.org/maven2/org/eclipse/xtext/org.eclipse.xtext.xbase.lib.gwt/2.36.0/org.eclipse.xtext.xbase.lib.gwt-2.36.0.pom",
+      "bytes": 4298,
+      "sha256": "dcf4efc84eed3088bfe590e0c4b035dd207b4e5e961fa0b1f4a77a2ba190d3fc"
+    }
+  ]
+}

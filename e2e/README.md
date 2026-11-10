@@ -159,7 +159,9 @@ responses. All earlier state assertions remain. The old receipt is refused befor
 callback execution; core owners retain the raw-byte/refusal/threshold/MIME/framing
 matrix and real Next adapter/compressor coverage. No browser deadline changes or
 client encoding workarounds are used. [Dependency maintenance](../docs/dependencies.md)
-owns the temporary compressor profile and reassessment on the next Next update.
+owns reassessment on future Next updates. Next 16.4.6 uses its native compressor;
+the temporary adapter is retired, with small unknown-length responses following
+upstream policy rather than the former application cutoff.
 
 ## Contributor recipes and proof boundaries
 

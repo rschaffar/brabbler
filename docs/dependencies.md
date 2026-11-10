@@ -7,9 +7,96 @@ Lockfile changes also require updating `nix/npm-deps.nix`. Nix realizes matching
 built dependencies automatically for packages and acceptance. Writable manual-development
 shells still enforce their checkout dependency marker; never bypass it.
 
-## Security/runtime maintenance (2026-11-07)
+## Dependency refresh (2026-11-10; verified)
 
-The current dependency baseline uses **Next/eslint-config-next 16.4.5** and
+The receiving candidate updates Node to **24.22.2**, coordinated Pi packages to
+**1.5.1**, Next/eslint-config-next to **16.4.6**, Pierre to **1.6.4**, Mermaid to
+**12.3.0** (elkjs **0.12.1**), Playwright to **1.65.0**, direct TypeBox to **1.4.6**,
+web-push to **4.0.0**, private jsdom to **31.0.0** and typescript-eslint to **8.72.2**.
+Root/demo locks remain independent. TypeScript 6.0.3, Node-24 typings, native PTY,
+KaTeX 0.19.1 and the security-fixed Undici 8.12.4 pin remain unchanged.
+
+Nixpkgs `f4a03c008967841f2a0b3cb7c436fc6fc31671f6` supplies the real Node slim
+runtime and shared **Brotli 1.2.1**. The latter includes the release-branch
+cherry-pick of decoder fix `0ed4268a4401abcb4472096340477cf4af7d1a2b`.
+No custom runtime overlay or wrapper-only version change is used. Home Manager's
+pin and `nixpkgs.follows` remain unchanged. Runtime probes confirm Node 24.22.2,
+shared Brotli 1.2.1, ordinary roundtrips and malformed-input rejection; these are
+not a whole-library security audit or a replacement for complete acceptance.
+
+Pi's twelve-target environment policy is rebased to actual 1.5.1 bytes. Three
+original target hashes change (bash, grep and find); grep's recipe preserves its
+new search-directory cwd. The standalone exclusion now fingerprints **85** entries.
+Move the parent-scoped Undici override with coding-agent 1.5.1: upstream still
+pins 8.12.3, while Brabbler requires resolved 8.12.4. TypeBox 1.4.6 is the host's
+separate module; the SDK retains its exact nested 1.3.27. Actual host-tool tests
+cover schema coercion and invalid-input refusal across that boundary.
+
+The private MCP bridge keeps Pi's configuration validator but obtains the moved
+namespace helper from pi-mcp's public entry. Both configuration and runtime paths
+verify exact installed SDK/transport versions. Parsing constructs no transports
+or credential stores; evaluating the public MCP module is no longer avoided.
+
+**Owner-selected defaults:** preserve streaming-only cache warming when no valid
+global choice is saved, rather than silently adopting Pi 1.5.1's idle warming.
+`lib/sdk-settings.ts` changes only each session's in-memory getter, including
+subagents; it never writes operator settings. Explicit off/streaming/idle choices
+remain live, and project settings cannot opt an operator into paid warming.
+
+Next 16.4.6 fixes singleton Content-Type forwarding. The owner selected native
+compression, so the temporary compressor adapter/preload is removed, not repinned.
+Unknown-length small JSON/error bodies may now be compressed; the old application
+1 KiB selection is not a wire-level cutoff. Preserve decoded Web bodies, actual
+wire gzip and refusal, no-transform, production SSE/media and HEAD/bodyless checks.
+The independent pre-framework authentication request-header guard remains.
+
+Pierre's parser now takes `{ throwOnError: true }`, retaining strict patch
+refusal. web-push 4 uses named ESM exports; the app uses its namespace, preserving
+VAPID configuration and notification semantics. Private jsdom 31 canonicalizes
+zero CSS lengths to `0px` and simplifies same-unit `min()` operands. Mounted tests
+keep strict values and original geometry, including a separate 400px-cap input;
+no production layout is changed to suit the emulator. The shared mount owns the
+initial document `pageshow`, and scoped clock fixtures separate jsdom's rendering
+interval from application policy timers. Mermaid's new ELK family has its
+own source seed, runtime sources and original notices; old PR955 materials are
+not relabelled. See [source availability](../public/third-party/SOURCE-AVAILABILITY.md).
+
+Fresh lock-only audits report **9 moderate package findings** in each root/demo
+full graph, all in the minimatch lint chain (`GHSA-g3hv-75wg-m249`), and **zero
+runtime-only findings**. Private test support reports zero. Counts include affected
+parents, not nine independent advisories; TypeScript-eslint's patch does not clear
+that chain. No forced downgrade, minimatch-major override or audit suppression is
+introduced. Nix retains development modules, so runtime-only classification is not
+whole-artifact security clearance.
+
+The exact archive passed ordinary Linux/Node 24.22.2 installation/auth/PTY/source
+smoke in an isolated container. The owner explicitly deferred a new native macOS
+archive smoke to the publication gate for this bounded local integration; Linux
+is not macOS evidence.
+
+Complete Linux acceptance passed **534 core files / 4,638 tests / 14 suites**,
+all **26 browser/terminal groups / 61 receipts**, and the genuine Home Manager
+VM. The three fresh commands ran separately: core **304s** (12 requested/effective
+workers), browser **350s** (four sandboxes) and service **99s**. Core's pre-lifecycle
+envelope was 33.0s and test-file window 265.2s; browser support/manifest preparation
+was 81.5s/5.0s and group-client window 257.6s; the VM proof window was 20.9s.
+Earlier focused runs prepared dependencies, so these are not cold-cache or combined
+command timings. A later test-only disposal-capture review fix passed its complete
+changed file, support and cleanup controls (**37 tests / 42s**) with current static
+checks; unchanged core evidence is not relabelled as a new-tip execution. Exact
+package/modules/source/archive output identities match across the snapshots.
+
+Separate demo typegen/typecheck/lint, two search regressions and eight actual-config
+lint probes passed (24s after installation). Independent review findings about
+rendering-clock handle ownership and exceptional disposal ordering are resolved.
+The [maintenance record](plans/archived/2026-11-10_dependency-refresh-plan.md)
+binds scope, inputs, failure/control dispositions and limits. Historical results
+below are not new acceptance, native macOS evidence, publication or installed-service
+activation.
+
+## Security/runtime maintenance (2026-11-07; historical baseline)
+
+The 2026-11-07 dependency baseline uses **Next/eslint-config-next 16.4.5** and
 **Undici 8.12.4**. The [Next release](https://github.com/vercel/next.js/releases/tag/v16.4.5)
 fixes seven moderate advisories; the [Undici release](https://github.com/nodejs/undici/releases/tag/v8.12.4)
 fixes six vulnerabilities, including a high-severity redirect/cache issue. This
@@ -26,46 +113,18 @@ the new resolution; the twelve-target environment patch, SDK manifest/helper
 fingerprints and 83-entry standalone exclusion are unchanged. Keep the pre-framework
 request-header guard; a Next version bump alone does not retire that boundary.
 
-### Next compression compatibility — reassess on every Next update
+### Next compression lifecycle
 
-Next 16.4.5 strips transport/framing headers when adapting a Web `Response` to Node
-HTTP. Brabbler's previous `jsonResponse` helper precompressed large JSON, leaving
-gzip bytes without `Content-Encoding`. Returning decoded JSON alone fixed parsing
-but **did not preserve compression**: Next stores singleton Content-Type arrays,
-while its compressor's default predicate accepts only strings. The initial
-assumption of automatic API compression was retracted after raw-HTTP checks and
-two existing gzip regressions failed.
-
-`bin/next-compression-compat.js` wraps the existing compressor's filter option,
-not the response or the security header filter. Only GET/HEAD catalogue/detail
-JSON with the helper's existing large-response `Vary: Accept-Encoding` marker gets
-a predicate-local scalar view of a singleton Content-Type. Actual headers,
-custom filters/options, MIME values and Next's encoding/framing safeguards remain
-unchanged. `bin/next-compression-preload.js` installs it before managed Next
-`dev`/`start` captures the factory, after the existing request guard. Build/typegen
-are not patched, no vendor bytes/global prototypes are changed, and no Node
-update or external proxy is required.
-
-The temporary profile requires **Next 16.4.5** and SHA-256
-`8e7c2ec6982978c754c00388e0d1d3ff46d7aae99945d060f6f1052954c24e29`
-for `next/dist/compiled/compression/index.js`. Unknown versions/bytes/exports or
-late installation refuse startup; repeat installation is idempotent. This is a
-reviewed internal-module compatibility exception, not a public Next extension.
-
-**On every Next upgrade:**
-
-1. Recheck the Web-response framing filter, singleton Content-Type forwarding and
-   the compressor predicate. Do not blindly update the version/hash guard.
-2. Prefer removing the adapter/preload when upstream makes correct HTTP compression
-   work without it; otherwise explicitly review and qualify a replacement profile.
-3. Run the compatibility, launch and catalogue/detail route checks, then all three
-   complete [Nix acceptance levels](testing.md). Preserve actual wire gzip, identity/
-   refusal, threshold, MIME/error, framing and cleanup evidence. Keep the request
-   guard and SDK installation policy unchanged unless separately reviewed.
-
-The original helper negatives remain. Catalogue/detail compression assertions now
-cross the real Next/HTTP boundary instead of requiring a precompressed Web body;
-decoded-body/header and raw gzip regressions retain the failure distinction.
+The temporary 16.4.5 compressor profile is retired by the 16.4.6 update above.
+The earlier failure, retraction and exact guarded workaround remain recorded in
+the [historical maintenance plan](plans/archived/2026-11-07_runtime-maintenance-plan.md).
+On future Next upgrades, recheck Web-response framing, header representation and
+native compression through the real HTTP fixture, launch checks and installed
+catalogue/detail browser bridge, then complete all three Nix acceptance levels.
+Do not restore precompressed Web response bodies or weaken the separate request
+header guard. Native compression may include small unknown-length responses;
+no-transform, decoded bytes, gzip refusal, SSE/media and bodyless framing remain
+explicit obligations.
 
 Nixpkgs advances to `1d060086d60cb76a40cf37109f979d88a5bd6396`, and Home Manager to
 `2c0c1f01521469cf0271180c453c79782d53c2f6`, retaining `nixpkgs.follows`. Their selected
@@ -76,14 +135,10 @@ explicitly deferred the Node 24.22.2/shared-Brotli update after stopping its par
 source build. No runtime overlay or successful Node-build claim is included;
 refreshing these flake inputs is not a Node security update.
 
-**Deferred Node follow-up:** this registry owns adopting a security-fixed Node 24
-and its required [shared-Brotli decoder fix](https://github.com/google/brotli/commit/0ed4268a4401abcb4472096340477cf4af7d1a2b).
-Prefer a reviewed upstream Nixpkgs recipe. If a temporary source recipe is still
-needed, rebuild the actual slim input through the version-sensitive Nixpkgs
-builder, preserve platform patches/compiler selection and replace the wrapper's
-slim input; changing wrapper metadata alone does not update Node. Verify the
-resulting runtime and all three acceptance levels. The interrupted trial is not
-finished-runtime evidence or a complete shared-library security assessment.
+The deferred Node/shared-Brotli implementation is superseded by the upstream
+recipe selected above; complete candidate acceptance remains its verification
+gate. The interrupted older source-build trial remains historical and supplies
+no finished-runtime evidence.
 
 Root/demo use **Tailwind and its PostCSS adapter 4.3.5**, **PostCSS 8.5.32**,
 **KaTeX 0.19.1**, **ESLint 10.14.0** and **typescript-eslint 8.72.1**. Root additionally
@@ -397,13 +452,12 @@ releases require another inventory, not a perpetual-currentness claim.
 
 ## Node 24 and TypeScript 6 baseline
 
-Following isolated evaluation and explicit user approval, the Nix development,
-update, package, core/fresh-runner and VM fixture toolchains use **Node 24.21.0**
-from the selected Nixpkgs recipe. The input refresh above retains this Node
-version; the newer Node security update is deferred. The package and native modules share
+Following explicit user approval, the Nix development, update, package,
+core/fresh-runner and VM fixture toolchains use **Node 24.22.2** from the
+selected upstream Nixpkgs recipe, including shared Brotli 1.2.1. The package and native modules share
 that runtime, including a fresh node-pty rebuild. Core's fail-closed runtime-major
 check now requires **24**, not a permissive 22-or-24 fallback. The launcher and
-root/demo manifests require **Node >=24.0.0**; demo CI selects **24.21.0**. This
+root/demo manifests require **Node >=24.0.0**; the portable smoke workflow selects **24.22.2**. This
 intentionally ends the app's advertised Node 22 baseline rather than pairing Node
 24 typings with a promise of Node 22 support. Actual complete acceptance targets
 the pinned Linux runtime, not every newer version accepted by the minimum check.
@@ -552,13 +606,14 @@ for shipped copies rather than treating the old lockfile label as authoritative.
 
 Review source-availability obligations for MPL components (including web-push and
 Lightning CSS) and LGPL source/relinking obligations for redistributed libvips.
-Mermaid **12.2** ships elkjs **0.9.3** and uses ELK by default; it is not an
-unused optional engine in Brabbler. The application preserves EPL-2.0 and the
-incorporated EMF-GWT runtime's EPL-1.0 notices. A separate checksummed
-`brabbler-sources` output supplies the upstream-declared ELK 0.9.1 + seven PR955
-patches, editable wrapper/build sources, runtime source JARs and original notices.
-Its documented upstream checkout traceability limitation is not a claim of an
-identified missing source or a legal certification.
+Mermaid **12.3** resolves elkjs **0.12.1** and uses ELK by default; it is not an
+unused optional engine in Brabbler. ELK/elkjs declare EPL-2.0 OR GPL-3.0-or-later;
+continue the EPL option and retain secondary-license notices plus EMF-GWT's
+independent EPL-1.0 notices. The separate checksummed `brabbler-sources` output
+supplies upstream-declared ELK 0.12.1, editable elkjs/build sources, declared
+runtime source JARs and source-bearing GWT adapters. No PR955 patches apply.
+Publishing provenance does not identify the worker's external compilation inputs;
+that documented limit is not a legal certification or independent regeneration.
 
 The inspected application archive externalizes web-push and contains neither
 Lightning CSS nor libvips native payloads; trace references alone are not payload.
@@ -573,7 +628,7 @@ certification or production artifact review is implied by development acceptance
 
 ## Mermaid migration
 
-Root/demo resolve Mermaid **12.2.0**. Its Node >=22.12 requirement fits the
+Root/demo resolve Mermaid **12.3.0**. Its Node >=22.12 requirement fits the
 application's >=24.0.0 requirement. The existing initialize/parse/render
 adapter required no API changes; desktop/mobile browser coverage exercises math,
 themes, source/preview, zoom, SVG exports, polling and live diagram updates.
@@ -589,7 +644,7 @@ vulnerable nested copies. The conditional inherited-trust vulnerability
 is fixed from 0.18.2; it requires pre-existing prototype pollution.
 
 This is **outside the adapters' declared upstream ranges**: rehype-katex 7.0.1
-requests `^0.16.0`, and Mermaid 12.2.0 requests `^0.18.0`. It is a narrowly tested local
+requests `^0.16.0`, and Mermaid 12.3.0 requests `^0.18.0`. It is a narrowly tested local
 compatibility exception, not upstream support or proof that all formulas work.
 Keep the exact pin until adapter releases support a fixed renderer, then remove
 the override after verifying every resolved copy and CSS alignment again.

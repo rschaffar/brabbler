@@ -33,7 +33,7 @@ export function changeTargets(file: FileDiffMetadata): DiffLineTarget[] {
 export function createDiffReview(patch: string, comparison = ""): DiffReviewModel {
   let file: FileDiffMetadata | null = null, fallback: string | null = null;
   try {
-    const parsed = parsePatchFiles(patch, undefined, true);
+    const parsed = parsePatchFiles(patch, { throwOnError: true });
     if (parsed.length === 1 && parsed[0].files.length === 1) {
       file = parsed[0].files[0];
       file.cacheKey = `review:${++nextId}:${comparison}`;

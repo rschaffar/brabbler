@@ -71,7 +71,7 @@
     {
       "path": "lib/third-party-notices.test.mjs",
       "lane": "N",
-      "reason": "Runs the real notice collector/version guard on per-case mkdtemp dependency/metadata/legal-text/symlink fixtures. All I/O and JSON-only module resolution are synchronous; fixture removal is registered before writes. No dependency JavaScript, source writes, installer, network, child, native signal or shared environment mutation. Deterministic root-independent output, preserved bytes/ownership, and refusal boundaries are covered; final installed artifact/source access remains a separate native bridge."
+      "reason": "Runs the real notice collector/version guard on per-case mkdtemp dependency/metadata/legal-text/symlink fixtures. File I/O and JSON-only module resolution are synchronous; fixture removal is registered before writes. A bounded synchronous Python child loads only the owned offline assembly module and hashes private synthetic files, with no bytecode/source writes, network or descendants; spawnSync joins its exit and pipes. No dependency JavaScript, installer, native signal or shared environment mutation. Deterministic root-independent output, preserved bytes/ownership, and refusal boundaries are covered; final installed artifact/source access remains a separate native bridge."
     },
     {
       "path": "lib/release-artifact.test.mjs",
@@ -343,7 +343,7 @@
     {
       "path": "components/AgentsConfig.test.mjs",
       "lane": "F",
-      "reason": "Actual profile/literal model load/save work uses unchanged Settings defaults; optional capability/loadGraph/audio branches absent, complete operation collector and gate joins preserved. Exact finite source/selected-input review; fresh combined pool4 gate pending, not browser/native authority or universal idle. Reassess changed demand.",
+      "reason": "Actual profile/literal model load/save work uses private Settings fixtures with controlled/denied application clocks and only jsdom's exact native rendering interval separated; optional capability/loadGraph/audio branches absent, complete operation collector and gate joins preserved. Exact finite source/selected-input review; fresh combined pool4 gate pending, not browser/native authority or universal idle. Reassess changed demand.",
       "estimatedMs": 1449
     },
     {
@@ -468,7 +468,7 @@
     {
       "path": "components/ChatWindow.extension-request.test.mjs",
       "lane": "F",
-      "reason": "Entry bytes SAME; existing full public callback/read work and failure collectors retain ownership across reviewed union, finite frame and genuine ESM alias changes. No blanket new descendant authority. Parent current-source/input binding and fresh combined four-job gate required; AST ownership is independent of isolation, and E never repairs a leak.",
+      "reason": "Real blocking-card/dialog/custom-panel cases use private jsdom realms and explicit callback/read-work owners with live failure collectors. Application countdown Date/1000ms intervals remain controlled; jsdom31's distinct host rendering/focus interval has an opaque-handle owner, only admitted handles can be cancelled, and surviving handles fail cleanup after realm close. Exact zero CSSOM values are canonicalized, not relaxed. Unmount/disposal restores per-file globals; no real transport, descendant process, shared source write or native authority is admitted.",
       "estimatedMs": 2088
     },
     {
@@ -892,7 +892,7 @@
     {
       "path": "hooks/agent-session-cleanup-control.test.mjs",
       "lane": "F",
-      "reason": "First existing native fence; one actual shared-hook/System held body/full public completion and independent actual finalizer faults. Exact original structured Error/cause references, unknown-cause rejection, independently attempted realm/host/listener/native-root restoration. Same-control scalar-replacement counterfact false-vs-true and restored22/159; finite independent review. No native SDK/default-shell/physical or universal idle claim. Parent source/dependency binding below; fresh complete-core gate still required. AST ownership and F/N/E isolation are independent."
+      "reason": "First existing native fence; one actual shared-hook/System held body/full public completion and independent actual finalizer faults. Exact original structured Error/cause references, unknown-cause rejection, independently attempted realm/host/listener/native-root restoration. The jsdom31 close oracle checks public hasFocus true before and false after disposal rather than deletion of the retained document. Same-control scalar-replacement counterfact false-vs-true and restored22/159; finite independent review. No native SDK/default-shell/physical or universal idle claim. Parent source/dependency binding below; fresh complete-core gate still required. AST ownership and F/N/E isolation are independent."
     },
     {
       "path": "hooks/compaction.test.mjs",
@@ -1043,7 +1043,7 @@
     {
       "path": "hooks/useViewportHeight.test.mjs",
       "lane": "F",
-      "reason": "Original child-suite/read-only setup and finite viewport timer/frame/listener chains retained. Additional shell definitions inert; no original root sibling conflict reintroduced. Exact finite source/selected-input review; fresh combined pool4 gate pending, not browser/native authority or universal idle. Reassess changed demand.",
+      "reason": "Per-case private jsdom realm and read-only production imports; exact finite window timer/frame/listener chains retain the original IME inputs and cleanup assertions. The new document's initial pageshow is explicitly joined before counting policy frames, never used to drain a timer/frame queue. Realm disposal restores globals and listeners; no transport, native process, source write, browser-layout proof or universal idle claim.",
       "estimatedMs": 2445
     },
     {
@@ -2349,7 +2349,7 @@
     {
       "path": "lib/testing/react.test.mjs",
       "lane": "F",
-      "reason": "Actual support error-identity/domain/failed-setup/descriptor cases use preserved absent-option path; new sync option isolated, full mount/dispose order unchanged. Exact finite source/selected-input review; fresh combined pool4 gate pending, not browser/native authority or universal idle. Reassess changed demand.",
+      "reason": "Actual support error-identity/domain/failed-setup/descriptor cases retain cleanup ownership. Shared mount joins only initial document pageshow before React creation, after capability setup. Rendering-clock integrity cases inject inert start/stop ports: unknown/numeric handles cannot reach native cancellation; leaked owned handles fail while being released. No timer/process/network/source-write effects in those port tests; real realm teardown order remains covered.",
       "estimatedMs": 611
     },
     {
