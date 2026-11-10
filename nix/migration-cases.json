@@ -1,0 +1,38 @@
+{
+  "converter": [
+    "B01/B03/B04/B17 raw bytes, inert strings, every branch/target, SDK projection and physical last identity survive",
+    "B02/B13 unsupported/corrupt sessions and ambiguous IDs stay byte-identical and explicitly blocked",
+    "B05/B06 terminal copies are local; absent/forked/wrong/reused structured proof never enriches siblings",
+    "B07/B09 unknown flags differ from false/empty; native success/reporting failure and no admission stay honest",
+    "B08 SHA-1/SHA-256 native endpoints validate without physical baseline fiction; wrong types and object contradictions block",
+    "B08 real divergent/no-op merge and rebase migrations use exact action-local basis, not current refs",
+    "B09 missing legacy bundle remains explicit and every unknown terminal links its own unavailable settlement",
+    "B10 known Git inline sources get linked unavailable settlements; other plugins and provider bytes are untouched",
+    "B11 complete giant metadata/artifacts normalize once with a reconstruction witness; patch bytes are hash-drained",
+    "B12 all bundle framing/hashes/ranges and orphans are explicit; no corrupt present bundle becomes missing",
+    "B13 copied IDs across owners are valid; duplicate header IDs and conflicting target metadata are blocked",
+    "B14 unequal standalone IDs, original consent/digests/timestamps/nonces and local evidence survive without rebinding",
+    "G1/B14 outer-owned real standalone receipts join local results, preserve unequal IDs and accept v2/no-receipt reruns",
+    "G4/B10/B14 incomplete standalone sources retain owner-local outcome/result bytes with an unproven linked settlement",
+    "B16 no-follow roots/intermediates/files, FIFOs, hardlinks and output aliases refuse before any traversal/install",
+    "S2/B16 physical output aliases/root descendants/containers refuse before artifact creation using held identities",
+    "S3/B22 frozen helper identities cover the actual local runtime import closure, including command environment",
+    "S3/B22 private source-only command-env mutation changes identity and refuses before state writes; exact restoration re-enables",
+    "S4/B19 actual CLI reports partial/uncertain mutation after rename, sanitizes errors and requires explicit recovery",
+    "private locator context reuses validated bundle metadata with exact finite counts, never path admissions",
+    "B18/B21 explicit stopped writers/exact manifest, immutable mapping, apply/check/resume/idempotence and exact restore",
+    "B19 killed native CLI child after atomic rename resumes exact before/after files without duplicate records",
+    "B19/B20 backups/stage/journal/fsync/short-write faults never falsely publish; durable partial backup and intent resume",
+    "S1/B19 reused interrupted backups sync their verified FD and directory before install intent",
+    "S1/B20 a backup changed after its held-FD sync refuses before directory admission or install",
+    "B16/B19/B21 changed inputs/new files/races/tampered backups or journal never broad-overwrite newer bytes",
+    "B21 restore interruption reconciles exact original bytes and backup tamper remains a refusal",
+    "B16 converter lock excludes a separate CLI process without stale-PID deletion",
+    "B09/B17 explicit absent standalone root stays absent and no repository admission probes a saved locator"
+  ],
+  "native": [
+    "guest empty descriptor query permits conversion and exact restore",
+    "guest user xattr refuses guard and CLI without replacing owner",
+    "guest POSIX ACL refuses guard and CLI without replacing owner"
+  ]
+}

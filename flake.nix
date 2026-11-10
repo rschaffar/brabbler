@@ -38,6 +38,8 @@
           };
           mkE2E = { workers ? 1 }: import ./nix/vm-test.nix {
             inherit pkgs home-manager workers;
+            src = (sources pkgs).tests;
+            modules = modules pkgs;
             package = self.packages.${pkgs.stdenv.hostPlatform.system}.brabbler;
             homeManagerModule = self.homeManagerModules.default;
           };

@@ -11,14 +11,17 @@ and the [active plan](../../../docs/plans/2026-10-31_git-backed-operation-review
 `getAgentDir` or searches global state. Its legacy writer exists only to generate
 synthetic compatibility inputs. The application must not import this subtree.
 The production package/application fileset excludes `tools`; the fresh exporter
-and test fileset admit only this exact migration subtree. One classified bridge,
-`lib/plugins/git-operation-review-migration.test.mjs`, registers its tests.
+and test fileset admit only this exact migration subtree. The classified bridge
+`lib/plugins/git-operation-review-migration.test.mjs` registers codec, import-boundary
+and metadata-refusal tests. The service VM's `vm-acceptance.fixture.mjs` registers
+the complete converter matrix and genuine metadata cases.
 
 Use the repository's pinned Node 24 Nix runner, from a source revision containing
 this directory:
 
 ```sh
 nix run .#test -- core --file lib/plugins/git-operation-review-migration.test.mjs
+nix run .#test -- service # includes the complete positive converter matrix
 ```
 
 This focused check is not full application acceptance or a migration rehearsal.
@@ -42,7 +45,9 @@ current-ref/prose joins, patch recovery, fetch, retention refs or cleanup exist.
 | `codec.mjs` | Complete aggregate/index/range/per-entry streaming integrity, orphan/pending/corrupt classification, once-only presentation normalization/reconstruction |
 | `convert.mjs` | Every branch/occurrence, ancestry-only proposal sharing, occurrence-local result proof, terminal unavailable settlements, standalone inert consent, exact graph/SDK projection oracles |
 | `target.mjs` | New-format leaf validators/read-only Git and leaf SDK SessionManager only; no application bootstrap |
-| `converter.fixture.mjs` | B01–B22-derived synthetic filesystem/native/SDK cases, interruptions, corruption, no-follow/races, backup/write/journal/refusal and exact restore; registered by the existing bridge |
+| `converter.fixture.mjs` | All 29 B01–B22-derived filesystem/native/SDK cases, interruptions, corruption, no-follow/races, backup/write/journal/refusal and exact restore; registered unconditionally by the guest fixture |
+| `metadata-refusal.fixture.mjs`, `metadata-support.fixture.mjs` | Core's actual unavailable/permission-denied FD queries, unchanged-owner CLI refusal and bounded child-failure diagnostics; private synthetic inputs |
+| `vm-acceptance.fixture.mjs` | Guest-only complete converter registration plus real empty-query conversion, user-xattr refusal and POSIX-ACL refusal; mandatory title/input/identity evidence |
 | `legacy-store.ts`, `legacy-store.test.mjs` | Historical compatibility codec and synthetic writer/continuing assertions only |
 
 Original/new hashes and IDs are frozen in the private manifest, never regenerated
@@ -69,6 +74,29 @@ The explicit local helper closure is checked independently. Pinned dependency
 resolution in a private source-copy test is the only loader substitution; local
 helpers/policy/I/O are real. Process-local builtin fsync observations restore ES
 module bindings before teardown. Existing graph/byte/unknown/native cases remain.
+
+## Metadata capability ownership
+
+Nix's external daemon, not the flake's client version, controls builder syscall
+policy. Newer builders deny listing; an unavailable query must remain a refusal,
+not absence. The test-only child filter adds listing denials (ENOTSUP or EPERM)
+without changing host policy. Core also exercises missing, signaled and failed
+probe children; only that external failure port is supplied.
+
+The original 29 converter cases retain their assertions/input matrices in the
+ordinary guest process, outside a builder's filter. S3's deliberate source-mutation
+fixture now adds owner-write permission only to its own copied helper files:
+`copyFileSync` inherits read-only store modes. The immutable executed source is not
+changed, and all identity/refusal/restoration assertions remain. The guest compares
+Node's resolved executable with the declared launcher's resolved target; the public
+launcher is still used for execution.
+
+The existing service VM keeps all Home Manager proofs, its small isolated profile,
+root-private hashed evidence and independent converter/service cgroup settlement.
+All 32 guest cases must complete without skips; `nix/migration-cases.json` is the
+reviewed title inventory, checked against source registration and actual TAP.
+Hosted CI remains core/browser only. Positive conversion coverage belongs to
+mandatory local `service`/`all` acceptance, not a hosted green assertion.
 
 ## Assertion dispositions at P3
 

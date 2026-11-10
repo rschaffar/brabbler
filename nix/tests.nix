@@ -11,8 +11,9 @@ let
       ${./test-git-forwarder.c} -o "$out/bin/git"
     printf '%s\n' ${lib.escapeShellArg publicGit} > "$out/share/brabbler-test/public-git"
   '';
+  xattrFilter = import ./test-xattr-filter.nix { inherit pkgs; };
   tools = [
-    forwarder nodejs pkgs.git pkgs.openssh pkgs.bash pkgs.coreutils pkgs.findutils
+    xattrFilter forwarder nodejs pkgs.git pkgs.openssh pkgs.bash pkgs.coreutils pkgs.findutils
     pkgs.gnugrep pkgs.gnused pkgs.diffutils pkgs.which pkgs.python3 pkgs.util-linux
   ];
   staticChecks = import ./static-checks.nix {

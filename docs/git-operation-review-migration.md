@@ -19,6 +19,22 @@ recognized Git inline cards, and version-1 standalone operation JSON. Other sess
 versions, corrupt/unknown owners and partial graphs are explicitly blocked unchanged.
 A pre-existing missing parent is not repaired or searched for elsewhere.
 
+Attribute inspection must actually succeed before replacement. Fixed diagnostic
+reasons distinguish nonempty attributes (`unsupported-extended-metadata`), an
+unavailable listing syscall (`extended-metadata-query-unavailable`), another query
+failure (`extended-metadata-query-failed`), and failure to launch/complete the probe
+(`extended-metadata-probe-failed`). None admits a replacement; child stderr and
+attribute names/values are not disclosed.
+
+Nix 2.35.4 blocks attribute-listing syscalls in builders; 2.34.9 did not. The
+external daemon owns this policy, independently of the flake's packaged client.
+Run an operational rehearsal as an ordinary Linux process in the pinned development
+environment, not inside a build sandbox. A development shell supplies tools; it
+does not make its interactive command a builder. Do not disable filtering or treat
+an unreadable query as an empty list. Core verifies refusal; the existing service
+VM runs the complete converter matrix and genuine empty/user-xattr/POSIX-ACL cases
+on its private writable filesystem. Hosted core/browser CI does not run that VM.
+
 Select every retained session root explicitly, including archives/subagents/forks.
 All branches and every operation/plugin-card occurrence are considered, not only
 the current leaf or collapsed receipt. Provider/tool-result/model bytes and inert

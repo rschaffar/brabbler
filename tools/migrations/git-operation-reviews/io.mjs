@@ -145,8 +145,20 @@ export function atomic(dir, child, data, hooks = {}, label = 'journal') {
 export function assertNoAttributes(fd) {
   // Node has no xattr API. Query only attribute NAMES through this held descriptor;
   // refuse ACLs/security/user attrs rather than silently lose them on replacement.
-  const result = spawnSync('python3', ['-c', 'import os,sys; sys.exit(3 if os.listxattr(3) else 0)'], { stdio: ['ignore', 'ignore', 'ignore', fd] });
-  if (result.status !== 0) refuse('unsupported-extended-metadata');
+  // A builder may deny listing even on an ordinary empty file. Never interpret
+  // an unavailable query as absence. Exit codes disclose no names/values/paths.
+  const probe = `import errno,os,sys
+try:
+    names = os.listxattr(3)
+except OSError as error:
+    sys.exit(4 if error.errno in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS) else 5)
+sys.exit(3 if names else 0)`;
+  const result = spawnSync('python3', ['-c', probe], { stdio: ['ignore', 'ignore', 'ignore', fd] });
+  if (result.error || result.signal) refuse('extended-metadata-probe-failed');
+  if (result.status === 0) return;
+  if (result.status === 3) refuse('unsupported-extended-metadata');
+  if (result.status === 4) refuse('extended-metadata-query-unavailable');
+  refuse('extended-metadata-query-failed');
 }
 export function lock(root) {
   const fd = root.dir.file('run.lock', C.O_RDWR | C.O_CREAT);

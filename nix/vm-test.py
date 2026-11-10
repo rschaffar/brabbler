@@ -21,13 +21,17 @@ plan: dict[str, Any] = json.loads(subprocess.check_output(
 service = registry["service"]
 (driver.out_dir / "plan.json").write_text(json.dumps(plan, indent=2) + "\n")
 checks = [{"name": name, "status": "not-run"} for name in plan["checks"]]
-proof: dict[str, Any] = {name: None for name in ("activation", "permissions", "write", "restart", "pty")}
+proof: dict[str, Any] = {name: None for name in ("activation", "permissions", "write", "restart", "pty", "migration")}
 errors: list[str] = []
 known_groups: set[str] = set()
 clients_settled = True
 acceptance_ready = diagnostic_reachable = probe_passed = collected = False
 collecting = False
-settlement: dict[str, Any] = {"status": None, "groups": [], "port": None}
+settlement: dict[str, Any] = {"status": None, "groups": [], "port": None,
+                              "migration": {"attempted": False, "path": None, "state": "not-started"}}
+migration_started = False
+migration_prior_clients = True
+migration_execution: dict[str, str] | None = None
 artifacts: dict[str, str] = {}
 primary: BaseException | None = None
 primary_traceback: TracebackType | None = None
@@ -65,8 +69,11 @@ def service_cgroup(group):
     return group
 
 
-def observe_cgroup(group):
-    service_cgroup(group)
+def observe_cgroup(group, *, migration=False):
+    if migration:
+        assert group == "/system.slice/brabbler-migration-acceptance.service", "Foreign converter cgroup"
+    else:
+        service_cgroup(group)
     # Only ENOENT is absence; unreadable/malformed/populated observations fail.
     script = """const fs = require('node:fs');
 try { process.stdout.write(fs.readFileSync('/sys/fs/cgroup' + process.argv[1] + '/cgroup.events', 'utf8')); }
@@ -240,6 +247,17 @@ def collect_core_evidence(helper_collected):
                 collection_failed = True
                 errors.append(f"{filename}: {error}")
                 traceback.print_exc()
+        try:
+            # Preserve partial TAP/stderr, or explicit empty diagnostics if never started.
+            script = "const fs=require('node:fs');for(const p of process.argv.slice(1)){try{fs.closeSync(fs.openSync(p,'wx',0o600));}catch(e){if(e.code!=='EEXIST')throw e;}}"
+            command([node, "-e", script, f"{core_stage}/migration.tap", f"{core_stage}/migration.stderr.log"])
+            report = {"execution": migration_execution, "settlement": settlement["migration"], "proof": proof["migration"]}
+            command([node, "-e", "require('node:fs').writeFileSync(process.argv[1],process.argv[2],{flag:'wx',mode:0o600})",
+                     f"{core_stage}/migration.json", json.dumps(report, indent=2) + "\n"])
+        except Exception as error:
+            collection_failed = True
+            errors.append(f"Migration diagnostics: {error}")
+            traceback.print_exc()
         observations = {"plan": plan, "checks": checks, "proof": proof, "clientsSettled": clients_settled,
                         "acceptanceReady": acceptance_ready, "diagnosticReachable": diagnostic_reachable,
                         "helpersCollected": helper_collected, "settlement": settlement, "errors": errors}
@@ -332,6 +350,45 @@ def pty():
     return result  # No DELETE: final unit stop must settle this live native shell.
 
 
+def settle_migration():
+    global clients_settled, migration_execution
+    if not migration_started or settlement["migration"]["state"] in ("empty", "absent"):
+        return
+    unit = registry["migration"]["unit"]
+    try:
+        output = command(["systemctl", "show", unit, "-p", "Result", "-p", "ExecMainCode", "-p", "ExecMainStatus"], timeout=10)
+        migration_execution = dict(line.split("=", 1) for line in output.strip().splitlines())
+        if migration_execution == {"Result": "success", "ExecMainCode": "1", "ExecMainStatus": "0"}:
+            # Success must not hide leaked children subsequently killed by stop.
+            observe_cgroup("/system.slice/brabbler-migration-acceptance.service", migration=True)
+    finally:
+        # Explicitly stop ONLY this known test unit, including surviving children.
+        command(["systemctl", "stop", unit], timeout=30)
+    group = "/system.slice/brabbler-migration-acceptance.service"
+    state = observe_cgroup(group, migration=True)
+    settlement["migration"] = {"attempted": True, "path": group, "state": state}
+    clients_settled = migration_prior_clients
+
+
+def migration():
+    global migration_started, migration_prior_clients, clients_settled
+    generation = proof["restart"]["after"]
+    live(generation)
+    migration_prior_clients = clients_settled
+    clients_settled = False
+    migration_started = True
+    settlement["migration"] = {"attempted": True, "path": "/system.slice/brabbler-migration-acceptance.service", "state": "uncertain"}
+    try:
+        # The system unit runs as t0 with env -i; never wrap positives in seccomp.
+        command(["systemctl", "start", registry["migration"]["unit"]], timeout=270)
+    finally:
+        settle_migration()
+    assert migration_execution == {"Result": "success", "ExecMainCode": "1", "ExecMainStatus": "0"}, "Converter did not exit naturally with success"
+    result = json.loads(command([node, f"{support}/vm-evidence.mjs", "migration", registry_file, core_stage], timeout=30))
+    live(generation)
+    return {**result, "execution": migration_execution, "settlement": settlement["migration"]}
+
+
 try:
     start_all()
     machine.wait_for_unit("multi-user.target", timeout=120)
@@ -355,6 +412,7 @@ try:
     proof["write"] = check("http-write", http_write)
     proof["restart"] = check("restart-persistence", restart)
     proof["pty"] = check("production-pty", pty)
+    proof["migration"] = check("migration-converter", migration)
 except Exception as error:
     primary, primary_traceback = error, error.__traceback__
     errors.append(str(error) or type(error).__name__)
@@ -363,6 +421,11 @@ finally:
     collecting = True
     diagnostic_reachable = diagnostic_channel_reachable()
     if diagnostic_reachable:
+        try:
+            settle_migration()
+        except Exception as error:
+            errors.append(f"Converter settlement: {error}")
+            traceback.print_exc()
         try:
             current = properties()
             if current.get("ControlGroup"):
@@ -394,7 +457,8 @@ finally:
     receipt_file = driver.out_dir / "acceptance.json"
     receipt_file.write_text(json.dumps(receipt, indent=2) + "\n")
     try:
-        validation = subprocess.run([node, f"{support}/service-plan.mjs", "receipt"],
+        validation = subprocess.run([node, f"{support}/service-plan.mjs", "receipt",
+                                     str(driver.out_dir / "guest" / "brabbler-evidence")],
                                     input=json.dumps({"plan": plan, "receipt": receipt}), text=True, capture_output=True, timeout=10)
         if validation.returncode != 0:
             print(validation.stderr, flush=True)

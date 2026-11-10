@@ -6,8 +6,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const serviceResources = Object.freeze({ workers: 1, cpus: 1, memoryMiB: 1536, diskMiB: 2048 });
-export const serviceChecks = Object.freeze(['activation', 'environment-permissions', 'http-write', 'restart-persistence', 'production-pty']);
-export const serviceArtifacts = Object.freeze(['journal.log', 'service.log', 'observations.json', 'fixtures.tar.gz']);
+export const serviceChecks = Object.freeze(['activation', 'environment-permissions', 'http-write', 'restart-persistence', 'production-pty', 'migration-converter']);
+export const serviceArtifacts = Object.freeze(['journal.log', 'service.log', 'observations.json', 'fixtures.tar.gz', 'migration.tap', 'migration.stderr.log', 'migration.json']);
+// Reviewed original titles, not an inventory inferred from observed TAP.
+export const migrationCaseInventory = JSON.parse(fs.readFileSync(new URL('./migration-cases.json', import.meta.url), 'utf8'));
+export const migrationExpectedCases = Object.freeze([...migrationCaseInventory.converter, ...migrationCaseInventory.native]);
 const store = '/nix/store/[a-z0-9]{32}-[^/]+';
 
 export function validateServiceRegistry(registry) {
@@ -18,9 +21,18 @@ export function validateServiceRegistry(registry) {
   assert.equal(registry.launcher, `${root}/bin/brabbler`);
   assert.match(registry.shell ?? '', new RegExp(`^${store}/bin/bash$`));
   assert.match(registry.service?.controller ?? '', new RegExp(`^${store}/bin/brabbler-deployment-control$`));
+  const migration = registry.migration;
+  for (const [key, suffix] of Object.entries({ source: '', modules: '/node_modules', node: '/bin/node', python: '/bin/python3', git: '/bin/git', acl: '/bin/setfacl' })) {
+    assert.match(migration?.[key] ?? '', new RegExp(`^${store}${suffix}$`));
+  }
+  assert.deepEqual(migration, {
+    source: migration.source, modules: migration.modules, node: migration.node, python: migration.python, git: migration.git, acl: migration.acl,
+    unit: 'brabbler-migration-acceptance.service', root: '/home/t0/migration',
+    fixture: 'tools/migrations/git-operation-reviews/vm-acceptance.fixture.mjs', timeoutSeconds: 240,
+  });
   assert.deepEqual(registry, {
     version: 1, kind: 'brabbler-service-registry', package: registry.package, launcher: registry.launcher, shell: registry.shell,
-    resources: { ...serviceResources }, service: {
+    migration, resources: { ...serviceResources }, service: {
       user: 't0', uid: 1000, home: '/home/t0', port: 30141, unit: 'brabbler.service',
       envFile: '/home/t0/service.env', fixture: '/home/t0/fixtures', agentDir: '/home/t0/fixtures/agent',
       evidence: '/home/t0/evidence', controller: registry.service.controller,
@@ -37,6 +49,7 @@ export function createServicePlan(registry) {
       file: `${registry.service.agentDir}/sessions/smoke/2026-10-15T00-00-00-000Z_vm-service-smoke.jsonl` },
     terminal: { id: '0123456789abcdef0123456789abcdef', cols: 91, rows: 27 },
     artifacts: [...serviceArtifacts],
+    migration: { ...registry.migration, expectedCases: [...migrationExpectedCases] },
   };
 }
 
@@ -102,6 +115,34 @@ export function validateServiceArtifacts(root, artifacts) {
   return artifacts;
 }
 
+export function validateMigrationSettlement(settlement) {
+  assert.deepEqual(Object.keys(settlement ?? {}).sort(), ['attempted', 'path', 'state']);
+  assert.equal(typeof settlement.attempted, 'boolean');
+  if (!settlement.attempted) assert.deepEqual(settlement, { attempted: false, path: null, state: 'not-started' });
+  else {
+    assert.equal(settlement.path, '/system.slice/brabbler-migration-acceptance.service');
+    assert.ok(['empty', 'absent'].includes(settlement.state), 'Converter descendants not settled');
+  }
+  return settlement;
+}
+
+export function validateMigrationProof(proof, plan, settlement) {
+  assert.deepEqual(Object.keys(proof ?? {}).sort(), ['counts', 'execution', 'identity', 'settlement']);
+  assert.deepEqual(proof.settlement, validateMigrationSettlement(settlement));
+  assert.equal(settlement.attempted, true);
+  assert.deepEqual(proof.execution, { Result: 'success', ExecMainCode: '1', ExecMainStatus: '0' });
+  const identity = proof.identity;
+  assert.deepEqual(Object.keys(identity ?? {}).sort(), ['inputs', 'node', 'probe', 'sdk', 'tmp', 'tool', 'uid']);
+  assert.deepEqual(identity.inputs, plan.registry.migration);
+  assert.equal(identity.uid, 1000); assert.equal(identity.probe, 'available');
+  assert.deepEqual(identity.tmp, { path: '/home/t0/migration/tmp', uid: 1000, mode: '0700', physical: true });
+  assert.match(identity.node, /^24\.[0-9]+\.[0-9]+$/); assert.match(identity.sdk, /^[0-9]+\.[0-9]+\.[0-9]+(?:[-+].+)?$/);
+  assert.match(identity.tool, /^[a-f0-9]{64}$/);
+  const count = plan.migration.expectedCases.length;
+  assert.deepEqual(proof.counts, { tests: count, suites: 0, pass: count, fail: 0, cancelled: 0, skipped: 0, todo: 0 });
+  return proof;
+}
+
 export function validateServiceEvidence(receipt, plan) {
   try {
     assert.deepEqual(plan, createServicePlan(plan?.registry));
@@ -115,7 +156,7 @@ export function validateServiceEvidence(receipt, plan) {
     assert.ok(Array.isArray(receipt.errors) && receipt.errors.every(error => typeof error === 'string' && error.length > 0));
     assert.deepEqual(Object.keys(receipt.artifacts).sort(), [...plan.artifacts].sort());
     for (const digest of Object.values(receipt.artifacts)) assert.match(digest, /^[a-f0-9]{64}$/);
-    assert.deepEqual(Object.keys(receipt.proof).sort(), ['activation', 'permissions', 'write', 'restart', 'pty'].sort());
+    assert.deepEqual(Object.keys(receipt.proof).sort(), ['activation', 'permissions', 'write', 'restart', 'pty', 'migration'].sort());
     assert.equal(receipt.checks.length, serviceChecks.length);
     let admissionClosed = false;
     for (const [i, check] of receipt.checks.entries()) {
@@ -124,7 +165,7 @@ export function validateServiceEvidence(receipt, plan) {
       if (check.status === 'passed') assert.equal(admissionClosed, false, 'A failed/unstarted proof cannot be skipped');
       else {
         admissionClosed = true;
-        assert.equal(receipt.proof[['activation', 'permissions', 'write', 'restart', 'pty'][i]], null);
+        assert.equal(receipt.proof[['activation', 'permissions', 'write', 'restart', 'pty', 'migration'][i]], null);
       }
     }
     if (receipt.passed) {
@@ -180,7 +221,9 @@ export function validateServiceEvidence(receipt, plan) {
       assert.equal(pty.controlGroup, proof.restart.after.ControlGroup); serviceCgroup(pty.controlGroup);
     }
     const settlement = receipt.settlement;
-    assert.deepEqual(Object.keys(settlement).sort(), ['groups', 'port', 'status']);
+    assert.deepEqual(Object.keys(settlement).sort(), ['groups', 'migration', 'port', 'status']);
+    validateMigrationSettlement(settlement.migration);
+    if (completed('migration-converter')) validateMigrationProof(proof.migration, plan, settlement.migration);
     assert.equal(settlement.status?.ActiveState, 'inactive'); assert.equal(settlement.status.MainPID, '0');
     assert.equal(settlement.port, 'refused');
     assert.ok(Array.isArray(settlement.groups) && settlement.groups.length > 0);
@@ -203,6 +246,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (mode === 'plan') console.log(JSON.stringify(createServicePlan(JSON.parse(fs.readFileSync(file, 'utf8')))));
     else if (mode === 'receipt') {
       const input = JSON.parse(fs.readFileSync(0, 'utf8')); validateServiceEvidence(input.receipt, input.plan);
+      if (file) {
+        const { validateMigrationArtifacts } = await import('./vm-evidence.mjs');
+        await validateMigrationArtifacts(file, input.plan, input.receipt.proof.migration, input.receipt.settlement.migration);
+      }
     } else throw new Error('Unknown service plan operation');
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

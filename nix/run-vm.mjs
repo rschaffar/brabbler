@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { privateEnvironment, validateArgs } from './test.mjs';
 import { directoryIdentity, runOwned } from './test-lifecycle.mjs';
 import { createServicePlan, serviceResources, validateServiceArtifacts, validateServiceEvidence } from './service-plan.mjs';
+import { validateMigrationArtifacts } from './vm-evidence.mjs';
 export { validateServiceEvidence } from './service-plan.mjs';
 
 export async function runVM(source, system, args) {
@@ -49,6 +50,8 @@ export async function runVM(source, system, args) {
     try {
       const evidence = validateServiceEvidence(JSON.parse(fs.readFileSync(path.join(root, 'artifacts/acceptance.json'), 'utf8')), report.plan);
       validateServiceArtifacts(path.join(root, 'artifacts/guest/brabbler-evidence'), evidence.artifacts);
+      await validateMigrationArtifacts(path.join(root, 'artifacts/guest/brabbler-evidence'), report.plan,
+        evidence.proof.migration, evidence.settlement.migration);
       report.evidence = evidence;
     } catch (error) { report.error = error.message; }
     report.status = report.execution.code === 0 && report.execution.settled && !report.execution.interrupted && report.evidence?.passed ? 'passed' : 'failed';

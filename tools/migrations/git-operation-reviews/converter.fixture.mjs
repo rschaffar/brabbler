@@ -480,7 +480,13 @@ test('S3/B22 frozen helper identities cover the actual local runtime import clos
 test('S3/B22 private source-only command-env mutation changes identity and refuses before state writes; exact restoration re-enables', async t => {
   const { f, histories } = await basic(t), root = resolve(here, '../../..'), copy = join(f.root, 'source');
   const sourceFiles = [...LOCAL_HELPERS, 'package.json', ...fs.readdirSync(here).filter(n => /\.(mjs|ts)$/.test(n) && !/\.(test|fixture)\./.test(n)).map(n => `tools/migrations/git-operation-reviews/${n}`)];
-  for (const file of sourceFiles) { fs.mkdirSync(dirname(join(copy, file)), { recursive: true }); fs.copyFileSync(join(root, file), join(copy, file)); }
+  for (const file of sourceFiles) {
+    const destination = join(copy, file);
+    fs.mkdirSync(dirname(destination), { recursive: true });
+    fs.copyFileSync(join(root, file), destination);
+    // Only this owned fault-copy must be mutable; store source stays read-only.
+    fs.chmodSync(destination, fs.statSync(destination).mode | 0o200);
+  }
   const cli = pathToFileURL(join(copy, 'tools/migrations/git-operation-reviews/cli.mjs')).href, worker = pathToFileURL(join(copy, 'tools/migrations/git-operation-reviews/run.mjs')).href;
   const originalTarget = pathToFileURL(join(here, 'target.mjs')).href;
   // Only pinned external dependency resolution is redirected, never a local
