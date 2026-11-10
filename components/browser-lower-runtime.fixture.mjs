@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { ownJsdomRenderingIntervals } from '../lib/testing/jsdom-rendering-intervals.fixture.mjs';
 import { isNativeError } from 'node:util/types';
 import { act, createElement } from 'react';
 import { createJiti } from 'jiti';
@@ -9,6 +10,7 @@ export { click, inputText } from '../lib/testing/leaf-controls.fixture.mjs';
 // Local support only. No source extraction, mocked React/children, native backend,
 // sleeps, universal flush, global timer acceleration or new scheduling family.
 export async function lowerRuntime(t, route, setup = () => {}) {
+  const renderingIntervals = ownJsdomRenderingIntervals();
   const errors = [], requests = [], restores = [], listeners = [], releases = [], joins = [], routeLabels = [];
   const timers = new Map(), intervals = new Map(), frames = new Map();
   let sequence = 0, view, work, closing = false, settlement, beforeRealm = '';
@@ -76,6 +78,7 @@ export async function lowerRuntime(t, route, setup = () => {}) {
     await attempt(() => view?.unmount()); // admits the UI's existing stop writes
     await attempt(settleDomain);
     await attempt(() => view?.dispose());
+    await attempt(() => renderingIntervals.close());
     for (const restore of restores.toReversed()) await attempt(restore);
     for (const remove of listeners.toReversed()) await attempt(remove);
     if (errors.length) throw new AggregateError(errors, `${diagnostic('Lower UI guarded lifetime (original causes retained)')}; joined snapshot: ${beforeRealm.slice(0, 1800)}`);
@@ -151,7 +154,11 @@ export async function lowerRuntime(t, route, setup = () => {}) {
         listen(window, 'unhandledrejection', event => errors.push(new Error('window rejection', { cause: event.reason })));
         for (const target of [globalThis, window]) {
           replace(target, 'setTimeout', (fn, delay, ...args) => timer(timers, fn, delay, args)); replace(target, 'clearTimeout', id => timers.delete(id));
-          replace(target, 'setInterval', (fn, delay, ...args) => timer(intervals, fn, delay, args)); replace(target, 'clearInterval', id => intervals.delete(id));
+          replace(target, 'setInterval', (fn, delay, ...args) => target === globalThis && delay === 1000 / 60
+            ? renderingIntervals.start(fn, ...args) : timer(intervals, fn, delay, args));
+          replace(target, 'clearInterval', id => {
+            if (!intervals.delete(id) && target === globalThis) renderingIntervals.clear(id);
+          });
           replace(target, 'requestAnimationFrame', fn => timer(frames, fn, 0)); replace(target, 'cancelAnimationFrame', id => frames.delete(id));
         }
         replace(globalThis, 'localStorage', window.localStorage); replace(globalThis, 'sessionStorage', window.sessionStorage);

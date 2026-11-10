@@ -56,7 +56,7 @@ for (const mobile of [false, true]) for (const busy of [false, true]) for (const
       onSteer: callbacks ? () => {} : undefined, onFollowUp: callbacks ? () => {} : undefined });
     await inputText(c.view, c.ta, 'draft remains');
     const stacked = mobile && busy && callbacks;
-    assert.equal(c.ta.style.width, '100%'); assert.equal(c.ta.style.minWidth, '0');
+    assert.equal(c.ta.style.width, '100%'); assert.equal(c.ta.style.minWidth, '0px');
     assert.equal(c.ta.parentElement.style.flexDirection, stacked ? 'column' : 'row');
     assert.equal(c.ta.style.flex, stacked ? '0 0 auto' : '1 1 0%');
     await c.update({ isStreaming: !busy });

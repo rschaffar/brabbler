@@ -245,11 +245,12 @@ The catalogue/detail `jsonResponse` helper leaves Web `Response` bodies decoded.
 Next's Node HTTP layer owns compression negotiation and framing: its response
 adapter strips transport headers, so precompressing that Web body would leave
 clients with gzip bytes but no encoding header. Status, cache headers and large-
-response `Vary: Accept-Encoding` remain intact. The guarded managed-startup adapter
-in `bin/next-compression-compat.js` corrects only the compressor predicate's view
-of Next's singleton JSON Content-Type arrays. Actual response headers remain
-unchanged. [Dependency maintenance](dependencies.md) owns its exact version/hash
-and mandatory reassessment on every Next update. Core tests exercise the real
+response `Vary: Accept-Encoding` remain intact. Next 16.4.6 fixes singleton
+Content-Type forwarding, so the managed-startup compressor adapter/preload is
+retired. Native compression can include small unknown-length JSON/error bodies;
+the helper's 1 KiB Vary marker is not a wire-level compression cutoff. The owner
+explicitly selected that upstream behaviour. [Dependency maintenance](dependencies.md)
+owns reassessment on future Next updates; the separate request-header guard stays. Core tests exercise the real
 Next response adapter/compressor and raw HTTP gzip; installed acceptance retains
 genuine decoding and browser connections. This does not disable compression.
 

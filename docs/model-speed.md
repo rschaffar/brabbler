@@ -44,7 +44,7 @@ Pi CLI does not implement this Brabbler metadata.
 
 ## SDK compatibility and accounting
 
-`lib/session-model-speed-runtime.ts` adapts the pinned Pi SDK **1.5.0**. Only
+`lib/session-model-speed-runtime.ts` adapts the pinned Pi SDK **1.5.1**. Only
 matching session chat streams on the native `openai-codex` /
 `openai-codex-responses` path use Standard → `default` or Fast → `priority`.
 The request must carry both the owning agent's current run signal and payload
@@ -53,7 +53,9 @@ bug-report/compaction summaries omit that callback. Their `streamSimple` calls,
 other session IDs/providers and auxiliary `completeSimple` calls keep their
 existing behavior. A proxy view binds untouched methods to the original
 session/account runtime; never overwrite the shared runtime's `streamSimple`,
-because subagents reuse it.
+because subagents reuse it. Brabbler preserves streaming-only warming when no
+valid global choice is saved; explicit off/streaming/idle choices remain live.
+See [model contracts](model-internals.md) for that separate cost/default boundary.
 
 The SDK's simple adapter drops `serviceTier`. Forward through the same runtime's
 full `stream` method using its exported simple-option/token-clamping and reasoning

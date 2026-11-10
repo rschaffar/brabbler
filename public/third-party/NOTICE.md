@@ -16,7 +16,7 @@ replace them.
 | Buffer implementation | [MIT](licenses/buffer-MIT.txt) |
 | Webpack runtime | [MIT](licenses/webpack-MIT.txt) |
 | OpenTelemetry API, copyright The OpenTelemetry Authors | [Apache-2.0](licenses/Apache-2.0.txt) |
-| ELK / elkjs, itemis and contributors; Xbase/Xtend runtime | [EPL-2.0](licenses/elkjs-EPL-2.0.txt) and original per-file source notices |
+| ELK / elkjs, itemis and contributors; Xbase/Xtend runtime | [EPL-2.0](licenses/elkjs-EPL-2.0.txt), including preserved secondary-license notices, and original per-file source notices |
 | Incorporated EMF-GWT common/ecore runtime, IBM and contributors | [EPL-1.0](licenses/EPL-1.0.txt) and original per-file source notices |
 | Incorporated ask-user implementation | [Original MIT notice](licenses/ask-user-MIT.txt) |
 | Incorporated Git graph layout | [Original MIT notice](licenses/git-graph-layout-MIT.txt) |
@@ -36,8 +36,9 @@ by the recipient's npm installation also retain their upstream legal files.
 
 ## Corresponding ELK sources
 
-Editable Java/JS sources, original patches, runtime source JARs, build
-configuration and notices are supplied as a separate accompanying release asset.
+Editable Java/JS sources for ELK/elkjs 0.12.1, runtime source JARs and
+source-bearing GWT adapters, build configuration and notices are supplied as a
+separate accompanying release asset. No downstream ELK patches are required.
 See [source availability](SOURCE-AVAILABILITY.md). The installed build's
 `SOURCE-AVAILABILITY.json` records the versioned filename, locator and SHA-256.
 This is a source-access statement, not a requirement for application users to

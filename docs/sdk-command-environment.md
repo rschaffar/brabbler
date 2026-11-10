@@ -12,7 +12,7 @@ consumed. Removing browser SSH does not remove this command-secret protection.
 ## Installation and verification
 
 `bin/sdk-command-env-payload.js` pins the public `@earendil-works/pi-coding-agent`
-**1.5.0** manifest and all twelve target modules by SHA-256, with original and
+**1.5.1** manifest and all twelve target modules by SHA-256, with original and
 patched hashes and exact replacement recipes. It contains only patch snippets,
 not vendored SDK modules. Its self-contained ESM helper is installed at
 `dist/utils/brabbler-command-env.js` inside the SDK and imports no application code.
@@ -106,18 +106,18 @@ hygiene, not isolation; a successful check is not a whole-SDK sandbox certificat
 The patch adds import lines to distributed JavaScript; existing upstream source
 maps are not regenerated and can show pre-patch coordinates. Reassess this bounded
 patch on every SDK change rather than widening accepted fingerprints casually.
-The 1.5 rebase retains all twelve targets: six originals are unchanged; exec,
-grep, shell, tools-manager, clipboard-command and open-browser have new exact
-fingerprints. Exec's recipe follows the refactored spawn indentation without
-changing its new combined-output cap, UTF-8 decoding or termination logic. The
-browser recipe preserves `cwd: "/"`; clipboard also retains that upstream change.
-The macOS stop-before-kill, unsupported-download-target checks, `rg --no-config`
-and detached POSIX clipboard behavior remain intact. No new environment hook
-replaces this policy. The standalone exclusion fingerprints all 83 inventory entries;
-upstream SDK 1.5.0 still declares Undici 8.12.3, but the application and its
-version-scoped SDK override now resolve 8.12.4 for the subsequent security fixes.
-The runtime guard requires that exact resolved version; SDK manifest and all
-patch/bundle fingerprints remain unchanged. A clean registry audit alone does
+The 1.5.1 rebase retains all twelve targets: nine originals are unchanged; bash,
+grep and find have new exact fingerprints. Grep's replacement inserts filtering
+into the new multiline spawn options while preserving search-directory cwd and
+rg's JSON context handling. Exec's output cap/UTF-8/termination logic and the
+browser/clipboard root cwd recipes remain unchanged. The macOS stop-before-kill,
+unsupported-download-target checks, `rg --no-config` and detached POSIX clipboard
+behavior remain intact. No new environment hook replaces this policy.
+The standalone exclusion fingerprints all **85** inventory entries. Upstream SDK
+1.5.1 still declares Undici 8.12.3, but the application and its parent/version-scoped
+override resolve **8.12.4**. The runtime guard requires that exact resolution;
+manifest, helper, target and complete bundle fingerprints are requalified from
+actual upstream bytes, never widened to unknown versions. A clean registry audit alone does
 not supersede newer upstream security advisories.
 
 ## Regression ownership

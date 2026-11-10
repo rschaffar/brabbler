@@ -3,12 +3,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { act, createElement, useRef } from 'react';
 import { packet, click, input, key, textButton } from './cards-git.fixture.mjs';
+import { ownJsdomRenderingIntervals } from '../lib/testing/jsdom-rendering-intervals.fixture.mjs';
 
 const ask = extra => ({ type: 'extension_ui_request', id: 'question-A', method: 'ask_user', question: 'Which <script>?',
   context: '**Background**', options: [{ title: 'First', description: 'First details' }, { title: 'Second', description: 'Second details' }],
   allowMultiple: false, allowFreeform: true, allowComment: true, contextExpanded: true, ...extra });
-async function card(t, request, extra = {}) {
-  const h = await packet(t), { BlockingRequestCard } = await h.load('./BlockingRequestCard.tsx');
+async function card(t, request, extra = {}, ownView) {
+  const h = await packet(t);
+  ownView?.(h.view); // Capture disposal before component loading/rendering can fail.
+  const { BlockingRequestCard } = await h.load('./BlockingRequestCard.tsx');
   const calls = [];
   let props = { request, onRespond: async (...args) => { calls.push(args); }, ...extra };
   const render = async next => { props = { ...props, ...next }; await h.render(createElement(BlockingRequestCard, props)); };
@@ -187,13 +190,24 @@ for (const method of ['input', 'editor', 'confirm', 'select']) test(`${method} u
 });
 
 for (const method of ['ask_user', 'input']) test(`${method} countdown displays zero without authorizing local expiry, and releases its interval`, async t => {
-  const callbacks = new Map(); let id = 0, now = 10_000;
+  const callbacks = new Map(), renderingIntervals = ownJsdomRenderingIntervals();
+  let id = 0, now = 10_000, view;
+  t.after(async () => {
+    const errors = [];
+    try { await view?.dispose(); } catch (error) { errors.push(error); }
+    try { renderingIntervals.close(); } catch (error) { errors.push(error); }
+    if (errors.length) throw new AggregateError(errors, 'Countdown realm/rendering cleanup failed');
+  });
   t.mock.method(Date, 'now', () => now);
-  t.mock.method(globalThis, 'setInterval', (callback, delay) => { assert.equal(delay, 1000); const token = ++id; callbacks.set(token, callback); return token; });
-  t.mock.method(globalThis, 'clearInterval', token => callbacks.delete(token));
+  t.mock.method(globalThis, 'setInterval', (callback, delay, ...args) => {
+    // jsdom 31's rendering/focus timer is not the application countdown clock.
+    if (delay === 1000 / 60) return renderingIntervals.start(callback, ...args);
+    assert.equal(delay, 1000); const token = ++id; callbacks.set(token, callback); return token;
+  });
+  t.mock.method(globalThis, 'clearInterval', token => { if (!callbacks.delete(token)) renderingIntervals.clear(token); });
   const request = method === 'ask_user' ? ask({ expiresAt: 11_500 })
     : { type: 'extension_ui_request', id: 'input-countdown', method, title: 'Expiring', expiresAt: 11_500 };
-  const h = await card(t, request);
+  const h = await card(t, request, {}, mounted => { view = mounted; });
   assert.equal(callbacks.size, 1, 'Strict replay released its first interval');
   assert.match(h.view.container.textContent, /2s|2 seconds/);
   await act(async () => { now = 11_499; for (const callback of callbacks.values()) callback(); });
@@ -209,7 +223,7 @@ test('the actual custom panel remains an overlay, not a blocking question form',
   const request = { type: 'extension_ui_request', id: 'custom', method: 'custom', lines: ['custom content'] }, sent = [];
   await h.render(createElement(ExtensionCustomPanel, { request, onInput: (...args) => sent.push(args) }));
   const overlay = h.view.container.firstElementChild, field = overlay.querySelector('textarea');
-  assert.equal(overlay.style.position, 'absolute'); assert.equal(overlay.style.inset, '0');
+  assert.equal(overlay.style.position, 'absolute'); assert.equal(overlay.style.inset, '0px');
   assert.equal(overlay.querySelector('form') === null, true);
   assert.equal(h.view.window.document.activeElement === field, true);
   await key(h.view, field, 'Enter', { isComposing: true }); assert.deepEqual(sent, []);

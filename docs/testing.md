@@ -8,14 +8,14 @@ acceptance mode for this baseline. A prebuilt release archive has an additional
 ordinary-runtime installation path and smoke check; neither replaces this Nix
 baseline. Execution uses synthetic data and no external providers. Normal realization may fetch pinned inputs or substitutes.
 
-The selected Nix runtime is Node **24.21.0** throughout modules, the application,
+The selected Nix runtime is Node **24.22.2** throughout modules, the application,
 core/fresh runners and VM fixtures. Core's fail-closed runtime-major check requires
 **24**; changing the runtime means updating that guard deliberately, not accepting
 arbitrary ambient Node. Root/demo use TypeScript **6.0.3** and Node 24 typings.
 The launcher/npm minimum is **24.0.0**; acceptance covers the pinned runtime, not
-every version admitted by that minimum. The Node 24.22.2/shared-Brotli security
-update is explicitly deferred in [dependency maintenance](dependencies.md); this
-candidate uses the refreshed Nixpkgs recipe without a custom runtime overlay.
+every version admitted by that minimum. The selected upstream recipe includes
+shared Brotli 1.2.1 without a custom runtime overlay; [dependency maintenance](dependencies.md)
+owns security/compatibility dispositions and the candidate's verification status.
 
 From the physical Linux working-tree root:
 
@@ -139,7 +139,7 @@ inputs still admit their required support. Keep `package.json`'s packed-file
 exclusions in agreement and verify the realized package inventory and dependency
 input graph when support changes. The package's `node_modules` symlink exposes the
 full application module set, so a root devDependency would ship too. Do not add
-jsdom to the root manifest. **`jsdom@27.0.1`** instead has a private manifest/lock at
+jsdom to the root manifest. **`jsdom@31.0.0`** instead has a private manifest/lock at
 `lib/testing/package.json` and `lib/testing/package-lock.json`. The separate
 `nix/test-support.nix` output built successfully without React or node-pty and is
 linked only at `lib/testing/node_modules` in private core/static workspaces. Root
@@ -273,7 +273,17 @@ New behavior tests mount the **production** component/hook, not a copy of its
 algorithm; see `hooks/useResizablePanel.test.mjs`. `mount(t, element,
 { strict = true, setup })` registers failure-safe disposal, owns one DOM realm at
 a time and runs real React with StrictMode by default. `setup(window)` precedes
-render; storage/events come from `view.window`. Dispatch/rerender/unmount are
+render; storage/events come from `view.window`. The fixture captures its new
+jsdom document's initial `pageshow` before caller instrumentation and joins that
+single document-loading event after setup, before creating the React root. This
+is not an application-work, timer or frame drain. jsdom 31's separate native
+60-Hz rendering/focus interval is not an application policy clock; scoped fixtures
+that control host intervals distinguish that exact cadence from their controlled
+or denied application intervals. `jsdom-rendering-intervals.fixture.mjs` tracks
+only its own opaque native handles, never coerces application IDs, and reports/
+releases survivors after actual realm close and before host-guard restoration.
+Settings still denies realm interval admission; rendering is a host-only exception.
+Dispatch/rerender/unmount are
 awaited `act` boundaries, not universal background-work flushes. `unmount()` joins
 React cleanup; `dispose()` additionally closes the window/restores globals and is
 idempotent. Join externally owned async work separately before disposing its realm.

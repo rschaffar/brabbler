@@ -1,5 +1,6 @@
 import type { Agent, AgentMessage as SdkAgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
+import { withStreamingCacheWarmingDefault } from "./sdk-settings";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { BTW_CONTEXT_TYPE, BTW_SYSTEM_GUIDANCE, btwRelation, btwSnapshotMessage, readBtwMetadata, type BtwSnapshot } from "./btw";
@@ -3256,7 +3257,7 @@ async function startRpcSessionInternal(
       : chatOnly
         ? undefined
         : projectTrustReloadOptions(sessionCwd, agentDir);
-    const settingsManager = SettingsManager.create(sessionCwd, agentDir);
+    const settingsManager = withStreamingCacheWarmingDefault(SettingsManager.create(sessionCwd, agentDir));
     // Chat-only sessions and subagents that replace Pi's prompt send an exact
     // system prompt. The prompt is resolved at prompt time through this inline
     // extension: it may read the session's context files, which exist only

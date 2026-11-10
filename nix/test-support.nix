@@ -7,7 +7,7 @@ in pkgs.stdenvNoCC.mkDerivation {
   inherit src nodejs;
   npmDeps = pkgs.fetchNpmDeps {
     inherit src;
-    hash = "sha256-P33HFBCPQzGt0uu80TZoK8y8/ngF4K9y3/HgvLAyvrA=";
+    hash = "sha256-l81WMc90xXsedD2B+oHl5OnrymDz8Scu5UYARYJBgEQ=";
     fetcherVersion = 2;
   };
   # DOM support is pure JS. Never rebuild node-pty or install another React.

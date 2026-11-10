@@ -1,16 +1,16 @@
 "use strict";
-/* Generated from public SDK 1.5.0 dist bytes; no SDK source vendoring. */
+/* Generated from public SDK 1.5.1 dist bytes; no SDK source vendoring. */
 module.exports = {
   "schemaVersion": 1,
-  "patchId": "brabbler-sdk-command-env-1.5.0-v2",
+  "patchId": "brabbler-sdk-command-env-1.5.1-v2",
   "packageName": "@earendil-works/pi-coding-agent",
-  "packageVersion": "1.5.0",
-  "packageJsonSha256": "990aac3caff17b717294fa792b4e3f60b991d274d9f4ab6977d6aa42aa43c95e",
+  "packageVersion": "1.5.1",
+  "packageJsonSha256": "58b1ebce6c1a5d63614279bac55c1117ed6015707d09a8d963ad0dad0dcc805c",
   "scope": "Twelve pinned modular SDK targets, including clipboard/browser helpers and RpcClient launch; excludes interactive-UI-only direct spawns, CLI/RPC bundles and arbitrary extension Node.js.",
   "helper": {
     "path": "dist/utils/brabbler-command-env.js",
-    "content": "/** Brabbler child-command environment policy, pinned to SDK 1.5.0.\n * Install-time downstream patch; never imported from the application runtime.\n * This is hygiene, not an extension sandbox. Filter only the final child copy:\n * explicit empty environments stay empty, and SSH/account/session values survive.\n */\nexport function sdkCommandEnvironment(source = process.env, platform = process.platform) {\n    const environment = { ...source };\n    for (const key of Object.keys(environment)) {\n        const name = platform === \"win32\" ? key.toUpperCase() : key;\n        if (name === \"BRABBLER_PASSWORD\" || name === \"BRABBLER_SSH_RUNTIME\") delete environment[key];\n    }\n    return environment;\n}\n",
-    "sha256": "2436a503199eedfe9b6ffb3ebeca997a2c2bfa95f6056d1bb552449018f4dcd0"
+    "content": "/** Brabbler child-command environment policy, pinned to SDK 1.5.1.\n * Install-time downstream patch; never imported from the application runtime.\n * This is hygiene, not an extension sandbox. Filter only the final child copy:\n * explicit empty environments stay empty, and SSH/account/session values survive.\n */\nexport function sdkCommandEnvironment(source = process.env, platform = process.platform) {\n    const environment = { ...source };\n    for (const key of Object.keys(environment)) {\n        const name = platform === \"win32\" ? key.toUpperCase() : key;\n        if (name === \"BRABBLER_PASSWORD\" || name === \"BRABBLER_SSH_RUNTIME\") delete environment[key];\n    }\n    return environment;\n}\n",
+    "sha256": "b9a8822fbd106d171d833ee4c33b6c8cb45d8956b691af2651995694b3df047e"
   },
   "files": [
     {
@@ -68,8 +68,8 @@ module.exports = {
     },
     {
       "path": "dist/core/tools/bash.js",
-      "originalSha256": "f32e87a42f66276b2eafaaf0848babf52523d37ab0fd448439586376747f03c4",
-      "patchedSha256": "2f1395ecfc49ee6ccd1623437b20cdf8738a054e0be220c15d18145b09110cfa",
+      "originalSha256": "afc4f829b3da2e7d8cc31296ccceb26bbc8e35018eb3f352791b651866cc2040",
+      "patchedSha256": "b03b125f0c1ccfc9f42a53ced15c27782a7e85266de057ed6eaeb7c244277fff",
       "replacements": [
         {
           "before": "import { spawn } from \"child_process\";\n",
@@ -83,23 +83,23 @@ module.exports = {
     },
     {
       "path": "dist/core/tools/grep.js",
-      "originalSha256": "651a8f76a1b5af4a1b52edd32d70691ebd15604436bedf65176ec7c7d4ad6174",
-      "patchedSha256": "f8aa9c4c2ca88acceacc08f208f481644d41412b31228fa38b4e9712d67bd623",
+      "originalSha256": "9f05f9b18d4edf7675395fdfaeba2050dff8e43b1e45922096c185a64a73118e",
+      "patchedSha256": "f6fef48daf742549a88a34a27d6d5a496717e8b60f50d5a736ff96a443121e29",
       "replacements": [
         {
           "before": "import { spawn } from \"child_process\";\n",
           "after": "import { spawn } from \"child_process\";\nimport { sdkCommandEnvironment } from \"../../utils/brabbler-command-env.js\";\n"
         },
         {
-          "before": "const child = spawn(rgPath, args, { stdio: [\"ignore\", \"pipe\", \"pipe\"] });",
-          "after": "const child = spawn(rgPath, args, { env: sdkCommandEnvironment(), stdio: [\"ignore\", \"pipe\", \"pipe\"] });"
+          "before": "const child = spawn(rgPath, args, {\n",
+          "after": "const child = spawn(rgPath, args, {\n                            env: sdkCommandEnvironment(),\n"
         }
       ]
     },
     {
       "path": "dist/core/tools/find.js",
-      "originalSha256": "cbb5e3a76e962899f833452ff26670c1fdbf333e7efdecb9953b07f6ebd14ed7",
-      "patchedSha256": "a3426f0f3d573a9238fd67dc02c63e7143441fda304e889bc330517adf4bb451",
+      "originalSha256": "f0f0e41ca6f97b29cc7284489d3902f324e9058005ee5f66c6e38a62bc49774d",
+      "patchedSha256": "8f7874041d5165583f2e09b961df38c4fa5967a89b2972b0e54052c67137cf10",
       "replacements": [
         {
           "before": "import { spawn } from \"child_process\";\n",

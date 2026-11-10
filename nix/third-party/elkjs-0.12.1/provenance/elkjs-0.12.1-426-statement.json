@@ -1,0 +1,17 @@
+{
+  "_type": "https://in-toto.io/Statement/v0.1",
+  "subject": [
+    {
+      "name": "pkg:npm/elkjs@0.12.1",
+      "digest": {
+        "sha512": "2213182871384b6bedc7442b8413f79583882837888895c1addabd306624b81f191ea86b0671cd7d25277635c57b0ad7d423caf1c870abed8d0342b4865898bb"
+      }
+    }
+  ],
+  "predicateType": "https://github.com/npm/attestation/tree/main/specs/publish/v0.1",
+  "predicate": {
+    "name": "elkjs",
+    "version": "0.12.1",
+    "registry": "https://registry.npmjs.org"
+  }
+}

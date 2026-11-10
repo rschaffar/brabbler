@@ -103,7 +103,7 @@ test("shared session cleanup retains exact original causes after a held System b
     check(() => assert.equal(publicFinished, true, "full original System public catch/finally finished"));
     check(() => assert.equal(held?.done, true));
     check(() => assert.equal(realm !== undefined, true, "actual realm was mounted"));
-    if (realm) check(() => assert.equal(realm.document === undefined, true, "actual JSDOM window.close completed"));
+    if (realm) check(() => assert.equal(realm.document.hasFocus(), false, "actual JSDOM window.close completed"));
     for (const { target, key, before } of descriptors) check(() => {
       const actual = Object.getOwnPropertyDescriptor(target, key);
       assert.equal(actual === undefined, before === undefined, `restore ${key} descriptor presence`);
@@ -158,6 +158,7 @@ test("shared session cleanup retains exact original causes after a held System b
   } });
   await fixture.mountReady(fixture.existingOptions());
   realm = fixture.view.window;
+  assert.equal(realm.document.hasFocus(), true, "actual JSDOM document is live before disposal");
   held = fixture.hold(command("get_state"), { stage: "body", abort: "ignore", beforeJson() { bodyDelivered = true; } });
   const operation = await fixture.start("actual held System full public operation for cleanup control", () => fixture.loader());
   originalWork = operation.promise;

@@ -397,12 +397,16 @@ test("file mention menu applies the measured upward height cap", async t => {
   await inputText(c.view, c.ta, '@'); await act(async () => { await c.api.current.whenSettled(); });
   const menu = [...c.view.container.querySelectorAll('div')].find(node => node.style.maxHeight.startsWith('min(48vh'));
   assert.ok(menu); assert.equal(menu.style.flexDirection, 'column');
-  assert.equal([...menu.children].some(node => node.style.minHeight === '0'), true);
+  assert.equal([...menu.children].some(node => node.style.minHeight === '0px'), true);
   menu.getBoundingClientRect = () => ({ bottom: 200 });
   const layout = menu.parentElement.parentElement;
   layout.style.overflowY = 'hidden'; layout.getBoundingClientRect = () => ({ top: 36 });
   await c.f.resize(layout); await c.f.frame();
-  assert.equal(menu.style.maxHeight, 'min(48vh, 400px, 156px)');
+  assert.equal(menu.style.maxHeight, 'min(48vh, 156px)');
+  // CSSOM reduces same-unit operands; retain the independent 400px cap too.
+  menu.getBoundingClientRect = () => ({ bottom: 500 });
+  await c.f.resize(layout); await c.f.frame();
+  assert.equal(menu.style.maxHeight, 'min(48vh, 400px)');
 });
 
 test("file mention menu remeasures when its layout container shifts the anchor", async t => {
@@ -413,10 +417,10 @@ test("file mention menu remeasures when its layout container shifts the anchor",
   assert.equal([...c.f.observers].some(observer => observer.targets.has(parent) && observer.targets.has(layout)), true);
   menu.getBoundingClientRect = () => ({ bottom: 343 });
   layout.style.overflowY = 'hidden'; layout.getBoundingClientRect = () => ({ top: 36 });
-  await c.f.resize(layout); await c.f.frame(); assert.equal(menu.style.maxHeight, 'min(48vh, 400px, 299px)');
+  await c.f.resize(layout); await c.f.frame(); assert.equal(menu.style.maxHeight, 'min(48vh, 299px)');
   menu.getBoundingClientRect = () => ({ bottom: 200 });
   await c.f.resize(layout); assert.equal(c.f.frames.size, 1); await c.f.frame();
-  assert.equal(menu.style.maxHeight, 'min(48vh, 400px, 156px)');
+  assert.equal(menu.style.maxHeight, 'min(48vh, 156px)');
   await c.f.key(c.ta, 'Escape'); assert.equal([...c.f.observers].some(observer => observer.targets.has(layout)), false);
   assert.equal(c.f.frames.size, 0);
 });
@@ -432,9 +436,9 @@ test('real file-menu viewport/window subscriptions coalesce measurements and rel
   const menu = [...c.view.container.querySelectorAll('div')].find(node => node.style.maxHeight.startsWith('min(48vh')); assert.ok(menu);
   let bottom = 200; menu.getBoundingClientRect = () => ({ bottom });
   await c.view.dispatch(viewport, new c.view.window.Event('resize')); await c.view.dispatch(viewport, new c.view.window.Event('scroll'));
-  assert.equal(c.f.frames.size, 1); await c.f.frame(); assert.equal(menu.style.maxHeight, 'min(48vh, 400px, 156px)');
+  assert.equal(c.f.frames.size, 1); await c.f.frame(); assert.equal(menu.style.maxHeight, 'min(48vh, 156px)');
   bottom = 343; await c.view.dispatch(c.view.window, new c.view.window.Event('resize')); await c.f.frame();
-  assert.equal(menu.style.maxHeight, 'min(48vh, 400px, 299px)'); assert.equal(viewportEvents.size, 2);
+  assert.equal(menu.style.maxHeight, 'min(48vh, 299px)'); assert.equal(viewportEvents.size, 2);
   await c.view.dispatch(viewport, new c.view.window.Event('resize')); assert.equal(c.f.frames.size, 1);
   await c.f.key(c.ta, 'Escape'); assert.equal(c.f.frames.size, 0); assert.equal(viewportEvents.size, 0);
   await c.view.unmount(); assert.equal(windowEvents.size, 0);

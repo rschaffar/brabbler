@@ -1,9 +1,9 @@
 # ELK source availability
 
-The ELK/elkjs and Xbase/Xtend sources incorporated through Mermaid are available
-under their included **EPL-2.0** terms. Incorporated EMF-GWT common/ecore sources
-retain **EPL-1.0** terms. Original copyright, Apache and additional applicable
-notices are preserved in the source material.
+ELK/elkjs advertise **EPL-2.0 OR GPL-3.0-or-later**; this distribution follows
+the EPL-2.0 option and preserves the secondary-license notices. Incorporated
+Xbase/Xtend sources retain EPL-2.0, and EMF-GWT common/ecore retain EPL-1.0.
+Original copyright, Apache and additional applicable notices remain included.
 
 ## Obtain the sources
 
@@ -20,21 +20,25 @@ can build the source output independently with `nix build .#brabbler-sources`.
 
 ## What is supplied
 
-- Full ELK v0.9.1 source plus the seven original PR955 content patches, applied
-  in order without fuzz or offsets.
-- Full elkjs 0.9.3 source: editable JS/GWT/additional Java files and original
-  build configuration, alongside generated JS reference files for identification.
-- Unchanged runtime source JARs for EMF-GWT common/ecore 2.12.4 and Xbase/Xtend
-  2.28.0, plus GWT 2.10.0 / Guava 31.1-jre sources and original legal material.
-- Public upstream release metadata, exact input hashes, patch order, source-tree
-  hashes, original source/patch copyrights and an offline archive assembly recipe.
+- Full ELK v0.12.1 source at commit
+  `3aa3b9fb98d8f9a41285b3061cff5efe79ed2ba4`, with no downstream patches.
+- Full elkjs 0.12.1 source at commit
+  `624ae90aa37110033a8af59c5ccbb292708b4317`: editable Java/JS/Xtend/GWT files,
+  original build configuration and generated JS references for identification.
+- Unchanged source JARs for EMF-GWT common/ecore 2.12.4 and Xbase/Xtend 2.36.0,
+  GWT 2.13.0 / Guava 31.1-jre sources, source-bearing GWT adapter artifacts and
+  original legal material. Assembly never executes the JARs or upstream code.
+- Public release/publishing metadata, exact input and editable-tree hashes, and
+  a deterministic offline archive assembly recipe.
 
-The source basis is **upstream elkjs 0.9.3's declared ELK v0.9.1 + PR955 lineage**.
-The tag/npm generated references and the named patch changes were checked.
-Upstream did not record the external ELK checkout used for its manual release;
-no positive source mismatch or additional change was identified. No independent
-upstream build, legal certification or byte-identical JS regeneration is claimed.
-The source archive's README and manifest preserve this traceability limitation.
+The source basis is **upstream elkjs 0.12.1's declared ELK v0.12.1 release**.
+All twelve published npm files match the elkjs release commit byte-for-byte.
+Publishing provenance identifies that commit, not the external ELK compilation
+checkout or resolved mutable Gradle snapshot inputs used to generate the worker.
+No exhaustive generated-code/source mapping, independent upstream build,
+attestation-signature verification, legal certification or byte-identical JS
+regeneration is claimed. The source README and manifest preserve these limits.
+The old ELK 0.9.1 + PR955 materials are not this release's source asset.
 
 This does not change Brabbler's own MIT license or the normal installation path.
 Users do not need Java, these sources or a compiler to run the prebuilt app.

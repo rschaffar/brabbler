@@ -1,6 +1,6 @@
-{ lib, runCommand, fetchurl, python3, patch, version }:
+{ lib, runCommand, fetchurl, python3, version }:
 let
-  seed = ./third-party/elkjs-0.9.3;
+  seed = ./third-party/elkjs-0.12.1;
   manifest = builtins.fromJSON (builtins.readFile (seed + "/MANIFEST.json"));
   filename = "brabbler-${version}-third-party-sources.tar.gz";
   inputPath = input:
@@ -17,17 +17,10 @@ let
     url = "https://github.com/rschaffar/brabbler/releases/download/v${version}/${filename}";
     sourceBasis = manifest.source_basis;
     traceabilityLimitation = manifest.traceability_limitation;
-    components = {
-      elkjs = "0.9.3";
-      elk = "0.9.1 plus the seven PR955 content patches";
-      emfGwt = "2.12.4";
-      xbaseXtend = "2.28.0";
-      gwt = "2.10.0";
-      guava = "31.1-jre";
-    };
+    components = manifest.components;
   };
 in runCommand "brabbler-${version}-third-party-sources" {
-  nativeBuildInputs = [ python3 patch ];
+  nativeBuildInputs = [ python3 ];
 } ''
   mkdir -p seed/originals "$out"
   cp -R ${seed}/. seed/

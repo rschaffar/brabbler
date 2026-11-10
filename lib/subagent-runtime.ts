@@ -53,6 +53,7 @@ import { addWorktree, currentLocalBranchTip, removeWorktree } from "./worktree";
 import { randomUUID } from "node:crypto";
 import { getSessionPause, removeSessionPause } from "./session-pause";
 import { acquireModelRuntimeUse, withModelRuntimeAccess } from "./session-model-refresh";
+import { withStreamingCacheWarmingDefault } from "./sdk-settings";
 
 interface HostSession {
   readonly inner: AgentSessionLike;
@@ -354,7 +355,7 @@ export function createSubagentController(
       }
       const turnLimit = maxTurns && maxTurns > 0 ? Math.floor(maxTurns) : undefined;
       const agentDir = getAgentDir();
-      const settingsManager = SettingsManager.create(childCwd, agentDir);
+      const settingsManager = withStreamingCacheWarmingDefault(SettingsManager.create(childCwd, agentDir));
       const inheritedParentContext = inheritContext
         ? `The following is the active conversation context from the parent session. Use it only as background for the delegated task:\n${parentContextText(parent)}`
         : undefined;

@@ -99,7 +99,7 @@ change Explorer's first-parent commit semantics; see the
 #### Full-file diff review
 
 Explorer, Files-panel and Git approval/receipt diffs share virtualized Pierre
-`CodeView` rendering (`@pierre/diffs` stays at 1.5.1):
+`CodeView` rendering (`@pierre/diffs` 1.6.4):
 
 - **Show full file / Diff context** reveal or hide full context for one file in
   split or unified view. Tab to gap buttons and press Enter/Space to reveal nearby

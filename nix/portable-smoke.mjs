@@ -194,10 +194,13 @@ export async function main(args) {
     const sourceInfo = JSON.parse(readFileSync(join(app, 'public/third-party/SOURCE-AVAILABILITY.json'), 'utf8'));
     const sourceArchive = resolve(args[2]);
     verifyArchive(sourceArchive, sourceInfo.sha256, '.tar.gz');
-    const sourceManifest = JSON.parse(await command('tar', ['-xOf', sourceArchive, 'elkjs-0.9.3-source-materials/MANIFEST.json'], env, work));
-    assert.equal(sourceManifest.elkjs_gitHead, 'a8304cf79fde75bc2ab1a89d28320f53f8637436');
-    assert.equal(sourceManifest.patch_series.length, 7);
-    assert.ok(sourceManifest.source_trees.elk.files > 0);
+    const sourceManifest = JSON.parse(await command('tar', ['-xOf', sourceArchive, 'elkjs-0.12.1-source-materials/MANIFEST.json'], env, work));
+    assert.equal(sourceManifest.elkjs_gitHead, '624ae90aa37110033a8af59c5ccbb292708b4317');
+    assert.equal(sourceManifest.elk_base_commit, '3aa3b9fb98d8f9a41285b3061cff5efe79ed2ba4');
+    assert.deepEqual(sourceManifest.patch_series, []);
+    assert.equal(sourceInfo.components.elkjs, '0.12.1');
+    assert.deepEqual(sourceManifest.components, sourceInfo.components);
+    assert.ok(sourceManifest.source_trees.elk.files > 0 && sourceManifest.source_trees.elkjs.files > 0);
     const dependencyNotices = JSON.parse(readFileSync(join(app, 'public/third-party/DEPENDENCIES.json'), 'utf8'));
     assert.ok(dependencyNotices.components.length > 0);
     for (const component of dependencyNotices.components) for (const notice of component.notices) {

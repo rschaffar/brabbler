@@ -17,7 +17,7 @@ export function splitGitPatch(patch: string): DisplayFile[] {
   if (!starts.length || patch.slice(0, starts[0]).trim()) throw new Error("Unsupported patch framing");
   return starts.map((start, index) => {
     const raw = patch.slice(start, starts[index + 1] ?? patch.length);
-    const parsed = parsePatchFiles(raw, undefined, true);
+    const parsed = parsePatchFiles(raw, { throwOnError: true });
     if (parsed.length !== 1 || parsed[0].files.length !== 1) throw new Error("Unsupported file patch");
     const file = parsed[0].files[0];
     const counts = file.hunks.flatMap((hunk) => hunk.hunkContent).reduce((sum, content) => content.type === "context"

@@ -223,14 +223,15 @@ Nix realizes prerequisites automatically; no preparation ceremony, checkout depe
 The default `nix develop` shell prepares dependencies and regenerates the disposable Mermaid renderer's ignored `public/mermaid-renderer/` assets using flake-pinned esbuild. After changing its entry, rerun `node bin/build-mermaid-renderer.mjs` inside that shell. This is a renderer-asset preparation step, not a checkout production build. Package acceptance generates the same assets inside its isolated builder; packaged runtime needs no bundler.
 
 The flake pins nixpkgs, Home Manager, Node and Chromium through `flake.lock`.
-The current Nix baseline is Node **24.21.0**, with TypeScript **6.0.3** and Node 24
+The current Nix baseline is Node **24.22.2**, with TypeScript **6.0.3** and Node 24
 typings in root/demo. The launcher and both manifests require Node **24.0.0 or
 newer**; this minimum check is not acceptance evidence for every future runtime. Update inputs deliberately in a feature worktree, then verify all three complete Nix checks before integration. Chromium/Playwright compatibility is part of packaged browser acceptance. Testing does not activate a service or authorize publication.
 
-The Node 24 security update remains deferred; refreshing the flake does not supply
-those fixes. [Dependency maintenance](./docs/dependencies.md) owns that follow-up.
+The selected upstream runtime also uses shared Brotli **1.2.1**, including the
+required decoder security fix. [Dependency maintenance](./docs/dependencies.md)
+records versions, compatibility exceptions and verification limits.
 
-SDK 1.5.0 has a [version-pinned child-environment patch](./docs/sdk-command-environment.md)
+SDK 1.5.1 has a [version-pinned child-environment patch](./docs/sdk-command-environment.md)
 for the embedded modular runtime. Nix applies it before publishing shared modules;
 maintained npm postinstall uses the same guarded installer. Startup verifies the
 installed SDK read-only and refuses missing/unknown patches rather than repairing
