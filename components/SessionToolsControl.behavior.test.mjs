@@ -14,7 +14,8 @@ async function control(t, overrides = {}) {
     { scope: 'project', name: 'synthetic-server', enabled: true, eligible: true, transport: 'stdio', projectOverride: false },
     { scope: 'global', name: 'synthetic-oauth', enabled: true, eligible: false, transport: 'http', projectOverride: false, limitation: 'oauth' },
   ] }, live: { nativeResources: off, effectiveNativeResources: off, mcpServers: [] },
-  projectDefault: { supported: true, projectRoot: '/synthetic/project', revision, selection: null } };
+  projectDefault: { supported: true, projectRoot: '/synthetic/project', revision, selection: null },
+  globalDefault: { revision, selection: null } };
   const props = { cwd: '/synthetic/project', sessionId: 'synthetic-session', selection: off, busy: false, chatOnly: false,
     async onApply(value) { applied.push(value); return value; }, ...overrides };
   f.route('GET', '/api/native-tools', { query: () => ({ cwd: props.cwd, ...(props.sessionId ? { sessionId: props.sessionId } : {}) }), cache: 'no-store', reply: () => ({ data: metadata }) });
@@ -97,6 +98,60 @@ test('native project default: required POST selection then null reset; existing 
   x.assertWrite('/api/native-tools', 1, { cwd: x.props.cwd, revision: nextRevision, nativeResources: null });
   assert.match(x.text(), /Project default cleared/);
   assert.equal(x.button('Clear project default').disabled, true);
+  assert.deepEqual(x.applied, []);
+});
+
+test('native global default: save/reset are inert and project selections cannot be saved globally', async t => {
+  const x = await control(t), { f } = x;
+  let selection = off, rev = revision;
+  f.route('POST', '/api/native-tools', { body: () => ({ cwd: x.props.cwd, scope: 'global', revision: rev, nativeResources: selection }),
+    reply: () => ({ data: { globalDefault: { revision: nextRevision, selection } } }) });
+  await f.click(x.button('Session tools'));
+  await f.click(x.button('Save selection as global default'));
+  x.assertWrite('/api/native-tools', 0, { cwd: x.props.cwd, scope: 'global', revision, nativeResources: off });
+  assert.match(x.text(), /Global default saved. Existing sessions are unchanged/);
+  assert.deepEqual(x.applied, []);
+  selection = null; rev = nextRevision;
+  await f.click(x.button('Clear global default'));
+  x.assertWrite('/api/native-tools', 1, { cwd: x.props.cwd, scope: 'global', revision: nextRevision, nativeResources: null });
+  assert.equal(x.button('Clear global default').disabled, true);
+  await selectNative(x);
+  assert.equal(x.button('Save selection as global default').disabled, true);
+  assert.equal(x.button('Save selection as project default').disabled, false);
+  assert.match(x.text(), /Deselect project servers/);
+});
+
+test('native new composer: global inheritance, project off and explicit off take precedence', async t => {
+  const x = await control(t, { sessionId: null, selection: undefined }), { f } = x;
+  delete x.metadata.live;
+  x.metadata.projectDefault.supported = false;
+  x.metadata.globalDefault.selection = { ...off, codeMode: true };
+  await f.click(x.button('Session tools'));
+  assert.equal(checkbox(x, 'Code-mode').checked, true);
+  assert.equal(x.button('Save selection as global default').disabled, false, 'global defaults do not require Git');
+  await f.click(x.button('Cancel'));
+  x.metadata.projectDefault.selection = off;
+  await f.click(x.button('Session tools'));
+  assert.equal(checkbox(x, 'Code-mode').checked, false);
+  await f.click(x.button('Cancel'));
+  x.metadata.projectDefault.selection = null;
+  x.props.selection = off;
+  await f.rerender(h(x.graph.SessionToolsControl, x.props));
+  await f.click(x.button('Session tools'));
+  assert.equal(checkbox(x, 'Code-mode').checked, false, 'explicit new-composer off is not replaced by global defaults');
+});
+
+test('native global default: lost acknowledgement blocks both scopes until inert refresh', async t => {
+  const x = await control(t), { f } = x;
+  f.route('POST', '/api/native-tools', { body: { cwd: x.props.cwd, scope: 'global', revision, nativeResources: off }, reply: { bodyError: new Error('synthetic lost global ACK') } });
+  await f.click(x.button('Session tools'));
+  await f.click(x.button('Save selection as global default'));
+  assert.equal(x.button('Save selection as global default').disabled, true);
+  assert.equal(x.button('Save selection as project default').disabled, true);
+  x.metadata.globalDefault = { revision: nextRevision, selection: off };
+  await f.click(x.button('Refresh status'));
+  assert.equal(x.writes('/api/native-tools').length, 1);
+  assert.equal(x.button('Save selection as global default').disabled, false);
   assert.deepEqual(x.applied, []);
 });
 

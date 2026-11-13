@@ -8,7 +8,7 @@ import { invalidateSessionListCache } from "@/lib/session-reader";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { isModelSpeed, type ModelSpeed } from "@/lib/model-speed";
 import { validateNativeResourceSelection, type NativeResourceSelection } from "@/lib/session-native-resources";
-import { projectNativeResourceSelection } from "@/lib/project-native-resources";
+import { ordinaryNativeResourceSelection } from "@/lib/project-native-resources";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
 
     // Defaults apply only to this fresh ordinary entry point, never generic
     // reopen/child/launch startup. Explicit selection (including off) wins.
-    if (nativeSelection === undefined) nativeSelection = projectNativeResourceSelection(cwd, getAgentDir());
+    if (nativeSelection === undefined) nativeSelection = ordinaryNativeResourceSelection(cwd, getAgentDir());
 
     // Must be unique per request: startRpcSession coalesces concurrent callers
     // that share a key onto one session. Date.now() (ms resolution) collides for

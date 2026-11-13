@@ -6,11 +6,12 @@ import { useSettingsWork } from "./SettingsUi";
 import { NO_NATIVE_RESOURCES, validateNativeResourceSelection, type NativeResourceSelection } from "@/lib/session-native-resources";
 import type { McpConfigurationListing } from "@/lib/native-mcp-configuration";
 import type { NativeMcpStatus } from "@/lib/native-session-tools";
-import type { ProjectNativeResources } from "@/lib/project-native-resources";
+import type { GlobalNativeResources, ProjectNativeResources } from "@/lib/project-native-resources";
 
 interface Metadata {
   configuration: McpConfigurationListing;
   projectDefault?: ProjectNativeResources;
+  globalDefault?: GlobalNativeResources;
   live?: { nativeResources: NativeResourceSelection; effectiveNativeResources: NativeResourceSelection; mcpServers: NativeMcpStatus[] };
 }
 interface Props {
@@ -28,6 +29,8 @@ export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly,
   const work = useRef(observe);
   work.current = observe;
   const dialog = useRef<HTMLDialogElement>(null);
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
   const [open, setOpen] = useState(false), [metadata, setMetadata] = useState<Metadata | null>(null);
   const [draft, setDraft] = useState<NativeResourceSelection>(NO_NATIVE_RESOURCES);
   const [loading, setLoading] = useState(false), [pending, setPending] = useState(false);
@@ -51,7 +54,7 @@ export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly,
       setMetadata(result as Metadata);
       if (reconcile.current) {
         if (result.live) setDraft(checked(result.live.nativeResources));
-        else if (!sessionId) setDraft(checked(result.projectDefault?.selection ?? NO_NATIVE_RESOURCES));
+        else if (!sessionId) setDraft(checked(selectionRef.current ?? result.projectDefault?.selection ?? result.globalDefault?.selection ?? NO_NATIVE_RESOURCES));
         reconcile.current = false; setError(null); setUncertain(false); setDefaultUncertain(false);
       }
     }).catch(reason => {
@@ -76,27 +79,32 @@ export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly,
       setError(reason instanceof Error ? reason.message : t("nativeTools.unavailable")); setUncertain(true);
     } finally { if (mounted.current) setPending(false); }
   })());
-  const saveDefault = (selection: NativeResourceSelection | null) => work.current("native.default", (async () => {
+  const saveDefault = (selection: NativeResourceSelection | null, scope: "project" | "global" = "project") => work.current("native.default", (async () => {
     const project = metadata?.projectDefault;
-    if (!project?.supported || !project.revision || pending || savingDefault || loading || defaultUncertain) return;
+    const target = scope === "global" ? metadata?.globalDefault : project;
+    if (!target?.revision || scope === "project" && !project?.supported
+      || scope === "global" && selection?.mcpServers.some(server => server.scope !== "global")
+      || pending || savingDefault || loading || defaultUncertain) return;
     const capturedContext = context;
     setSavingDefault(true); setDefaultNotice(null); setError(null);
     try {
       const response = await fetch("/api/native-tools", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd, revision: project.revision, nativeResources: selection }),
+        body: JSON.stringify({ cwd, ...(scope === "global" ? { scope } : {}), revision: target.revision, nativeResources: selection }),
       });
       const result = await response.json();
-      const returned = result.projectDefault as ProjectNativeResources | undefined;
-      if (!response.ok || !returned?.supported || returned.projectRoot !== project.projectRoot
+      const returned = (scope === "global" ? result.globalDefault : result.projectDefault) as ProjectNativeResources | GlobalNativeResources | undefined;
+      if (!response.ok || !returned || scope === "project" && (!("supported" in returned) || !returned.supported || returned.projectRoot !== project?.projectRoot)
         || typeof returned.revision !== "string" || !/^[a-f0-9]{64}$/.test(returned.revision)) {
         throw new Error(result.error ?? t("nativeTools.defaultUnavailable"));
       }
       const actual = { ...returned, selection: returned.selection === null ? null : validateNativeResourceSelection(returned.selection) };
       if (JSON.stringify(actual.selection) !== JSON.stringify(selection)) throw new Error(result.error ?? t("nativeTools.defaultUnavailable"));
       if (!mounted.current || currentContext.current !== capturedContext) return;
-      setMetadata(value => value ? { ...value, projectDefault: actual } : value);
-      setDefaultNotice(t(selection === null ? "nativeTools.defaultCleared" : "nativeTools.defaultSaved"));
+      setMetadata(value => value ? { ...value, [scope === "global" ? "globalDefault" : "projectDefault"]: actual } : value);
+      setDefaultNotice(t(scope === "global"
+        ? selection === null ? "nativeTools.globalDefaultCleared" : "nativeTools.globalDefaultSaved"
+        : selection === null ? "nativeTools.defaultCleared" : "nativeTools.defaultSaved"));
     } catch (failure) {
       if (mounted.current && currentContext.current === capturedContext) {
         setError(failure instanceof Error ? failure.message : t("nativeTools.defaultUnavailable"));
@@ -150,6 +158,24 @@ export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly,
           </label>;
         })}
       </fieldset>
+      <section className="mt-3 border-t border-border pt-3" aria-label={t("nativeTools.globalDefault")}>
+        <h3 className="text-sm font-medium">{t("nativeTools.globalDefault")}</h3>
+        <p className="mt-1 text-xs text-text-muted">{t("nativeTools.globalDefaultScope")}</p>
+        {metadata?.globalDefault && <>
+          <p className="mt-2 break-words text-xs text-text-muted">{metadata.globalDefault.selection
+            ? t("nativeTools.defaultSummary", {
+              servers: metadata.globalDefault.selection.mcpServers.map(server => server.name).join(", ") || t("nativeTools.noServers"),
+              codeMode: t(metadata.globalDefault.selection.codeMode ? "nativeTools.on" : "nativeTools.off"),
+            }) : t("nativeTools.noGlobalDefault")}</p>
+          <div className="mt-2 flex flex-wrap gap-3 text-sm">
+            <button type="button" disabled={pending || savingDefault || loading || defaultUncertain || draft.mcpServers.some(server => server.scope !== "global")}
+              onClick={() => void saveDefault(validateNativeResourceSelection(draft), "global")}>{t("nativeTools.saveGlobalDefault")}</button>
+            <button type="button" disabled={pending || savingDefault || loading || defaultUncertain || !metadata.globalDefault.selection}
+              onClick={() => void saveDefault(null, "global")}>{t("nativeTools.clearGlobalDefault")}</button>
+          </div>
+        </>}
+        {draft.mcpServers.some(server => server.scope !== "global") && <p className="mt-2 text-xs text-text-muted">{t("nativeTools.globalOnly")}</p>}
+      </section>
       <section className="mt-3 border-t border-border pt-3" aria-label={t("nativeTools.projectDefault")}>
         <h3 className="text-sm font-medium">{t("nativeTools.projectDefault")}</h3>
         {metadata?.projectDefault?.supported ? <>
