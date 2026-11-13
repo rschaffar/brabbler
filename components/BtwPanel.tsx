@@ -21,6 +21,7 @@ export interface BtwPanelProps {
   onDraft: (sourceId: string, text: string) => void;
   onChanged: () => void;
   onSessionRestored: (id: string) => void;
+  onManageMcpDefaults?: () => void;
 }
 
 /** A second ordinary chat owner. Hiding the panel never aborts either session. */
@@ -117,7 +118,7 @@ export function BtwPanel(props: BtwPanelProps) {
       {child && <ChatWindow key={child.id} session={child} secondary chatInputRef={chatInputRef} covered={!open} sessionRunning={running}
         newSessionCwd={null} newSessionDraftKey={null} archivedRootSessionId={archivedRootSessionId}
         archiveActionBusy={running} onSessionRestored={props.onSessionRestored}
-        onAgentEnd={props.onChanged} onOpenSession={props.onOpenSession} soundEnabled={false} />}
+        onAgentEnd={props.onChanged} onOpenSession={props.onOpenSession} onManageMcpDefaults={props.onManageMcpDefaults} soundEnabled={false} />}
     </div>
     {child && <footer className={styles.footer}>
       <button type="button" disabled={busy || running || Boolean(archivedRootSessionId)} onClick={copyAnswer}>{t(copied ? "btw.drafted" : "btw.copyToMain")}</button>

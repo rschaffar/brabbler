@@ -19,6 +19,27 @@ test('General exposes an off-by-default remote-image preference shared across ch
   assert.equal(f.view.window.localStorage.getItem('brabbler-load-remote-images'), 'false');
 });
 
+test('MCP and Code-mode defaults follow the workspace without retargeting chat model/account reads', async t => {
+  const { f, graph: c, props } = await generalFixture(t, { initialSection: 'mcp', defaultsCwd: '/workspace' });
+  let project = false;
+  const state = { revision: 'a'.repeat(64), selection: null, preferences: { servers: [] } };
+  f.route('GET', '/api/native-tools', { query: () => project ? { cwd: '/workspace' } : { scope: 'global' }, cache: 'no-store', reply: { data: {
+    configuration: { ok: true, servers: [] }, globalDefault: state,
+    projectDefault: { ...state, supported: true, projectRoot: '/workspace' },
+  } } });
+  await f.mount(h(c.SettingsPanel, props));
+  project = true;
+  await f.click(f.button('Project: workspace'));
+  assert.deepEqual(f.requests.filter(r => r.path === '/api/native-tools').at(-1).query, [['cwd', '/workspace']]);
+  await f.click(f.button('General', f.node('.settings-section-tabs')));
+  assert.deepEqual(f.requests.find(r => r.path === '/api/models').query, [['cwd', '/project'], ['sessionId', 'session-A']]);
+  project = false;
+  await f.click(f.node('.settings-general button.settings-general-heading[aria-expanded]'));
+  project = true;
+  await f.click(f.button('Project: workspace', f.node('.settings-general')));
+  assert.deepEqual(f.requests.filter(r => r.path === '/api/native-tools').at(-1).query, [['cwd', '/workspace']]);
+});
+
 const modelView = { allEnabled: true, patterns: [], stalePatterns: [], providers: [], enabledTotal: 0, availableTotal: 0, scope: 'global', editable: true, settingsPath: '~/.pi/agent/settings.json' };
 test('actual Settings navigation keeps real visited General/Models mounted, remembers section, nested Escape and current close callback', async t => {
   let closed = 0;
@@ -31,7 +52,7 @@ test('actual Settings navigation keeps real visited General/Models mounted, reme
   await f.mount(h(c.SettingsPanel, props));
   const general = f.node('.settings-general');
   assert.equal(f.node('.settings-section-tab[aria-current="page"]').textContent, 'General');
-  assert.deepEqual([...f.view.container.querySelectorAll('.settings-section-tab')].map(n => n.textContent), ['General', 'Models', 'Skills', 'Sub-agents', 'Plugins']);
+  assert.deepEqual([...f.view.container.querySelectorAll('.settings-section-tab')].map(n => n.textContent), ['General', 'Models', 'MCP servers', 'Skills', 'Sub-agents', 'Plugins']);
   await f.click(f.button('Models', f.node('.settings-section-tabs')));
   assert.equal(general.closest('.settings-section-host').hidden, true, 'actual ancestor hides retained general');
   assert.equal(c.getLastSettingsSection('/project'), 'models');

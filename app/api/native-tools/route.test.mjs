@@ -216,6 +216,79 @@ test("inherited global intent refuses project replacement instead of substitutio
   assert.equal(rpc.getRpcSession(await f.start(["read"], { nativeResources: off })).hasNativeSessionTools(), false);
 });
 
+test("Settings metadata needs no project globally; per-server writes are inert, independent and snapshot only new chats", async t => {
+  const f = await fixture(t), existingId = await f.start(["read"]), existing = rpc.getRpcSession(existingId);
+  await existing.waitUntilReady();
+  execFileSync("git", ["-C", f.cwd, "init", "-qb", "main"]);
+  await writeFile(join(f.agent, "mcp.json"), JSON.stringify({ mcpServers: {
+    docs: { command: "SYNTHETIC_NEVER_RUN" }, issues: { command: "SYNTHETIC_NEVER_RUN" },
+  } }));
+  const globalMetadata = async () => (await GET(new Request("http://fixture.invalid/api/native-tools?scope=global"))).json();
+  const first = await globalMetadata();
+  assert.equal(first.projectDefault, undefined); assert.equal(first.configuration.servers.length, 2);
+  const docs = { scope: "global", name: "docs" }, issues = { scope: "global", name: "issues" };
+  const count = globalThis.__piSessions.size;
+  let saved = await f.save({ cwd: undefined, scope: "global", revision: first.globalDefault.revision, change: { server: docs, value: true } });
+  assert.equal(saved.status, 200);
+  let metadata = await f.catalogue();
+  saved = await f.save({ scope: "project", revision: metadata.projectDefault.revision, change: { server: issues, value: true } });
+  assert.equal(saved.status, 200);
+  metadata = await f.catalogue();
+  assert.deepEqual(metadata.defaultSelection.mcpServers, [docs, issues]);
+  assert.equal(globalThis.__piSessions.size, count);
+  assert.deepEqual((await existing.send({ type: "get_state" })).nativeResources, off);
+  const chat = rpc.getRpcSession(await f.start([]));
+  assert.deepEqual((await chat.send({ type: "get_state" })).nativeResources.mcpServers, [docs, issues]);
+  assert.deepEqual((await chat.send({ type: "get_state" })).effectiveNativeResources, off);
+  saved = await f.save({ scope: "project", revision: metadata.projectDefault.revision, change: { server: docs, value: false } });
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await f.catalogue()).defaultSelection.mcpServers, [issues]);
+  assert.deepEqual((await chat.send({ type: "get_state" })).nativeResources.mcpServers, [docs, issues]);
+  assert.equal((await f.save({ scope: "global", revision: first.globalDefault.revision, change: { server: docs, value: false } })).status, 409);
+  const missing = { scope: "global", name: "missing" };
+  metadata = await f.catalogue();
+  assert.equal((await f.save({ scope: "project", revision: metadata.projectDefault.revision, change: { server: missing, value: true } })).status, 400);
+  assert.equal((await f.save({ scope: "project", revision: metadata.projectDefault.revision, change: { server: missing, value: false } })).status, 200);
+  const global = (await globalMetadata()).globalDefault;
+  assert.equal((await f.save({ cwd: undefined, scope: "global", revision: global.revision, change: { server: docs, value: null } })).status, 400);
+  assert.equal((await f.save({ scope: "global", revision: global.revision, nativeResources: off, change: { codeMode: true } })).status, 400);
+  const mode = await f.save({ cwd: undefined, scope: "global", revision: global.revision, change: { codeMode: true } });
+  assert.equal(mode.status, 200);
+  const modeResult = await mode.json();
+  assert.equal(modeResult.globalDefault.preferences.codeMode, true);
+  assert.deepEqual(modeResult.defaultSelection, { ...off, codeMode: true, mcpServers: [docs] });
+  assert.deepEqual((await existing.send({ type: "get_state" })).nativeResources, off);
+  assert.equal((await chat.send({ type: "get_state" })).nativeResources.codeMode, false);
+  assert.equal(existsSync(join(f.agent, "mcp.log")), false);
+});
+
+test("Settings remains readable and can repair a project exceeding the combined limit after global changes", async t => {
+  const f = await fixture(t);
+  execFileSync("git", ["-C", f.cwd, "init", "-qb", "main"]);
+  const store = await jiti.import("../../../lib/project-native-resources.ts");
+  const servers = Array.from({ length: 128 }, (_, i) => ({ scope: "global", name: `server-${i}` })), extra = { scope: "project", name: "extra" }, extra2 = { scope: "project", name: "extra-two" };
+  store.saveGlobalNativeResources(f.agent, store.readGlobalNativeResources(f.agent).revision, { ...off, mcpServers: servers.slice(0, 126) });
+  store.saveProjectNativeResources(f.cwd, f.agent, store.readProjectNativeResources(f.cwd, f.agent).revision, undefined, { server: extra, value: true });
+  store.saveProjectNativeResources(f.cwd, f.agent, store.readProjectNativeResources(f.cwd, f.agent).revision, undefined, { server: extra2, value: true });
+  store.saveGlobalNativeResources(f.agent, store.readGlobalNativeResources(f.agent).revision, { ...off, mcpServers: servers });
+  const response = await GET(new Request(`http://fixture.invalid/api/native-tools?${new URLSearchParams({ cwd: f.cwd })}`));
+  assert.equal(response.status, 200);
+  const metadata = await response.json();
+  assert.match(metadata.defaultError, /maximum 128/);
+  assert.equal(metadata.defaultSelection, undefined);
+  const repaired = await f.save({ scope: "project", revision: metadata.projectDefault.revision, change: { server: extra, value: false } });
+  assert.equal(repaired.status, 200);
+  assert.match((await repaired.json()).defaultError, /maximum 128/, "a partial repair remains visible");
+  const partial = await f.catalogue();
+  assert.match(partial.defaultError, /maximum 128/);
+  const second = await f.save({ scope: "project", revision: partial.projectDefault.revision, change: { server: extra2, value: false } });
+  assert.equal(second.status, 200);
+  const completed = await second.json();
+  assert.equal(completed.defaultError, undefined); assert.equal(completed.defaultSelection.mcpServers.length, 128);
+  const current = await f.catalogue();
+  assert.equal(current.defaultError, undefined); assert.equal(current.defaultSelection.mcpServers.length, 128);
+});
+
 test("default writes enforce origin/content/path/schema/revision and never edit native configuration", async t => {
   const f = await fixture(t);
   execFileSync("git", ["-C", f.cwd, "init", "-qb", "main"]);

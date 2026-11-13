@@ -1278,6 +1278,7 @@ export function AppShell() {
               onContextUsageChange={handleContextUsageChange}
               onOpenFile={handleOpenLinkedFile}
               onOpenSession={handleOpenSession}
+              onManageMcpDefaults={() => { setPluginSettingsSession(null); setSettingsSection("mcp"); }}
               onAskInNewChat={handleAskInNewChat}
               quoteSelectionEnabled={quoteSelectionEnabled}
               initialPrompt={quoteInitialPrompt}
@@ -1335,6 +1336,7 @@ export function AppShell() {
             runningIds={runningSessionIds} archivedRootSessionId={activeSessionFamily?.root.archived ? activeSessionFamily.root.id : null}
             onClose={closeBtw} onOpenSession={id => { setBtwSourceId(null); void handleOpenSession(id); }}
             onChanged={handleBtwChanged} onSessionRestored={handleSessionRestored}
+            onManageMcpDefaults={() => { setPluginSettingsSession(null); setSettingsSection("mcp"); }}
             onDraft={(sourceId, text) => {
               if (btwSourceRef.current !== sourceId || !chatInputRef.current) throw new Error(translate("btw.sourceChanged"));
               chatInputRef.current.insertText(`\n\n${text}\n`, { atEnd: true });
@@ -1478,6 +1480,7 @@ export function AppShell() {
     {settingsSection && (
       <SettingsPanel
         cwd={pluginSettingsSession?.cwd ?? projectTrustCwd}
+        defaultsCwd={activeCwd}
         sessionId={pluginSettingsSession?.id ?? selectedSession?.id ?? currentComposerContext?.sessionId ?? null}
         catalogAccounts={!pluginSettingsSession && !currentComposerContext?.sessionId ? currentComposerContext?.accounts : undefined}
         initialSection={settingsSection}
