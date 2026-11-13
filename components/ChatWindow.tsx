@@ -96,6 +96,7 @@ export interface ChatWindowProps {
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
   onOpenFile?: import("@/lib/file-links").OpenFileLink;
   onOpenSession?: (sessionId: string) => void;
+  onManageMcpDefaults?: () => void;
   onAskInNewChat?: (prompt: string, sourceSessionId: string, sourceEntryId: string) => Promise<void>;
   quoteSelectionEnabled?: boolean;
   initialPrompt?: string;
@@ -336,7 +337,7 @@ export function ChatWindowView(props: ChatWindowViewProps) {
   return useChatWindowView(props);
 }
 
-function useChatWindowView({ workObserver, session, sessionRunning, contextReloadNotice, covered = false, secondary = false, searchTarget, onSearchTargetHandled, onScrollPositionChange, archivedRootSessionId, archiveActionBusy, onSessionRestored, newSessionCwd, newSessionDraftKey, chatInputRef, onNativeSessionIdChange, onSessionStatsChange, onContextUsageChange, onOpenFile, onOpenSession, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, state, work, restore }: ChatWindowViewProps) {
+function useChatWindowView({ workObserver, session, sessionRunning, contextReloadNotice, covered = false, secondary = false, searchTarget, onSearchTargetHandled, onScrollPositionChange, archivedRootSessionId, archiveActionBusy, onSessionRestored, newSessionCwd, newSessionDraftKey, chatInputRef, onNativeSessionIdChange, onSessionStatsChange, onContextUsageChange, onOpenFile, onOpenSession, onManageMcpDefaults, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, state, work, restore }: ChatWindowViewProps) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent" && session?.relation?.kind !== "btw";
@@ -912,6 +913,7 @@ function useChatWindowView({ workObserver, session, sessionRunning, contextReloa
         busy={sessionBusy || isCompacting || modelSwitching || modelSpeedChanging}
         chatOnly={toolPreset === "none"}
         onApply={handleNativeResourcesChange}
+        onManageDefaults={onManageMcpDefaults}
       />}
       onCompact={session || isNew ? handleCompact : undefined}
       onAbortCompaction={handleAbortCompaction}

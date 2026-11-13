@@ -85,7 +85,7 @@ export async function checkSelectedNativeRuntime(page, { base, api, post, fixtur
   let dialog = await show();
   assert.equal(await dialog.getByRole("checkbox", { name: "Code-mode", exact: true }).isChecked(), false);
   assert.equal(records(fixture.starts).length, before, "opening metadata never connects a configured server");
-  const row = name => dialog.locator("label").filter({ has: page.getByText(name, { exact: true }) });
+  const row = name => dialog.locator("fieldset > div").filter({ has: page.getByText(name, { exact: true }) });
   assert.equal(await row("oauth").getByRole("checkbox").isDisabled(), true);
   await dialog.getByRole("checkbox", { name: "Code-mode", exact: true }).check(); await row("selected").getByRole("checkbox").check();
   const [applied] = await Promise.all([
@@ -173,24 +173,32 @@ export async function checkSelectedNativeRuntime(page, { base, api, post, fixtur
   }
   if (busyFailures.length) throw new AggregateError(busyFailures, "Native OTHER busy window and settlement failed");
 
-  // Saving project defaults is a settings operation, not an Apply or connection.
+  // Defaults belong in Settings; the compact picker only navigates there.
   dialog = await show();
+  assert.equal(await dialog.getByText("This chat only.", { exact: true }).count(), 1);
+  assert.equal(await dialog.getByRole("button", { name: /Save selection/ }).count(), 0);
+  await dialog.getByRole("button", { name: "Manage defaults ↗", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  await settings.getByRole("switch", { name: "selected", exact: true }).waitFor();
+  await settings.getByRole("button", { name: /^Project:/ }).click();
+  const selectedDefault = settings.getByRole("combobox", { name: "selected", exact: true });
+  await selectedDefault.waitFor();
   const defaultSelection = { ...off, mcpServers: [{ scope: "global", name: "selected" }] };
-  await row("selected").getByRole("checkbox").check();
   const defaultStarts = records(fixture.starts).length;
   const [defaultSaved] = await Promise.all([
     page.waitForResponse(response => new URL(response.url()).pathname === "/api/native-tools" && response.request().method() === "POST"),
-    dialog.getByRole("button", { name: "Save selection as project default", exact: true }).click(),
+    selectedDefault.selectOption("on"),
   ]);
   assert.equal(defaultSaved.status(), 200);
-  assert.deepEqual(defaultSaved.request().postDataJSON().nativeResources, defaultSelection);
+  assert.deepEqual(defaultSaved.request().postDataJSON().change, { server: { scope: "global", name: "selected" }, value: true });
   assert.equal(defaultSaved.request().postDataJSON().cwd, fixture.project);
   await defaultSaved.json();
-  await dialog.getByText("Project default saved. Existing sessions are unchanged.", { exact: true }).waitFor();
+  await settings.getByText("Saved", { exact: true }).waitFor();
   assert.equal(records(fixture.starts).length, defaultStarts);
   assert.deepEqual((await api(`/api/sessions/${id}`)).nativeResources, off);
-  assert.deepEqual((await api(`/api/native-tools?${new URLSearchParams({ cwd: fixture.project })}`)).projectDefault.selection, defaultSelection);
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  assert.deepEqual((await api(`/api/native-tools?${new URLSearchParams({ cwd: fixture.project })}`)).defaultSelection, defaultSelection);
+  await page.screenshot({ path: join(artifacts, `mcp-settings-${width}.png`) });
+  await settings.getByRole("button", { name: "Close", exact: true }).click();
 
   // The same setting reaches fresh ordinary sessions in a registered worktree.
   const inherited = await post("/api/agent/new", { cwd: fixture.linked, type: "ensure_session", toolNames: ["read"] });
@@ -200,7 +208,7 @@ export async function checkSelectedNativeRuntime(page, { base, api, post, fixtur
   dialog = await show();
   assert.equal(await row("selected").getByRole("checkbox").isChecked(), true);
   assert.equal(await dialog.getByRole("checkbox", { name: "Code-mode", exact: true }).isChecked(), false);
-  await dialog.getByText(/including linked worktrees/).waitFor();
+  assert.equal(await dialog.getByRole("button", { name: /Save selection/ }).count(), 0);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await waitForAsyncCondition(page, async id => (await (await fetch(`/api/agent/${id}`)).json()).state?.mcpServers?.[0]?.state === "connected", inherited.sessionId);
 
@@ -223,40 +231,45 @@ export async function checkSelectedNativeRuntime(page, { base, api, post, fixtur
   assert.deepEqual((await api(`/api/sessions/${optedOut.sessionId}`)).nativeResources, off);
   assert.equal(records(fixture.starts).length, beforeOptOut, "explicit off never briefly connects the default");
 
-  // One genuine default clear; contradictory/lost ACK decisions belong below.
+  // Reset only this server to inheritance, then enable its global default.
   dialog = await show();
+  await dialog.getByRole("button", { name: "Manage defaults ↗", exact: true }).click();
+  await settings.getByRole("switch", { name: "selected", exact: true }).waitFor();
+  await settings.getByRole("button", { name: /^Project:/ }).click();
   const [cleared] = await Promise.all([
     page.waitForResponse(response => new URL(response.url()).pathname === "/api/native-tools" && response.request().method() === "POST"),
-    dialog.getByRole("button", { name: "Clear project default", exact: true }).click(),
+    selectedDefault.selectOption("inherit"),
   ]);
   assert.equal(cleared.status(), 200);
-  assert.equal(cleared.request().postDataJSON().nativeResources, null);
+  assert.equal(cleared.request().postDataJSON().change.value, null);
   await cleared.json();
-  await dialog.getByText("No project default. New sessions inherit the global default unless explicitly selected.", { exact: true }).waitFor();
-
-  // Global settings use the same inert browser path; fresh creation snapshots
-  // them after the project override is cleared, without changing saved chats.
-  await row("selected").getByRole("checkbox").check();
+  await settings.getByText("Saved", { exact: true }).waitFor();
+  await settings.getByRole("button", { name: "Global", exact: true }).click();
+  const selectedGlobal = settings.getByRole("switch", { name: "selected", exact: true });
   const globalStarts = records(fixture.starts).length;
   const [globalSaved] = await Promise.all([
     page.waitForResponse(response => new URL(response.url()).pathname === "/api/native-tools" && response.request().method() === "POST"),
-    dialog.getByRole("button", { name: "Save selection as global default", exact: true }).click(),
+    selectedGlobal.click(),
   ]);
   assert.equal(globalSaved.status(), 200);
   assert.equal(globalSaved.request().postDataJSON().scope, "global");
-  assert.deepEqual((await globalSaved.json()).globalDefault.selection, defaultSelection);
-  await dialog.getByText("Global default saved. Existing sessions are unchanged.", { exact: true }).waitFor();
+  assert.equal(globalSaved.request().postDataJSON().change.value, true);
+  await globalSaved.json();
+  await settings.getByText("Saved", { exact: true }).waitFor();
   assert.equal(records(fixture.starts).length, globalStarts, "saving a global default never connects it");
   const globalInherited = await post("/api/agent/new", { cwd: fixture.project, type: "ensure_session", toolNames: ["read"] });
   assert.deepEqual((await api(`/api/sessions/${globalInherited.sessionId}`)).nativeResources, defaultSelection);
   const [globalCleared] = await Promise.all([
     page.waitForResponse(response => new URL(response.url()).pathname === "/api/native-tools" && response.request().method() === "POST"),
-    dialog.getByRole("button", { name: "Clear global default", exact: true }).click(),
+    selectedGlobal.click(),
   ]);
   assert.equal(globalCleared.status(), 200);
-  assert.equal((await globalCleared.json()).globalDefault.selection, null);
-  await dialog.getByText("Global default cleared. Existing sessions are unchanged.", { exact: true }).waitFor();
+  assert.equal(globalCleared.request().postDataJSON().change.value, false);
+  await globalCleared.json();
+  await settings.getByText("Saved", { exact: true }).waitFor();
   assert.deepEqual((await api(`/api/sessions/${globalInherited.sessionId}`)).nativeResources, defaultSelection);
+  await settings.getByRole("button", { name: "Close", exact: true }).click();
+  dialog = await show();
   assert.deepEqual((await api(`/api/sessions/${inherited.sessionId}`)).nativeResources, defaultSelection);
   assert.deepEqual((await api(`/api/sessions/${id}`)).nativeResources, off);
   await page.screenshot({ path: join(artifacts, `native-tools-${width}.png`) });

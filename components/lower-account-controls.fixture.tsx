@@ -7,3 +7,4 @@ export { DeviceAuthorization } from "./DeviceAuthorization";
 export { ModelsConfig } from "./ModelsConfig";
 export { ProjectTrustDialog } from "./ProjectTrustDialog";
 export { SessionToolsControl } from "./SessionToolsControl";
+export { McpSettings } from "./McpSettings";

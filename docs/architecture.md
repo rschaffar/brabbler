@@ -90,6 +90,7 @@ app/api/
   push/config/route.ts            GET VAPID public key for push subscriptions
   push/subscribe/route.ts         POST register a push subscription
   tools/settings/route.ts         GET/PUT shell tool settings (PowerShell on Windows)
+  native-tools/route.ts           inert global/project MCP catalogue, per-server defaults and optional already-live status
 
 bin/
   next-launch.js       shared installed/npm auth checks and child-process supervision; native agent inheritance
@@ -137,6 +138,8 @@ lib/
   starred-sessions-server.ts  server-owned star list + serialized atomic edits
   activity-review-server.ts  durable bounded completion and review ledger
   subagent-settings.ts  read/write ~/.pi/agent/agents/settings.json
+  native-resource-defaults.ts pure per-server/Code-mode preferences, legacy fallback and exact-grant projection
+  project-native-resources.ts private locked defaults, revisions and repository-incarnation binding
   tool-presets.ts     PRESET_NONE/READ_ONLY/DEFAULT/FULL + getPresetFromTools()
   tool-preset-preference.ts  browser-persisted default for fresh sessions
   types.ts            shared TypeScript types

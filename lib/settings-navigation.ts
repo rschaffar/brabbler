@@ -1,6 +1,7 @@
 export const SETTINGS_SECTION_VALUES = [
   "general",
   "models",
+  "mcp",
   "skills",
   "agents",
   "plugins",
@@ -57,7 +58,7 @@ function readState(storage: StorageLike): SettingsNavigationState {
 }
 
 function selectionKey(section: SettingsDetailSection, cwd?: string | null): string | null {
-  if (section === "models") return section;
+  if (section === "models" || section === "mcp") return section;
   return cwd ? JSON.stringify([section, cwd]) : null;
 }
 

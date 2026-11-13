@@ -2,7 +2,6 @@ await import('../lib/testing/client-native-boundary.fixture.mjs');
 // Actual control -> unmodified production hook action, not a fake RPC handler.
 const { default: assert } = await import('node:assert/strict');
 const { default: test } = await import('node:test');
-const { act } = await import('react');
 const { sessionFixture, command } = await import('./agent-session-mounted.fixture.mjs');
 const options = { timeout: 10000 };
 const off = { version: 1, codeMode: false, mcpServers: [] };
@@ -35,6 +34,7 @@ async function fixture(t, overrides = {}) {
   f = await sessionFixture(t, { nativeControl: true, nativeMetadata(request) {
     const sid = request.query.get('sessionId');
     return { configuration: { ok: true, servers: [{ scope: 'project', name: 'synthetic-server', enabled: true, eligible: true, projectOverride: false, transport: 'stdio' }] },
+      defaultSelection: native,
       projectDefault: { supported: true, projectRoot: f.cwd, revision: 'a'.repeat(64), selection: native },
       ...(sid ? { live: { nativeResources: f.record(sid).nativeResources ?? off, effectiveNativeResources: off, mcpServers: [] } } : {}) };
   }, ...overrides });
@@ -221,56 +221,6 @@ test('actual control/hook: OTHER remains busy while CURRENT applies off once wit
   assert.ok(f.controlWorks.every(work => work.settled)); noSideCommands(f); f.assertNoFailures();
 });
 
-for (const failure of ['contradictory', 'lost-body']) test(`actual default clear/control/hook: ${failure} ACK locks save until explicit no-default read; existing CURRENT/OTHER unchanged`, options, async t => {
-  const OTHER = 'native-default-INHERITED', revision = 'a'.repeat(64), nextRevision = 'b'.repeat(64);
-  let f, project;
-  f = await fixture(t, { savedSessionId: 'native-default-CURRENT', nativePeerSessionId: OTHER,
-    nativeMetadata() { return metadataFor(f, project); },
-    nativeDefault() { throw new Error('unexpected unheld default mutation/replay'); },
-  });
-  project = { supported: true, projectRoot: f.cwd, revision, selection: native };
-  f.record(f.savedId).nativeResources = off; f.declareSession(OTHER).nativeResources = native;
-  await f.mountReady(f.existingOptions());
-  const owner = f.maintenanceHandle, otherOwner = f.nativePeerCurrent.whenMaintenanceSettled;
-  const transcript = f.current.messages, otherTranscript = f.nativePeerCurrent.messages;
-  await click(f, button(f, 'Session tools')); assert.equal(nativeReads(f).length, 1);
-  const reset = f.hold(r => r.path === '/api/native-tools' && r.method === 'POST');
-  await click(f, button(f, 'Clear project default'), false); await reset.entered.promise;
-  assert.equal(defaultWrites(f).length, 1);
-  const request = defaultWrites(f)[0], body = { cwd: f.cwd, revision, nativeResources: null };
-  assert.deepEqual(request.body, body); assert.equal(request.serializedBody, JSON.stringify(body)); assert.equal(request.signal, undefined);
-  assert.equal(button(f, 'Saving default…').disabled, true); assert.equal(button(f, 'Apply').disabled, true);
-  assert.equal(f.controlWorks.filter(work => work.label === 'native.default').length, 1);
-  assert.equal(f.controlWorks.find(work => work.label === 'native.default').settled, false);
-  project = { ...project, revision: nextRevision, selection: null }; // external committed reset, not an onApply policy
-  if (failure === 'contradictory') {
-    await f.deliver(reset, { projectDefault: { ...project, selection: native }, error: 'Synthetic default acknowledgement unavailable' });
-  } else {
-    await act(async () => {
-      reset.reject(new Error('Synthetic default acknowledgement unavailable'));
-      await Promise.allSettled([reset.bodyPromise]);
-    });
-  }
-  await f.settleControl();
-  assert.equal(f.view.container.querySelector('[role="alert"]')?.textContent ?? null, 'Synthetic default acknowledgement unavailable');
-  assert.equal(button(f, 'Save selection as project default').disabled, true);
-  assert.equal(button(f, 'Clear project default').disabled, true); assert.equal(button(f, 'Cancel').disabled, false);
-  assert.equal(nativeReads(f).length, 1); assert.equal(defaultWrites(f).length, 1);
-  const refresh = f.hold(r => r.path === '/api/native-tools' && r.method === 'GET');
-  await click(f, button(f, 'Refresh status'), false); await refresh.entered.promise;
-  assert.equal(button(f, 'Save selection as project default').disabled, true);
-  await f.deliver(refresh, metadataFor(f, project)); await f.settleControl();
-  assert.equal(nativeReads(f).length, 2); assert.equal(nativeReads(f)[1].query.get('sessionId'), f.savedId);
-  assert.ok(nativeReads(f)[1].signal instanceof AbortSignal);
-  assert.equal(button(f, 'Save selection as project default').disabled, false);
-  assert.equal(button(f, 'Clear project default').disabled, true);
-  assert.match(f.view.container.textContent, /No project default\. New sessions inherit the global default unless explicitly selected\./);
-  assert.equal(f.view.container.querySelector('[role="alert"]'), null);
-  assert.equal(defaultWrites(f).length, 1); assert.equal(mutations(f).length, 0);
-  assert.deepEqual(f.current.data.nativeResources, off); assert.deepEqual(f.nativePeerCurrent.data.nativeResources, native);
-  assert.deepEqual(f.record(f.savedId).nativeResources, off); assert.deepEqual(f.record(OTHER).nativeResources, native);
-  assert.equal(f.current.messages, transcript); assert.equal(f.nativePeerCurrent.messages, otherTranscript);
-  assert.equal(f.maintenanceHandle, owner); assert.equal(f.nativePeerCurrent.whenMaintenanceSettled, otherOwner);
-  assert.equal(f.current.sessionIdRef.current, f.savedId); assert.equal(f.nativePeerCurrent.sessionIdRef.current, OTHER);
-  assert.ok(f.controlWorks.every(work => work.settled)); noSideCommands(f); f.assertNoFailures();
-});
+// Default-write acknowledgement cases now belong to the actual McpSettings
+// owner in SessionToolsControl.behavior.test.mjs; no default mutation is exposed
+// by the current-chat control. Native API tests retain existing-chat separation.

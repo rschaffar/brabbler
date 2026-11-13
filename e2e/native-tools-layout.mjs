@@ -30,13 +30,20 @@ export async function checkNativeToolsModalLayout(page, { base, api, fixture }) 
   // This other session remains off after the desktop OTHER-busy window. Apply
   // proves the installed control binding without repeating a native tool turn.
   assert.equal(await dialog.getByRole("checkbox", { name: "Code-mode", exact: true }).isChecked(), false);
-  const globalSave = dialog.getByRole("button", { name: "Save selection as global default", exact: true });
-  await globalSave.scrollIntoViewIfNeeded();
-  assert.equal(await globalSave.evaluate(node => {
+  await dialog.getByRole("button", { name: "Manage defaults ↗", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  const globalSwitch = settings.getByRole("switch", { name: "selected", exact: true });
+  await globalSwitch.waitFor(); await globalSwitch.scrollIntoViewIfNeeded();
+  assert.equal(await globalSwitch.evaluate(node => {
     const r = node.getBoundingClientRect();
     return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight
       && node.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
-  }), true, "global default action is reachable at touch width");
+  }), true, "per-server default is reachable in Settings at touch width");
+  assert.equal(await settings.locator("details[open]").count(), 0, "server details are collapsed");
+  await settings.getByRole("button", { name: "Close", exact: true }).click();
+  if (!await trigger.isVisible()) await page.getByRole("button", { name: "More controls", exact: true }).click();
+  await trigger.click();
+  await dialog.waitFor();
   const apply = dialog.getByRole("button", { name: "Apply", exact: true });
   await apply.scrollIntoViewIfNeeded();
   assert.equal(await apply.evaluate(node => {

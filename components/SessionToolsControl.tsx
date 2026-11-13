@@ -6,204 +6,123 @@ import { useSettingsWork } from "./SettingsUi";
 import { NO_NATIVE_RESOURCES, validateNativeResourceSelection, type NativeResourceSelection } from "@/lib/session-native-resources";
 import type { McpConfigurationListing } from "@/lib/native-mcp-configuration";
 import type { NativeMcpStatus } from "@/lib/native-session-tools";
-import type { GlobalNativeResources, ProjectNativeResources } from "@/lib/project-native-resources";
 
 interface Metadata {
   configuration: McpConfigurationListing;
-  projectDefault?: ProjectNativeResources;
-  globalDefault?: GlobalNativeResources;
+  defaultSelection?: NativeResourceSelection;
+  defaultError?: string;
   live?: { nativeResources: NativeResourceSelection; effectiveNativeResources: NativeResourceSelection; mcpServers: NativeMcpStatus[] };
 }
 interface Props {
   cwd: string; sessionId: string | null; selection?: NativeResourceSelection; busy: boolean; chatOnly: boolean;
   onApply(selection: NativeResourceSelection): Promise<NativeResourceSelection>;
+  onManageDefaults?: () => void;
 }
 const key = (server: { scope: string; name: string }) => `${server.scope}:${server.name}`;
 const checked = (value: unknown) => { try { return validateNativeResourceSelection(value); } catch { return NO_NATIVE_RESOURCES; } };
 
-/** Native modal owns focus/viewport placement. Opening it reads metadata only;
- * only Apply may initialize/recreate this selected ordinary session. */
-export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly, onApply }: Props) {
+/** Current-chat intent only. Default editing belongs in Settings. */
+export function SessionToolsControl({ cwd, sessionId, selection, busy, chatOnly, onApply, onManageDefaults }: Props) {
   const { t } = useI18n();
-  const observe = useSettingsWork();
-  const work = useRef(observe);
-  work.current = observe;
-  const dialog = useRef<HTMLDialogElement>(null);
-  const selectionRef = useRef(selection);
-  selectionRef.current = selection;
+  const observe = useSettingsWork(), work = useRef(observe); work.current = observe;
+  const dialog = useRef<HTMLDialogElement>(null), selectionRef = useRef(selection); selectionRef.current = selection;
   const [open, setOpen] = useState(false), [metadata, setMetadata] = useState<Metadata | null>(null);
   const [draft, setDraft] = useState<NativeResourceSelection>(NO_NATIVE_RESOURCES);
   const [loading, setLoading] = useState(false), [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null), [uncertain, setUncertain] = useState(false);
-  const [savingDefault, setSavingDefault] = useState(false), [defaultUncertain, setDefaultUncertain] = useState(false);
-  const [defaultNotice, setDefaultNotice] = useState<string | null>(null);
-  const [read, setRead] = useState(0);
+  const [error, setError] = useState<string | null>(null), [uncertain, setUncertain] = useState(false), [read, setRead] = useState(0);
+  const reconcile = useRef(true), mounted = useRef(true), epoch = useRef(0), creating = useRef(false);
   const context = `${cwd}\0${sessionId ?? ""}`, currentContext = useRef(context);
-  currentContext.current = context;
-  const reconcile = useRef(true), mounted = useRef(true);
+  const [loadedContext, setLoadedContext] = useState<string | null>(null);
+  if (currentContext.current !== context) {
+    // The current Apply may create this draft's first session. Its assigned ID
+    // is an acknowledgement, not navigation. Any directory change or later ID
+    // change still retires the old completion; the hook owns creation identity.
+    const adopted = creating.current && currentContext.current === `${cwd}\0` && sessionId !== null;
+    currentContext.current = context;
+    if (!adopted) { epoch.current++; reconcile.current = true; }
+  }
+  const ready = loadedContext === context;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
     if (!open) return;
-    const abort = new AbortController();
-    setLoading(true);
+    const abort = new AbortController(); setLoading(true); setLoadedContext(null); setMetadata(null);
     const params = new URLSearchParams({ cwd, ...(sessionId ? { sessionId } : {}) });
     void work.current("native.metadata", fetch(`/api/native-tools?${params}`, { cache: "no-store", signal: abort.signal }).then(async response => {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? t("nativeTools.unavailable"));
       if (abort.signal.aborted) return;
-      setMetadata(result as Metadata);
+      setMetadata(result); setLoadedContext(context);
       if (reconcile.current) {
         if (result.live) setDraft(checked(result.live.nativeResources));
-        else if (!sessionId) setDraft(checked(selectionRef.current ?? result.projectDefault?.selection ?? result.globalDefault?.selection ?? NO_NATIVE_RESOURCES));
-        reconcile.current = false; setError(null); setUncertain(false); setDefaultUncertain(false);
+        else setDraft(checked(selectionRef.current ?? (!sessionId ? result.defaultSelection : undefined)));
+        reconcile.current = false; setError(result.defaultError ?? null); setUncertain(false);
       }
-    }).catch(reason => {
-      if (!abort.signal.aborted) setError(reason instanceof Error ? reason.message : t("nativeTools.unavailable"));
-    }).finally(() => { if (!abort.signal.aborted) setLoading(false); }));
+    }).catch(reason => { if (!abort.signal.aborted) setError(reason instanceof Error ? reason.message : t("nativeTools.unavailable")); })
+      .finally(() => { if (!abort.signal.aborted) setLoading(false); }));
     return () => abort.abort();
-  }, [open, cwd, sessionId, read, t]);
-
+  }, [open, cwd, sessionId, read, t, context]);
   const rows = [...(metadata?.configuration.servers ?? [])];
   for (const server of draft.mcpServers) if (!rows.some(row => key(row) === key(server))) rows.push({ ...server,
-    enabled: false, projectOverride: false, eligible: false, transport: "stdio", limitation: "disabled" });
+    enabled: false, projectOverride: false, eligible: false, transport: "stdio" });
   const apply = () => work.current("native.apply", (async () => {
-    if (pending || savingDefault || busy || loading || uncertain) return;
-    reconcile.current = false;
-    setPending(true); setError(null);
+    if (pending || busy || loading || uncertain || !ready) return;
+    const captured = epoch.current;
+    creating.current = sessionId === null;
+    reconcile.current = false; setPending(true); setError(null);
     try {
       const actual = await onApply(validateNativeResourceSelection(draft));
-      if (!mounted.current) return;
+      if (!mounted.current || captured !== epoch.current) return;
       setDraft(actual); dialog.current?.close();
     } catch (reason) {
-      if (!mounted.current) return;
-      setError(reason instanceof Error ? reason.message : t("nativeTools.unavailable")); setUncertain(true);
-    } finally { if (mounted.current) setPending(false); }
-  })());
-  const saveDefault = (selection: NativeResourceSelection | null, scope: "project" | "global" = "project") => work.current("native.default", (async () => {
-    const project = metadata?.projectDefault;
-    const target = scope === "global" ? metadata?.globalDefault : project;
-    if (!target?.revision || scope === "project" && !project?.supported
-      || scope === "global" && selection?.mcpServers.some(server => server.scope !== "global")
-      || pending || savingDefault || loading || defaultUncertain) return;
-    const capturedContext = context;
-    setSavingDefault(true); setDefaultNotice(null); setError(null);
-    try {
-      const response = await fetch("/api/native-tools", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd, ...(scope === "global" ? { scope } : {}), revision: target.revision, nativeResources: selection }),
-      });
-      const result = await response.json();
-      const returned = (scope === "global" ? result.globalDefault : result.projectDefault) as ProjectNativeResources | GlobalNativeResources | undefined;
-      if (!response.ok || !returned || scope === "project" && (!("supported" in returned) || !returned.supported || returned.projectRoot !== project?.projectRoot)
-        || typeof returned.revision !== "string" || !/^[a-f0-9]{64}$/.test(returned.revision)) {
-        throw new Error(result.error ?? t("nativeTools.defaultUnavailable"));
-      }
-      const actual = { ...returned, selection: returned.selection === null ? null : validateNativeResourceSelection(returned.selection) };
-      if (JSON.stringify(actual.selection) !== JSON.stringify(selection)) throw new Error(result.error ?? t("nativeTools.defaultUnavailable"));
-      if (!mounted.current || currentContext.current !== capturedContext) return;
-      setMetadata(value => value ? { ...value, [scope === "global" ? "globalDefault" : "projectDefault"]: actual } : value);
-      setDefaultNotice(t(scope === "global"
-        ? selection === null ? "nativeTools.globalDefaultCleared" : "nativeTools.globalDefaultSaved"
-        : selection === null ? "nativeTools.defaultCleared" : "nativeTools.defaultSaved"));
-    } catch (failure) {
-      if (mounted.current && currentContext.current === capturedContext) {
-        setError(failure instanceof Error ? failure.message : t("nativeTools.defaultUnavailable"));
-        setDefaultUncertain(true);
-      }
-    } finally {
-      if (mounted.current) setSavingDefault(false);
-    }
+      if (mounted.current && captured === epoch.current) { setError(reason instanceof Error ? reason.message : t("nativeTools.unavailable")); setUncertain(true); }
+    } finally { creating.current = false; if (mounted.current) setPending(false); }
   })());
   return <>
     <button type="button" aria-haspopup="dialog" onClick={() => {
-      reconcile.current = true; setMetadata(null); setError(null); setUncertain(false); setDefaultUncertain(false); setDefaultNotice(null);
+      reconcile.current = true; setMetadata(null); setError(null); setUncertain(false);
       setDraft(checked(selection)); dialog.current?.showModal(); setOpen(true);
-    }} style={{ height: 32, border: 0, borderRadius: 9, padding: "0 8px", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}>
-      {t("nativeTools.title")}
-    </button>
-    <dialog ref={dialog} aria-label={t("nativeTools.title")} onClose={() => setOpen(false)}
-      className="backdrop:bg-black/40" style={{ width: "min(420px, calc(100vw - 32px))", maxHeight: "80vh", overflowY: "auto", margin: "auto", padding: 20,
+    }} style={{ height: 32, border: 0, borderRadius: 9, padding: "0 8px", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12 }}>{t("nativeTools.title")}</button>
+    <dialog ref={dialog} aria-label={t("nativeTools.title")} onClose={() => setOpen(false)} className="backdrop:bg-black/40"
+      style={{ width: "min(380px, calc(100vw - 32px))", maxHeight: "80vh", overflowY: "auto", margin: "auto", padding: 20,
         border: "1px solid var(--border)", borderRadius: 12, background: "var(--bg)", color: "var(--text)" }}>
-      <h2 className="mb-2 text-base font-semibold">{t("nativeTools.title")}</h2>
-      <p className="mb-3 text-xs text-text-muted">{t("nativeTools.scope")}</p>
+      <h2 className="text-base font-semibold">{t("nativeTools.title")}</h2>
+      <p className="mb-3 text-xs text-text-muted">{t("nativeTools.thisChat")}</p>
       {chatOnly && <p className="mb-3 text-xs text-text-muted">{t("nativeTools.chatOnly")}</p>}
       {busy && <p role="status" className="mb-3 text-xs text-text-muted">{t("nativeTools.busy")}</p>}
       {loading && <p role="status" className="mb-3 text-xs">{t("nativeTools.loading")}</p>}
-      <fieldset disabled={pending || savingDefault || loading || busy}>
-        <label className="flex items-center gap-2 py-2 text-sm">
-          <input type="checkbox" checked={draft.codeMode} onChange={event => setDraft({ ...draft, codeMode: event.target.checked })} />
-          {t("nativeTools.codeMode")}
-        </label>
-        <p className="mb-3 text-xs text-text-muted">{t("nativeTools.toolsOnly")}</p>
-        <h3 className="mb-1 text-sm font-medium">{t("nativeTools.servers")}</h3>
-        {metadata && !metadata.configuration.ok && <p role="alert" className="mb-2 text-xs text-red-500">{t("nativeTools.invalidConfiguration")}</p>}
+      {metadata && !metadata.configuration.ok && <p role="alert" className="mb-2 text-xs text-red-500">{t("nativeTools.invalidConfiguration")}</p>}
+      <fieldset disabled={pending || loading || busy || !ready}>
         {metadata && rows.length === 0 && <p className="py-2 text-xs text-text-muted">{t("nativeTools.empty")}</p>}
         {rows.map(row => {
           const selected = draft.mcpServers.some(server => key(server) === key(row));
           const status = metadata?.live?.mcpServers.find(server => key(server) === key(row));
-          return <label key={key(row)} className="flex items-start gap-2 py-2 text-sm">
-            <input className="mt-1" type="checkbox" checked={selected} disabled={!row.eligible && !selected} onChange={event => {
-              const servers = draft.mcpServers.filter(server => server.name.replace(/-/g, "_") !== row.name.replace(/-/g, "_"));
-              setDraft({ ...draft, mcpServers: event.target.checked ? [...servers, { scope: row.scope, name: row.name }] : servers });
-            }} />
-            <span><span className="font-medium">{row.name}</span>
-              <span className="block text-xs text-text-muted">{t(`nativeTools.scope_${row.scope}`)} · {row.transport}
-                {status ? ` · ${t(`nativeTools.state_${status.state}`)}` : ` · ${t("nativeTools.configured")}`}
-                {status?.tools !== undefined && ` · ${t("nativeTools.toolCount", { count: status.tools })}`}
+          const ambiguous = rows.filter(other => other.name.replace(/-/g, "_") === row.name.replace(/-/g, "_")).length > 1;
+          return <div key={key(row)} className="py-2">
+            <label className="flex items-center justify-between gap-3 text-sm">
+              <span className="break-words font-medium">{row.name}
+                {ambiguous && <span className="ml-2 text-xs font-normal text-text-muted">{t(`nativeTools.scope_${row.scope}`)}</span>}
               </span>
-              {!metadata?.configuration.servers.some(server => key(server) === key(row))
-                ? <span className="block text-xs text-text-muted">{t("nativeTools.missing")}</span>
-                : row.limitation && <span className="block text-xs text-text-muted">{t(`nativeTools.limitation_${row.limitation}`)}</span>}
-            </span>
-          </label>;
+              <input type="checkbox" checked={selected} disabled={!row.eligible && !selected} onChange={event => {
+                const servers = draft.mcpServers.filter(server => server.name.replace(/-/g, "_") !== row.name.replace(/-/g, "_"));
+                setDraft({ ...draft, mcpServers: event.target.checked ? [...servers, { scope: row.scope, name: row.name }] : servers });
+              }} />
+            </label>
+            {(status || !row.eligible) && <span className="text-xs text-text-muted">{status ? t(`nativeTools.state_${status.state}`)
+              : t(row.limitation ? `nativeTools.limitation_${row.limitation}` : "nativeTools.missing")}</span>}
+          </div>;
         })}
+        <label className="mt-2 flex items-center justify-between gap-3 border-t border-border pt-3 text-sm">
+          {t("nativeTools.codeMode")}<input type="checkbox" checked={draft.codeMode} onChange={event => setDraft({ ...draft, codeMode: event.target.checked })} />
+        </label>
       </fieldset>
-      <section className="mt-3 border-t border-border pt-3" aria-label={t("nativeTools.globalDefault")}>
-        <h3 className="text-sm font-medium">{t("nativeTools.globalDefault")}</h3>
-        <p className="mt-1 text-xs text-text-muted">{t("nativeTools.globalDefaultScope")}</p>
-        {metadata?.globalDefault && <>
-          <p className="mt-2 break-words text-xs text-text-muted">{metadata.globalDefault.selection
-            ? t("nativeTools.defaultSummary", {
-              servers: metadata.globalDefault.selection.mcpServers.map(server => server.name).join(", ") || t("nativeTools.noServers"),
-              codeMode: t(metadata.globalDefault.selection.codeMode ? "nativeTools.on" : "nativeTools.off"),
-            }) : t("nativeTools.noGlobalDefault")}</p>
-          <div className="mt-2 flex flex-wrap gap-3 text-sm">
-            <button type="button" disabled={pending || savingDefault || loading || defaultUncertain || draft.mcpServers.some(server => server.scope !== "global")}
-              onClick={() => void saveDefault(validateNativeResourceSelection(draft), "global")}>{t("nativeTools.saveGlobalDefault")}</button>
-            <button type="button" disabled={pending || savingDefault || loading || defaultUncertain || !metadata.globalDefault.selection}
-              onClick={() => void saveDefault(null, "global")}>{t("nativeTools.clearGlobalDefault")}</button>
-          </div>
-        </>}
-        {draft.mcpServers.some(server => server.scope !== "global") && <p className="mt-2 text-xs text-text-muted">{t("nativeTools.globalOnly")}</p>}
-      </section>
-      <section className="mt-3 border-t border-border pt-3" aria-label={t("nativeTools.projectDefault")}>
-        <h3 className="text-sm font-medium">{t("nativeTools.projectDefault")}</h3>
-        {metadata?.projectDefault?.supported ? <>
-          <p className="mt-1 break-words text-xs text-text-muted">{t("nativeTools.defaultScope", { project: metadata.projectDefault.projectRoot ?? cwd })}</p>
-          <p className="mt-2 break-words text-xs text-text-muted">{metadata.projectDefault.selection
-            ? t("nativeTools.defaultSummary", {
-              servers: metadata.projectDefault.selection.mcpServers.map(server => `${server.scope}:${server.name}`).join(", ") || t("nativeTools.noServers"),
-              codeMode: t(metadata.projectDefault.selection.codeMode ? "nativeTools.on" : "nativeTools.off"),
-            }) : t("nativeTools.noDefault")}</p>
-          <div className="mt-2 flex flex-wrap gap-3 text-sm">
-            <button type="button" disabled={pending || savingDefault || loading || defaultUncertain} onClick={() => void saveDefault(validateNativeResourceSelection(draft))}>
-              {t(savingDefault ? "nativeTools.savingDefault" : "nativeTools.saveDefault")}
-            </button>
-            <button type="button" disabled={pending || savingDefault || loading || defaultUncertain || !metadata.projectDefault.selection} onClick={() => void saveDefault(null)}>
-              {t("nativeTools.clearDefault")}
-            </button>
-          </div>
-        </> : metadata && <p className="mt-1 text-xs text-text-muted">{t("nativeTools.defaultUnsupported")}</p>}
-        {defaultNotice && <p role="status" className="mt-2 text-xs text-text-muted">{defaultNotice}</p>}
-        {defaultUncertain && <p className="mt-2 text-xs text-text-muted">{t("nativeTools.defaultReconcile")}</p>}
-      </section>
-      <p className="mt-3 text-xs text-text-muted">{t("nativeTools.configurationHelp")}</p>
       {error && <p role="alert" className="mt-3 text-xs text-red-500">{error}</p>}
-      {uncertain && <p className="mt-2 text-xs text-text-muted">{t("nativeTools.reconcile")}</p>}
-      <div className="mt-4 flex flex-wrap justify-end gap-3 text-sm">
-        <button type="button" disabled={pending || savingDefault || loading} onClick={() => { if (uncertain || defaultUncertain) { reconcile.current = true; setDraft(checked(selection)); } setError(null); setRead(value => value + 1); }}>{t("nativeTools.refresh")}</button>
-        <button type="button" disabled={pending || savingDefault} onClick={() => dialog.current?.close()}>{t("nativeTools.cancel")}</button>
-        <button type="button" disabled={pending || savingDefault || loading || busy || uncertain || !metadata} onClick={() => { void apply(); }}>{t(pending ? "nativeTools.applying" : "nativeTools.apply")}</button>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+        {onManageDefaults && <button type="button" disabled={pending} onClick={() => { dialog.current?.close(); onManageDefaults(); }}>{t("nativeTools.manageDefaults")}</button>}
+        <div className="ml-auto flex gap-3">
+          <button type="button" disabled={pending || loading} onClick={() => { reconcile.current = true; setRead(value => value + 1); }}>{t("nativeTools.refresh")}</button>
+          <button type="button" disabled={pending} onClick={() => dialog.current?.close()}>{t("nativeTools.cancel")}</button>
+          <button type="button" disabled={pending || loading || busy || uncertain || !metadata || !ready} onClick={() => void apply()}>{t(pending ? "nativeTools.applying" : "nativeTools.apply")}</button>
+        </div>
       </div>
     </dialog>
   </>;
