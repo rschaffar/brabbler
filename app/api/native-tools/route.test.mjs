@@ -12,6 +12,7 @@ const { POST: create } = await jiti.import("../agent/new/route.ts");
 const { POST: command, GET: liveState } = await jiti.import("../agent/[id]/route.ts");
 const rpc = await jiti.import("../../../lib/rpc-manager.ts");
 const { allowFileRoot } = await jiti.import("../../../lib/file-access.ts");
+const { setProjectTrust } = await jiti.import("../../../lib/project-trust.ts");
 const off = { version: 1, codeMode: false, mcpServers: [] }, on = { ...off, codeMode: true };
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "native-tools-api-")), agent = join(root, "agent"), cwd = join(root, "project");
@@ -125,6 +126,94 @@ test("project default saves are inert; ordinary creation snapshots once and exis
   const reopened = (await rpc.startRpcSession(id, file, undefined)).session;
   await reopened.waitUntilReady(); assert.equal(reopened.hasNativeSessionTools(), true);
   assert.equal(rpc.getRpcSession(await f.start(["read"])).hasNativeSessionTools(), false);
+});
+
+test("global defaults work without Git, snapshot ordinary creation and retain explicit/project off", async t => {
+  const f = await fixture(t);
+  const existingId = await f.start(["read"]), existing = rpc.getRpcSession(existingId);
+  await existing.waitUntilReady();
+  const first = await f.catalogue();
+  assert.equal(first.projectDefault.supported, false);
+  const saved = await f.save({ scope: "global", revision: first.globalDefault.revision, nativeResources: on });
+  assert.equal(saved.status, 200);
+  const { globalDefault } = await saved.json();
+  assert.equal(existsSync(join(f.cwd, ".git")), false);
+  assert.deepEqual((await existing.send({ type: "get_state" })).nativeResources, off);
+  const id = await f.start(["read"]), inherited = rpc.getRpcSession(id);
+  await inherited.waitUntilReady();
+  assert.deepEqual((await inherited.send({ type: "get_state" })).nativeResources, on);
+  const entries = (await readFile(inherited.sessionFile, "utf8")).trim().split("\n").map(JSON.parse);
+  assert.deepEqual(entries.find(entry => entry.customType === "brabbler:native-resources").data, on);
+  assert.equal(rpc.getRpcSession(await f.start(["read"], { nativeResources: off })).hasNativeSessionTools(), false);
+  const chat = rpc.getRpcSession(await f.start([]));
+  assert.deepEqual((await chat.send({ type: "get_state" })).effectiveNativeResources, off);
+  const generic = (await rpc.startRpcSession("__new__global-default-refusal", "", f.cwd, { toolNames: ["read"] })).session;
+  f.ids.add(generic.sessionId); await generic.waitUntilReady();
+  assert.deepEqual((await generic.send({ type: "get_state" })).nativeResources, off);
+  const existingFile = existing.sessionFile;
+  await existing.shutdown();
+  const reopened = (await rpc.startRpcSession(existingId, existingFile, undefined)).session;
+  await reopened.waitUntilReady();
+  assert.deepEqual((await reopened.send({ type: "get_state" })).nativeResources, off, "reopen never adopts global defaults");
+  execFileSync("git", ["-C", f.cwd, "init", "-qb", "main"]);
+  const project = (await f.catalogue()).projectDefault;
+  assert.equal((await f.save({ revision: project.revision, nativeResources: off })).status, 200);
+  assert.equal(rpc.getRpcSession(await f.start(["read"])).hasNativeSessionTools(), false);
+  const current = (await f.catalogue()).projectDefault;
+  assert.equal((await f.save({ revision: current.revision, nativeResources: null })).status, 200);
+  assert.equal(rpc.getRpcSession(await f.start(["read"])).hasNativeSessionTools(), true);
+  assert.equal((await f.save({ scope: "global", revision: globalDefault.revision, nativeResources: null })).status, 200);
+  assert.deepEqual((await inherited.send({ type: "get_state" })).nativeResources, on);
+  assert.equal(rpc.getRpcSession(await f.start(["read"])).hasNativeSessionTools(), false);
+});
+
+test("global writes enforce security/revisions and refuse project or ineligible MCP declarations", async t => {
+  const f = await fixture(t);
+  await writeFile(join(f.agent, "mcp.json"), JSON.stringify({ mcpServers: {
+    configured: { command: "SYNTHETIC_NEVER_RUN" }, disabled: { command: "SYNTHETIC_NEVER_RUN", enabled: false },
+    oauth: { url: "https://example.invalid/mcp", oauth: {} },
+  } }));
+  execFileSync("git", ["-C", f.cwd, "init", "-qb", "main"]);
+  await mkdir(join(f.cwd, ".pi"));
+  await writeFile(join(f.cwd, ".pi/mcp.json"), JSON.stringify({ mcpServers: { disabled: { enabled: true } } }));
+  setProjectTrust(f.cwd, f.agent, "repository", true);
+  const metadata = await f.catalogue(), first = metadata.globalDefault;
+  assert.equal(metadata.configuration.servers.find(server => server.name === "disabled").eligible, true,
+    "a project-only re-enable must not make a disabled global declaration globally eligible");
+  const body = { scope: "global", revision: first.revision, nativeResources: on };
+  assert.equal((await f.save(body, { origin: "https://untrusted.invalid" })).status, 403);
+  assert.equal((await f.save(body, { "Content-Type": "text/plain" })).status, 415);
+  const outside = join(f.root, "outside"); await mkdir(outside);
+  assert.equal((await f.save({ ...body, cwd: outside })).status, 403);
+  assert.equal((await f.save({ ...body, scope: "unknown" })).status, 400);
+  assert.equal((await f.save({ ...body, revision: "stale" })).status, 409);
+  for (const server of [{ scope: "project", name: "configured" }, ...["disabled", "oauth", "missing"].map(name => ({ scope: "global", name }))]) {
+    assert.equal((await f.save({ ...body, nativeResources: { ...off, mcpServers: [server] } })).status, 400);
+  }
+  const count = globalThis.__piSessions?.size ?? 0;
+  assert.equal((await f.save({ ...body, nativeResources: { ...off, mcpServers: [{ scope: "global", name: "configured" }] } })).status, 200);
+  assert.equal(globalThis.__piSessions?.size ?? 0, count);
+  assert.equal((await f.save(body)).status, 409);
+  assert.equal(existsSync(join(f.agent, "mcp.log")), false);
+});
+
+test("inherited global intent refuses project replacement instead of substitution or fallback", async t => {
+  const f = await fixture(t), existingId = await f.start(["read"]);
+  const existing = rpc.getRpcSession(existingId); await existing.waitUntilReady();
+  await writeFile(join(f.agent, "mcp.json"), JSON.stringify({ mcpServers: { configured: { command: "SYNTHETIC_NEVER_RUN" } } }));
+  const global = (await f.catalogue()).globalDefault;
+  assert.equal((await f.save({ scope: "global", revision: global.revision, nativeResources: { ...off, mcpServers: [{ scope: "global", name: "configured" }] } })).status, 200);
+  execFileSync("git", ["-C", f.cwd, "init", "-qb", "main"]);
+  await mkdir(join(f.cwd, ".pi"));
+  await writeFile(join(f.cwd, ".pi/mcp.json"), JSON.stringify({ mcpServers: { configured: { command: "SYNTHETIC_PROJECT_NEVER_RUN" } } }));
+  setProjectTrust(f.cwd, f.agent, "repository", true);
+  const response = await create(new Request("http://fixture.invalid/api/agent/new", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cwd: f.cwd, type: "ensure_session", toolNames: ["read"] }) }));
+  const result = await response.json();
+  assert.equal(response.status, 500);
+  assert.match(result.error, /Selected MCP server is unavailable/);
+  assert.deepEqual((await existing.send({ type: "get_state" })).nativeResources, off);
+  assert.equal(rpc.getRpcSession(await f.start(["read"], { nativeResources: off })).hasNativeSessionTools(), false);
 });
 
 test("default writes enforce origin/content/path/schema/revision and never edit native configuration", async t => {

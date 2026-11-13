@@ -13,16 +13,21 @@ export interface ProjectNativeResources {
   revision: string | null;
   selection: NativeResourceSelection | null;
 }
+export interface GlobalNativeResources {
+  revision: string;
+  selection: NativeResourceSelection | null;
+}
+interface Store { projects: Map<string, NativeResourceSelection>; globalSelection: NativeResourceSelection | null }
 interface Entry { identity: string; selection: NativeResourceSelection }
 const MAX_BYTES = 4 * 1024 * 1024;
 const storePath = (agentDir: string) => join(agentDir, "brabbler", "project-native-resources.json");
-const unavailable = () => new Error("Project native-tool defaults are unavailable");
+const unavailable = () => new Error("Native-tool defaults are unavailable");
 
-function readStore(file: string): Map<string, NativeResourceSelection> {
+function readStore(file: string): Store {
   let fd: number;
   try { fd = openSync(file, constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0)); }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return new Map();
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { projects: new Map(), globalSelection: null };
     throw unavailable();
   }
   try {
@@ -34,10 +39,11 @@ function readStore(file: string): Map<string, NativeResourceSelection> {
       if (!count) break;
       length += count;
     }
-    const data = JSON.parse(bytes.subarray(0, length).toString("utf8")) as { version?: unknown; projects?: unknown };
+    const data = JSON.parse(bytes.subarray(0, length).toString("utf8")) as { version?: unknown; projects?: unknown; globalSelection?: unknown };
     const after = fstatSync(fd, { bigint: true });
     if (length !== Number(before.size) || before.size !== after.size || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs
-      || !data || typeof data !== "object" || Array.isArray(data) || Object.keys(data).length !== 2
+      || !data || typeof data !== "object" || Array.isArray(data)
+      || Object.keys(data).some(key => !["version", "projects", "globalSelection"].includes(key))
       || data.version !== 1 || !Array.isArray(data.projects) || data.projects.length > 1000) throw unavailable();
     const entries = new Map<string, NativeResourceSelection>();
     for (const item of data.projects) {
@@ -46,7 +52,8 @@ function readStore(file: string): Map<string, NativeResourceSelection> {
         || entries.has(item.identity)) throw unavailable();
       entries.set(item.identity, validateNativeResourceSelection(item.selection));
     }
-    return entries;
+    const globalSelection = data.globalSelection === undefined || data.globalSelection === null ? null : validateGlobalSelection(data.globalSelection);
+    return { projects: entries, globalSelection };
   } catch { throw unavailable(); }
   finally { closeSync(fd); }
 }
@@ -68,11 +75,11 @@ function metadata(repository: TrustedGitRepository | null, entries: Map<string, 
 
 /** Inert: no identity marker, configuration engine, transport or trust write. */
 export function readProjectNativeResources(cwd: string, agentDir: string): ProjectNativeResources {
-  return metadata(nativeResourcesGitRepository(cwd), readStore(storePath(agentDir)));
+  return metadata(nativeResourcesGitRepository(cwd), readStore(storePath(agentDir)).projects);
 }
 
 export class ProjectNativeResourcesConflict extends Error {
-  constructor() { super("Project defaults changed; refresh before saving"); }
+  constructor() { super("Native-tool defaults changed; refresh before saving"); }
 }
 
 /** User-owned settings only. A Git identity marker is not project trust. */
@@ -91,7 +98,7 @@ export function saveProjectNativeResources(cwd: string, agentDir: string, revisi
     if (Math.max(performance.now() - started, Date.now() - wallStarted) > 30_000) throw new Error("Project default save exceeded its lease budget");
   };
   try {
-    const entries = readStore(file), repository = nativeResourcesGitRepository(cwd);
+    const store = readStore(file), entries = store.projects, repository = nativeResourcesGitRepository(cwd);
     assertWriteBudget();
     if (!repository) throw new Error("Project defaults require a registered Git checkout root");
     if (metadata(repository, entries).revision !== revision) throw new ProjectNativeResourcesConflict();
@@ -104,9 +111,7 @@ export function saveProjectNativeResources(cwd: string, agentDir: string, revisi
       else entries.delete(identified.key);
     }
     if (entries.size > 1000) throw new Error("Too many project native-tool defaults");
-    const projects: Entry[] = [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([identity, value]) => ({ identity, selection: value }));
-    const contents = `${JSON.stringify({ version: 1, projects }, null, 2)}\n`;
-    if (Buffer.byteLength(contents) > MAX_BYTES) throw new Error("Too many project native-tool defaults");
+    const contents = serializeStore(store);
     // Verify current membership/identity once more before the atomic write.
     if (nativeResourcesGitRepository(cwd)?.key !== identified.key) throw new ProjectNativeResourcesConflict();
     assertWriteBudget();
@@ -115,8 +120,51 @@ export function saveProjectNativeResources(cwd: string, agentDir: string, revisi
   } finally { release(); }
 }
 
-/** Only the ordinary new-session route calls this. Existing sessions and generic
- * RPC/child/launch startup never consult mutable project defaults. */
+function validateGlobalSelection(value: unknown): NativeResourceSelection {
+  const selection = validateNativeResourceSelection(value);
+  if (selection.mcpServers.some(server => server.scope !== "global")) throw new Error("Global defaults require globally configured MCP servers");
+  return selection;
+}
+function serializeStore(store: Store): string {
+  const projects: Entry[] = [...store.projects].sort(([a], [b]) => a.localeCompare(b)).map(([identity, selection]) => ({ identity, selection }));
+  const contents = `${JSON.stringify({ version: 1, projects, ...(store.globalSelection ? { globalSelection: store.globalSelection } : {}) }, null, 2)}\n`;
+  if (Buffer.byteLength(contents) > MAX_BYTES) throw new Error("Too many native-tool defaults");
+  return contents;
+}
+function globalMetadata(store: Store): GlobalNativeResources {
+  return { revision: createHash("sha256").update(JSON.stringify(["global", store.globalSelection])).digest("hex"), selection: store.globalSelection };
+}
+
+/** Global defaults never inspect a repository or create an identity/trust marker. */
+export function readGlobalNativeResources(agentDir: string): GlobalNativeResources {
+  return globalMetadata(readStore(storePath(agentDir)));
+}
+export function saveGlobalNativeResources(agentDir: string, revision: unknown, requested: unknown): GlobalNativeResources {
+  if (typeof revision !== "string" || !/^[a-f0-9]{64}$/.test(revision)) throw new ProjectNativeResourcesConflict();
+  const selection = requested === null ? null : validateGlobalSelection(requested);
+  const file = storePath(agentDir);
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  const started = performance.now(), wallStarted = Date.now();
+  const release = lockfile.lockSync(file, { realpath: false, lockfilePath: `${file}.lock`, stale: 120_000 });
+  try {
+    const store = readStore(file);
+    if (globalMetadata(store).revision !== revision) throw new ProjectNativeResourcesConflict();
+    store.globalSelection = selection;
+    const contents = serializeStore(store);
+    if (Math.max(performance.now() - started, Date.now() - wallStarted) > 30_000) throw new Error("Global default save exceeded its lease budget");
+    writePrivateFileAtomicSync(file, contents);
+    return globalMetadata(store);
+  } finally { release(); }
+}
+
+/** Only the ordinary new-session route consults mutable defaults. Explicit
+ * per-session intent is resolved by its caller before this lookup. */
+export function ordinaryNativeResourceSelection(cwd: string, agentDir: string): NativeResourceSelection | undefined {
+  const store = readStore(storePath(agentDir));
+  return metadata(nativeResourcesGitRepository(cwd), store.projects).selection ?? store.globalSelection ?? undefined;
+}
+
+/** Project-only lookup, without global fallback. */
 export function projectNativeResourceSelection(cwd: string, agentDir: string): NativeResourceSelection | undefined {
   return readProjectNativeResources(cwd, agentDir).selection ?? undefined;
 }

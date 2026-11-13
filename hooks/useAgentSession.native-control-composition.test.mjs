@@ -264,7 +264,7 @@ for (const failure of ['contradictory', 'lost-body']) test(`actual default clear
   assert.ok(nativeReads(f)[1].signal instanceof AbortSignal);
   assert.equal(button(f, 'Save selection as project default').disabled, false);
   assert.equal(button(f, 'Clear project default').disabled, true);
-  assert.match(f.view.container.textContent, /No project default\. New sessions start with native tools off unless explicitly selected\./);
+  assert.match(f.view.container.textContent, /No project default\. New sessions inherit the global default unless explicitly selected\./);
   assert.equal(f.view.container.querySelector('[role="alert"]'), null);
   assert.equal(defaultWrites(f).length, 1); assert.equal(mutations(f).length, 0);
   assert.deepEqual(f.current.data.nativeResources, off); assert.deepEqual(f.nativePeerCurrent.data.nativeResources, native);

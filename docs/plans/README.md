@@ -26,6 +26,16 @@ Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
 
+## Global native-tool defaults
+
+The [completed implementation record](archived/2026-11-13_global-native-default-plan.md)
+adds global selections for future ordinary chats with explicit session → project →
+global → off precedence. Independent review and complete Nix acceptance passed:
+534 core files / 4,628 tests, all 26 browser/terminal groups and the genuine deployment
+VM in 459 seconds, including realization. [Native session tools](../native-session-tools.md)
+owns current behavior. Local integration remains separately gated; no host deployment
+or remote publication is implied.
+
 ## Notebook-wide reference refresh
 
 The [implementation record](archived/2026-11-09_notebook-refresh-plan.md) closes the

@@ -232,7 +232,31 @@ export async function checkSelectedNativeRuntime(page, { base, api, post, fixtur
   assert.equal(cleared.status(), 200);
   assert.equal(cleared.request().postDataJSON().nativeResources, null);
   await cleared.json();
-  await dialog.getByText("No project default. New sessions start with native tools off unless explicitly selected.", { exact: true }).waitFor();
+  await dialog.getByText("No project default. New sessions inherit the global default unless explicitly selected.", { exact: true }).waitFor();
+
+  // Global settings use the same inert browser path; fresh creation snapshots
+  // them after the project override is cleared, without changing saved chats.
+  await row("selected").getByRole("checkbox").check();
+  const globalStarts = records(fixture.starts).length;
+  const [globalSaved] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === "/api/native-tools" && response.request().method() === "POST"),
+    dialog.getByRole("button", { name: "Save selection as global default", exact: true }).click(),
+  ]);
+  assert.equal(globalSaved.status(), 200);
+  assert.equal(globalSaved.request().postDataJSON().scope, "global");
+  assert.deepEqual((await globalSaved.json()).globalDefault.selection, defaultSelection);
+  await dialog.getByText("Global default saved. Existing sessions are unchanged.", { exact: true }).waitFor();
+  assert.equal(records(fixture.starts).length, globalStarts, "saving a global default never connects it");
+  const globalInherited = await post("/api/agent/new", { cwd: fixture.project, type: "ensure_session", toolNames: ["read"] });
+  assert.deepEqual((await api(`/api/sessions/${globalInherited.sessionId}`)).nativeResources, defaultSelection);
+  const [globalCleared] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === "/api/native-tools" && response.request().method() === "POST"),
+    dialog.getByRole("button", { name: "Clear global default", exact: true }).click(),
+  ]);
+  assert.equal(globalCleared.status(), 200);
+  assert.equal((await globalCleared.json()).globalDefault.selection, null);
+  await dialog.getByText("Global default cleared. Existing sessions are unchanged.", { exact: true }).waitFor();
+  assert.deepEqual((await api(`/api/sessions/${globalInherited.sessionId}`)).nativeResources, defaultSelection);
   assert.deepEqual((await api(`/api/sessions/${inherited.sessionId}`)).nativeResources, defaultSelection);
   assert.deepEqual((await api(`/api/sessions/${id}`)).nativeResources, off);
   await page.screenshot({ path: join(artifacts, `native-tools-${width}.png`) });

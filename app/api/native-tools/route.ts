@@ -9,7 +9,7 @@ import { getRpcSession } from "@/lib/rpc-manager";
 import { samePath } from "@/lib/paths";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { validateNativeResourceSelection } from "@/lib/session-native-resources";
-import { ProjectNativeResourcesConflict, readProjectNativeResources, saveProjectNativeResources } from "@/lib/project-native-resources";
+import { ProjectNativeResourcesConflict, readGlobalNativeResources, saveGlobalNativeResources, readProjectNativeResources, saveProjectNativeResources } from "@/lib/project-native-resources";
 
 export const dynamic = "force-dynamic";
 const noStore = { "Cache-Control": "no-store" };
@@ -36,9 +36,9 @@ export async function GET(req: Request) {
     if (live && !samePath(live.cwd, cwd)) return NextResponse.json({ error: "Session directory changed" }, { status: 409 });
     const agentDir = getAgentDir();
     const configuration = await listMcpConfiguration({ agentDir, cwd, projectTrusted: getProjectTrustStatus(cwd, agentDir).trusted });
-    const projectDefault = readProjectNativeResources(cwd, agentDir);
+    const projectDefault = readProjectNativeResources(cwd, agentDir), globalDefault = readGlobalNativeResources(agentDir);
     const state = live ? await live.send({ type: "get_state" }) as Record<string, unknown> : undefined;
-    return NextResponse.json({ configuration, projectDefault, ...(state ? { live: {
+    return NextResponse.json({ configuration, projectDefault, globalDefault, ...(state ? { live: {
       nativeResources: state.nativeResources, effectiveNativeResources: state.effectiveNativeResources, mcpServers: state.mcpServers,
     } } : {}) }, { headers: noStore });
   } catch { return NextResponse.json({ error: "Native tool metadata is unavailable" }, { status: 500, headers: noStore }); }
@@ -49,10 +49,11 @@ export async function POST(req: Request) {
   if (!isApiRequestAllowed(req)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   if (!hasJsonContentType(req)) return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
   try {
-    const body = await req.json() as { cwd?: unknown; revision?: unknown; nativeResources?: unknown };
+    const body = await req.json() as { cwd?: unknown; scope?: unknown; revision?: unknown; nativeResources?: unknown };
     if (!body || typeof body !== "object" || Array.isArray(body)
-      || Object.keys(body).some(key => !["cwd", "revision", "nativeResources"].includes(key))) {
-      return NextResponse.json({ error: "Invalid project native-tool default" }, { status: 400 });
+      || Object.keys(body).some(key => !["cwd", "scope", "revision", "nativeResources"].includes(key))
+      || body.scope !== undefined && body.scope !== "global" && body.scope !== "project") {
+      return NextResponse.json({ error: "Invalid native-tool default" }, { status: 400 });
     }
     let selection;
     try { selection = body.nativeResources === null ? null : validateNativeResourceSelection(body.nativeResources); }
@@ -60,20 +61,25 @@ export async function POST(req: Request) {
     const checked = await authorizedDirectory(body.cwd);
     if ("response" in checked) return checked.response;
     const { cwd } = checked, agentDir = getAgentDir();
-    if (!readProjectNativeResources(cwd, agentDir).supported) {
+    const global = body.scope === "global";
+    if (global && selection?.mcpServers.some(server => server.scope !== "global")) {
+      return NextResponse.json({ error: "Global defaults require globally configured MCP servers" }, { status: 400 });
+    }
+    if (!global && !readProjectNativeResources(cwd, agentDir).supported) {
       return NextResponse.json({ error: "Project defaults require a registered Git checkout root" }, { status: 409 });
     }
     if (selection?.mcpServers.length) {
-      const configuration = await listMcpConfiguration({ agentDir, cwd, projectTrusted: getProjectTrustStatus(cwd, agentDir).trusted });
+      const configuration = await listMcpConfiguration({ agentDir, cwd, projectTrusted: !global && getProjectTrustStatus(cwd, agentDir).trusted });
       if (!configuration.ok || selection.mcpServers.some(selected => !configuration.servers.some(server =>
         server.scope === selected.scope && server.name === selected.name && server.eligible))) {
         return NextResponse.json({ error: "Selected MCP server is unavailable or unsupported" }, { status: 400 });
       }
     }
+    if (global) return NextResponse.json({ globalDefault: saveGlobalNativeResources(agentDir, body.revision, selection) }, { headers: noStore });
     const projectDefault = saveProjectNativeResources(cwd, agentDir, body.revision, selection);
     return NextResponse.json({ projectDefault }, { headers: noStore });
   } catch (error) {
     if (error instanceof ProjectNativeResourcesConflict) return NextResponse.json({ error: error.message }, { status: 409, headers: noStore });
-    return NextResponse.json({ error: "Project native-tool defaults could not be saved" }, { status: 500, headers: noStore });
+    return NextResponse.json({ error: "Native-tool defaults could not be saved" }, { status: 500, headers: noStore });
   }
 }

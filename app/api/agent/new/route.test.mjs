@@ -25,7 +25,7 @@ function fixture(defaultSelection, defaultFailure, persistFailure) {
     "@/lib/model-speed": { isModelSpeed: (value) => value === "standard" || value === "fast" },
     "@/lib/session-native-resources": nativeResourceSelection,
     "@earendil-works/pi-coding-agent": { getAgentDir: () => "/agent-fixture" },
-    "@/lib/project-native-resources": { projectNativeResourceSelection: (cwd, agentDir) => {
+    "@/lib/project-native-resources": { ordinaryNativeResourceSelection: (cwd, agentDir) => {
       calls.push(["default", cwd, agentDir]);
       if (defaultFailure) throw defaultFailure;
       return defaultSelection;

@@ -30,6 +30,13 @@ export async function checkNativeToolsModalLayout(page, { base, api, fixture }) 
   // This other session remains off after the desktop OTHER-busy window. Apply
   // proves the installed control binding without repeating a native tool turn.
   assert.equal(await dialog.getByRole("checkbox", { name: "Code-mode", exact: true }).isChecked(), false);
+  const globalSave = dialog.getByRole("button", { name: "Save selection as global default", exact: true });
+  await globalSave.scrollIntoViewIfNeeded();
+  assert.equal(await globalSave.evaluate(node => {
+    const r = node.getBoundingClientRect();
+    return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight
+      && node.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+  }), true, "global default action is reachable at touch width");
   const apply = dialog.getByRole("button", { name: "Apply", exact: true });
   await apply.scrollIntoViewIfNeeded();
   assert.equal(await apply.evaluate(node => {
