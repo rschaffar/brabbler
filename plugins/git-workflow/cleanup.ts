@@ -184,9 +184,9 @@ async function* gitRecords(access: CleanupAccess, cwd: string, args: string[]) {
   if (access.records) yield* access.records(cwd, args);
   else for (const record of (await access.git(cwd, args)).split("\0")) if (record) yield record;
 }
-async function assertSourceClean(access: CleanupAccess, path: string, roots: string[]) {
+async function assertSourceClean(access: CleanupAccess, path: string, roots: string[], rejectUnignoredUntracked = false) {
   for await (const change of gitRecords(access, path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])) {
-    if (access.rejectUnignoredUntracked || !change.startsWith("?? ") || !selectedArtifact(change.slice(3), roots)) throw new Error("Cleanup worktree has source changes or unapproved untracked files");
+    if (rejectUnignoredUntracked || access.rejectUnignoredUntracked || !change.startsWith("?? ") || !selectedArtifact(change.slice(3), roots)) throw new Error("Cleanup worktree has source changes or unapproved untracked files");
   }
 }
 interface ResourceOperation {
@@ -198,6 +198,8 @@ interface ResourceRules {
   target: string;
   binding: unknown;
   protectedBranches: string[];
+  /** Only verified integrated whole-worktree removal may supply this authority. */
+  allowIgnoredArtifacts?: boolean;
   verify(cwd: string, checkpoint?: CleanupCaptureCheckpoint): Promise<void>;
   artifacts(roots: string[]): void;
 }
@@ -224,12 +226,12 @@ async function captureResources(callerCwd: string, op: ResourceOperation, policy
   validateArtifactRoots(op.artifactRoots);
   let roots = [...op.artifactRoots];
   const permitted = permittedArtifactRoots(policy.approvedArtifactRoots);
+  const ignored = new Set<string>();
   if (typeof op.removeWorktree !== "boolean" || typeof op.deleteBranch !== "boolean") throw new Error("Cleanup resource choices must be explicit");
   if (op.subject.kind === "detached" && (!op.removeWorktree || op.deleteBranch || !op.worktreePath)) throw new Error("Detached discard removes only its exact worktree");
   rules.artifacts(roots);
-  // Arguments/discovery propose resources, never grant permission. The server
-  // requires a live one-time approval for every root absent from the allowlist,
-  // including when the operation's configured permission is Allow.
+  // Arguments/discovery propose resources, never grant permission. Only the
+  // reusable allowlist or integrated-removal policy can replace live approval.
   const cwd = await access.checkout(op.checkout);
   if (!samePath(cwd, resolve(op.checkout))) throw new Error("Cleanup checkout must be physical, without symlink aliases");
   const repositoryIdentity = await repositoryIdentityOf(access, cwd);
@@ -257,24 +259,28 @@ async function captureResources(callerCwd: string, op: ResourceOperation, policy
     capturedEntry = entry;
     await assertWorktreeSubject(access, path, entry, op.subject);
     if (access.inUse(path)) throw new Error("Cleanup worktree is in active use");
-    if (op.removeWorktree && discoverArtifacts) {
+    if (op.removeWorktree && (discoverArtifacts || rules.allowIgnoredArtifacts)) {
       // Preserve exact Git paths, including nested caches. Git may collapse a
       // wholly ignored directory; never promote a path to a source parent.
       const discovered = new Set(roots);
       for await (const name of gitRecords(access, path, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"])) {
         const root = name.replace(/\/$/, "");
-        if (root) discovered.add(root);
+        if (root) { ignored.add(root); if (discoverArtifacts) discovered.add(root); }
       }
-      // If Git reports an ignored parent of an explicit child, inventory it once
-      // and show that actual parent in approval, never delete overlapping roots.
-      roots = [...discovered].filter((root) => !artifactParentsOf([root]).some((parent) => discovered.has(parent)));
-      validateArtifactRoots(roots);
-      artifactParents = artifactParentsOf(roots);
-      metadataParents = directArtifactParents(roots);
+      if (discoverArtifacts) {
+        // If Git reports an ignored parent of an explicit child, inventory it once
+        // and show that actual parent in approval, never delete overlapping roots.
+        roots = [...discovered].filter((root) => !artifactParentsOf([root]).some((parent) => discovered.has(parent)));
+        validateArtifactRoots(roots);
+        artifactParents = artifactParentsOf(roots);
+        metadataParents = directArtifactParents(roots);
+      }
+      // Effect-stage classification must preserve frozen roots AND their structural
+      // parents, including parents of artifacts already deleted by this operation.
     }
     rules.artifacts(roots);
     if (roots.some((root) => root.includes("/")) && !supportsNestedCleanup()) throw new Error("Nested cleanup requires Linux no-follow directory handles; resources retained");
-    await assertSourceClean(access, path, roots);
+    await assertSourceClean(access, path, roots, rules.allowIgnoredArtifacts);
     const tracked = new Set<string>();
     for await (const name of gitRecords(access, path, ["ls-files", "--cached", "-z"])) if (name) tracked.add(name);
     files = await inventory(path, roots, tracked, budget, artifactParents, metadataParents, op.artifactRoots, access);
@@ -282,7 +288,7 @@ async function captureResources(callerCwd: string, op: ResourceOperation, policy
     const currentEntry = (await access.worktrees(cwd)).find((item) => samePath(item.path, path!));
     if (!currentEntry || digest(currentEntry) !== digest(entry) || !samePath(await access.checkout(path, cwd), path)) throw new Error("Worktree registration changed during inventory");
     await assertWorktreeSubject(access, path, currentEntry, op.subject);
-    await assertSourceClean(access, path, roots);
+    await assertSourceClean(access, path, roots, rules.allowIgnoredArtifacts);
     const admin = (await access.git(path, ["rev-parse", "--absolute-git-dir"])).trim();
     identity = [path, entry, statIdentity(path), realpathSync(admin), statIdentity(admin), files.tree];
   } else if (op.removeWorktree || op.artifactRoots.length) throw new Error("Select the feature worktree for artifact cleanup");
@@ -299,9 +305,11 @@ async function captureResources(callerCwd: string, op: ResourceOperation, policy
     if (access.inUse(path)) throw new Error("Cleanup worktree became active during capture");
   }
   const bound = digest([repositoryIdentity, rules.binding, op.subject, identity]);
+  const unapprovedArtifacts = unapprovedArtifactRoots(roots, permitted)
+    .filter((root) => !rules.allowIgnoredArtifacts || !ignored.has(root));
   return { cwd, target: rules.target, path, repositoryIdentity, identity: bound, artifacts: files?.artifacts ?? [],
     artifactParents, artifactParentMetadata: files?.artifactParentMetadata ?? [], artifactParentIdentities: files?.artifactParentIdentities ?? [],
-    unapprovedArtifacts: unapprovedArtifactRoots(roots, permitted), fingerprint: digest([bound, files?.artifacts ?? [], files?.artifactParentMetadata ?? []]) };
+    unapprovedArtifacts, fingerprint: digest([bound, files?.artifacts ?? [], files?.artifactParentMetadata ?? [], unapprovedArtifacts]) };
 }
 export async function captureCleanup(callerCwd: string, op: CleanupOperation, policy: GitSettings, access: CleanupAccess,
   budget = createCleanupBudget(), discoverArtifacts = true, frozenStructure?: FrozenStructure): Promise<CleanupSnapshot> {
@@ -312,6 +320,7 @@ export async function captureCleanup(callerCwd: string, op: CleanupOperation, po
     || op.artifactRoots.length && policy.cleanupArtifacts === "keep") throw new Error("Cleanup conflicts with a configured Keep choice");
   return captureResources(callerCwd, cleanupResources(op), policy, access, {
     target, binding: [target, op.integrationCommit], protectedBranches: [target],
+    allowIgnoredArtifacts: op.removeWorktree && policy.ignoredArtifactPolicy === "all-in-integrated-worktree",
     verify: async (cwd) => {
       await access.git(cwd, ["merge-base", "--is-ancestor", op.featureTip, op.integrationCommit]);
       await access.git(cwd, ["merge-base", "--is-ancestor", op.integrationCommit, await directBranch(access, cwd, target)]);
@@ -411,7 +420,9 @@ async function performResources(op: ResourceOperation, access: CleanupAccess,
   const revalidate = async () => {
     guardPolicy();
     const current = await recapture(remaining);
-    if (current.identity !== snapshot.identity || current.artifactParentMetadata.some((item) =>
+    if (current.identity !== snapshot.identity
+      || digest(current.unapprovedArtifacts) !== digest(snapshot.unapprovedArtifacts.filter((root) => remaining.includes(root)))
+      || current.artifactParentMetadata.some((item) =>
       !changedParents.has(item.path) && item.digest !== snapshot.artifactParentMetadata.find((original) => original.path === item.path)?.digest)
       || current.artifacts.some((item) =>
       digest(item) !== digest(snapshot.artifacts.find((original) => original.path === item.path)))) throw new Error("Cleanup resources changed; remaining resources retained");

@@ -31,7 +31,7 @@ export function browserDiscardCard(op: BrowserDiscardOperation, policy: GitSetti
     actions: [{ id: "reject", label: "Keep resources" }, { id: "approve", label: "Remove listed resources", primary: true }],
   };
 }
-export function cleanupCard(op: CleanupOperation, cleanup: CleanupSnapshot): PluginCard {
+export function cleanupCard(op: CleanupOperation, cleanup: CleanupSnapshot, policy?: GitSettings): PluginCard {
   return { title: "Clean up integrated Git feature", subtitle: "Approval required",
     fields: [{ label: "Repository checkout", value: cleanup.cwd, code: true },
       { label: "Integrated feature", value: `${op.featureBranch} at ${op.featureTip}`, code: true },
@@ -39,6 +39,7 @@ export function cleanupCard(op: CleanupOperation, cleanup: CleanupSnapshot): Plu
       { label: "Worktree", value: `${op.removeWorktree ? "Remove" : "Keep"}: ${cleanup.path ?? "none"}` },
       { label: "Local branch", value: op.deleteBranch ? "Delete exact integrated ref" : "Keep" }],
     sections: [artifactSection(cleanup),
+      ...(op.removeWorktree && policy?.ignoredArtifactPolicy === "all-in-integrated-worktree" ? [{ title: "Saved ignored-file permission", text: "Your saved policy permits permanent deletion of all safely supported ignored contents when removing this integrated worktree, including ignored local configuration and data. Only the frozen listed resources are selected. No recovery copy is made. Tracked changes and unignored untracked files still block removal.", notice: true }] : []),
       ...(cleanup.unapprovedArtifacts.length ? [{ title: "One-time artifact permission", text: "The listed unpermitted artifacts require your approval for this operation, even when cleanup is set to Allow. Ignored status does not mean disposable. Approving does not change your reusable allowlist.", notice: true }] : []),
       { title: "Boundaries", text: "Only listed resources. Idle chat history stays, but continuing a chat may require moving it after its working folder disappears. Running/starting sessions and active terminals block cleanup. Content/identity rechecked before each effect. Unknown files, source changes, locked or active worktrees block cleanup. Target advancement is allowed only while integration remains reachable. External filesystem/Git writers are not locked out; partial effects are reported, never rolled back. Local branch config is retained; remote branches and backups are untouched.", notice: true }],
     scope: "Approves all listed cleanup resources together, not an arbitrary ignored-file deletion.",

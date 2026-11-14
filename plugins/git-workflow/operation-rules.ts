@@ -23,7 +23,7 @@ export function relevantPolicy(policy: GitSettings, action: GitOperationAction) 
   return [policy[action], action === "commit" ? policy.commitChecks : action === "merge" ? policy.mergeChecks : [],
     action === "merge" || action === "rebase" || action === "cleanupFeature" ? [policy.targetSelection, policy.targetBranch] : null,
     action === "merge" ? [policy.methodSelection, policy.mergeMethod] : null,
-    action === "cleanupFeature" ? [policy.cleanupWorktree, policy.cleanupBranch, policy.cleanupArtifacts, policy.approvedArtifactRoots] : null];
+    action === "cleanupFeature" ? [policy.cleanupWorktree, policy.cleanupBranch, policy.cleanupArtifacts, policy.approvedArtifactRoots, policy.ignoredArtifactPolicy] : null];
 }
 /** Called only after capture; a live decision is still required for effective Ask. */
 export function operationAuthorization(permission: Permission, source: string, artifactApproval: boolean, browserConfirmation: boolean) {
