@@ -26,6 +26,21 @@ Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
 
+## Integrated-worktree ignored-file disposal
+
+The [completed implementation record](archived/2026-11-14_integrated-ignored-cleanup-plan.md)
+adds explicit saved authority to permanently delete all safely supported ignored
+contents only when removing a verified integrated feature worktree. Exact-path
+approval remains the default; unignored untracked files and tracked changes block
+the opt-in removal. Independent review, focused counterexamples and complete Nix
+acceptance passed: **534 core files / 4,666 tests**, **26 browser/terminal groups**,
+and genuine deployment in **433 seconds**, including realization, at four/four
+widths while another Nix test workload was active. [ADR 0043](../adr/0043-integrated-worktree-ignored-files.md)
+and the [Git plugin guide](../git-workflow-plugin.md#bounded-cleanup) own the decision
+and current behavior. Mandatory exact-state local non-FF integration and cleanup
+are handed to the receiving native Git lifecycle; this record does not prove those
+effects or authorize live settings, deployment or publication.
+
 ## Settings-first MCP defaults
 
 The [completed implementation record](archived/2026-11-13_mcp-settings-plan.md)

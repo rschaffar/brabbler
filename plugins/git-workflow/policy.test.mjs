@@ -49,6 +49,23 @@ test("every workflow choice supports ask; presets only replace workflow intent",
     assert.equal(result.effective.targetBranch, "main"); assert.deepEqual(result.effective.commitChecks, [{ name: "Required", command: "true" }]);
   }
 });
+test("ignored-file authority follows explicit global/project/own-session scopes without leaking to foreign repositories", t => {
+  const { own, other, session, set } = fixture(t);
+  const policy = cwd => gitPolicy(cwd, session);
+  assert.equal(policy(own).effective.ignoredArtifactPolicy, "exact-paths");
+  set("global", { ignoredArtifactPolicy: "all-in-integrated-worktree" });
+  assert.equal(policy(own).sources.ignoredArtifactPolicy, "global");
+  assert.equal(policy(other).effective.ignoredArtifactPolicy, "all-in-integrated-worktree");
+  set("project", { ignoredArtifactPolicy: "exact-paths" });
+  assert.equal(policy(own).effective.ignoredArtifactPolicy, "exact-paths");
+  set("project", { ignoredArtifactPolicy: "exact-paths" }, other);
+  set("session", { ignoredArtifactPolicy: "all-in-integrated-worktree" });
+  assert.equal(policy(own).effective.ignoredArtifactPolicy, "all-in-integrated-worktree");
+  assert.equal(policy(own).sources.ignoredArtifactPolicy, "session");
+  assert.equal(policy(other).effective.ignoredArtifactPolicy, "exact-paths");
+  assert.equal(policy(other).sources.ignoredArtifactPolicy, "project");
+  assert.equal(policy(other).sessionOverridesApply, false);
+});
 test("own session Allow never overrides foreign Ask or Deny, and relevant saves cancel pending approvals", async (t) => {
   const { own, other, session, set } = fixture(t);
   set("session", { commit: "allow", commitChecks: [{ name: "Own only", command: "exit 7" }] });

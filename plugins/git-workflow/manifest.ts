@@ -36,6 +36,7 @@ export interface GitSettings extends GitWorkflowChoices {
   cleanupFeature: Permission;
   discardResources: Permission;
   approvedArtifactRoots: string | null;
+  ignoredArtifactPolicy: "exact-paths" | "all-in-integrated-worktree";
   targetBranch: string | null;
   mergeMethod: "ff-only" | "non-ff";
   commitChecks: RequiredCheck[];
@@ -83,13 +84,13 @@ export const gitWorkflowManifest = {
       presentation: { labelKey: "gitSettings.field.cleanupBranch", descriptionKey: "gitSettings.help.keep", optionLabelKeys: {
         ask: "gitSettings.option.askEachTime", keep: "gitSettings.option.keep", "delete-integrated": "gitSettings.option.deleteIntegrated" } } },
     cleanupArtifacts: { label: "Generated cleanup artifacts", ...workflowGroup, kind: "enum", default: "ask", options: ["ask", "keep", "remove-approved"],
-      description: "Ask chooses cleanup intent. Removing generated files still requires exact-path approval; ignored status alone never permits deletion. Keep does not veto a separately confirmed manual manager removal.",
+      description: "Ask chooses cleanup intent. Removing generated files requires artifact authority from settings or live approval; ignored status alone never permits deletion. Keep does not veto a separately confirmed manual manager removal.",
       presentation: { labelKey: "gitSettings.field.cleanupArtifacts", descriptionKey: "gitSettings.help.cleanupArtifacts", optionLabelKeys: {
         ask: "gitSettings.option.askEachTime", keep: "gitSettings.option.keep", "remove-approved": "gitSettings.option.removeApproved" } } },
     ...Object.fromEntries(actions.map((action) => [action, {
       label: action, group: "Operation permissions", kind: "enum" as const, default: "ask", options: ["deny", "ask", "allow"],
       description: action === "cleanupFeature"
-        ? "Without approval skips the action prompt, not validation or required checks. Unlisted generated paths still require exact live approval."
+        ? "Without approval skips the action prompt, not validation or required checks. Unlisted generated paths still require live approval unless the saved ignored-file policy permits integrated worktree removal."
         : "Without approval skips the action prompt, not validation, required checks or stronger repository instructions.",
       presentation: { labelKey: `gitSettings.field.${action}`, descriptionKey: action === "cleanupFeature" ? "gitSettings.help.cleanupFeature" : "gitSettings.help.approval", groupKey: "gitSettings.group.approvals", optionLabelKeys: approvalLabels },
     }])),
@@ -97,8 +98,12 @@ export const gitWorkflowManifest = {
       description: "Browser-only removal, including resources not proven integrated. Block refuses removal. Require approval and Allow both require exact live confirmation. Session overrides never apply. Keep preferences for completed features do not veto this separate operation; artifact and structural protections still apply.",
       presentation: { labelKey: "gitSettings.field.discardResources", descriptionKey: "gitSettings.help.discardResources", groupKey: "gitSettings.group.browser", optionLabelKeys: {
         ...approvalLabels, allow: "gitSettings.option.confirmedAllow" } } },
+    ignoredArtifactPolicy: { label: "Ignored files in integrated worktrees", ...safeguardsGroup, kind: "enum", default: "exact-paths", options: ["exact-paths", "all-in-integrated-worktree"],
+      description: "Explicitly permits permanent deletion of all safely supported ignored files, including local configuration and data, only when removing a verified integrated feature worktree. No recovery copy. Tracked changes and unignored untracked files still block removal. Does not grant cleanup operation permission or apply to artifact-only cleanup or manual manager discard.",
+      presentation: { labelKey: "gitSettings.field.ignoredArtifactPolicy", descriptionKey: "gitSettings.help.ignoredArtifactPolicy", groupKey: "gitSettings.group.safeguards", optionLabelKeys: {
+        "exact-paths": "gitSettings.option.exactArtifactPaths", "all-in-integrated-worktree": "gitSettings.option.allIgnoredInIntegratedWorktree" } } },
     approvedArtifactRoots: { label: "Permitted generated files and directories", ...safeguardsGroup, kind: "text", default: null, nullable: true,
-      description: "Reusable exact worktree-relative paths, comma-separated; no defaults, globs or traversal. Nested paths use /. Permitting a parent does not permit separately selected children. Unlisted paths need one-time approval, even when cleanup is allowed without its action prompt. Source, nested-repository, mount and other protections remain.",
+      description: "Reusable exact worktree-relative paths, comma-separated; no defaults, globs or traversal. Nested paths use /. Permitting a parent does not permit separately selected children. Unlisted paths need one-time approval unless the ignored-file policy permits integrated worktree removal. Source, nested-repository, mount and other protections remain.",
       presentation: { labelKey: "gitSettings.field.approvedArtifactRoots", descriptionKey: "gitSettings.help.approvedArtifactRoots", groupKey: "gitSettings.group.safeguards", nullLabelKey: "gitSettings.value.noPaths" } },
     commitChecks: { label: "Required commit checks", ...safeguardsGroup, kind: "checks", default: [],
       presentation: { labelKey: "gitSettings.field.commitChecks" } },

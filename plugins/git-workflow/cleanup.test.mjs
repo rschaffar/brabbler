@@ -717,6 +717,136 @@ test("README workflow replay uses one merge approval with policy-authorized isol
   assert.equal(f.receipts.filter((receipt) => receipt.phase === "succeeded").length, 4);
   assert.equal(f.receipts.filter((receipt) => receipt.phase === "succeeded" && receipt.authorization.decision === "policy-authorized").length, 3);
 });
+nestedTest("saved ignored-file permission removes new top-level and nested ignored data without a card or settings writes", async t => {
+  const f = nestedFixture(t);
+  f.set({ cleanupFeature: "allow", approvedArtifactRoots: null, ignoredArtifactPolicy: "all-in-integrated-worktree" });
+  writeFileSync(join(f.repo, ".git/info/exclude"), "custom-cache/\n");
+  for (const root of ["custom-cache", "node_modules", "src/meetings/__pycache__"]) f.artifact(root);
+  writeFileSync(join(f.path, "next-env.d.ts"), "generated types\n");
+  const before = f.settingsBytes();
+  const result = await f.call({}, { pluginCard: () => assert.fail("Saved ignored-file authority must not ask") });
+  passed(result); assert.equal(result.details.postflight.verification, "verified");
+  assert.equal(result.details.effects.length, 6); assert.equal(existsSync(f.path), false);
+  assert.equal(git(f.repo, "branch", "--list", "feature"), "");
+  assert.equal(f.receipts.at(-1).authorization.decision, "policy-authorized");
+  const section = f.receipts[0].card.sections.find(section => section.title === "Saved ignored-file permission");
+  assert.match(section.text, /permanent deletion/); assert.match(section.text, /No recovery copy/);
+  assert.equal(f.settingsBytes(), before);
+});
+test("saved ignored-file permission retains operation Ask, Deny and workflow Keep", async t => {
+  for (const kind of ["ask", "deny", "keep-worktree", "keep-artifacts"]) await t.test(kind, async st => {
+    const f = fixture(st); f.artifact("node_modules");
+    f.set({ cleanupFeature: kind === "ask" ? "ask" : kind === "deny" ? "deny" : "allow", approvedArtifactRoots: null,
+      ignoredArtifactPolicy: "all-in-integrated-worktree", ...(kind === "keep-worktree" ? { cleanupWorktree: "keep" } : {}),
+      ...(kind === "keep-artifacts" ? { cleanupArtifacts: "keep" } : {}) });
+    if (kind === "ask") {
+      passed(await f.call()); assert.equal(f.approvals(), 1);
+      assert.equal(f.receipts.at(-1).authorization.source, "project");
+      assert.equal(f.receipts.at(-1).authorization.decision, "user-approved");
+    } else {
+      failed(await f.call(), /denied|Keep choice/); assert.equal(f.approvals(), 0);
+      assert.equal(existsSync(join(f.path, "node_modules/cache")), true);
+    }
+  });
+});
+test("saved ignored-file permission does not cover artifact-only deletion", async t => {
+  const f = fixture(t); f.artifact("node_modules");
+  f.set({ cleanupFeature: "allow", approvedArtifactRoots: null, ignoredArtifactPolicy: "all-in-integrated-worktree" });
+  failed(await f.call({ removeWorktree: false, deleteBranch: false, artifactRoots: ["node_modules"] }, {
+    pluginCard: async (_id, card) => {
+      assert.match(JSON.stringify(card), /Needs one-time approval/);
+      assert.equal(card.sections.some(section => section.title === "Saved ignored-file permission"), false);
+      return "reject";
+    },
+  }), /not approved/);
+  assert.equal(existsSync(join(f.path, "node_modules/cache")), true);
+});
+test("saved ignored-file permission cannot sweep explicit unignored files, tracked changes or unmerged tips", async t => {
+  for (const kind of ["untracked", "explicit-untracked", "dirty", "unmerged", "nested-repository", "symlink"]) await t.test(kind, async st => {
+    const f = fixture(st); f.artifact("node_modules");
+    f.set({ cleanupFeature: "allow", approvedArtifactRoots: "personal", ignoredArtifactPolicy: "all-in-integrated-worktree" });
+    const extra = {};
+    if (kind.includes("untracked")) writeFileSync(join(f.path, "personal"), "keep this note\n");
+    if (kind === "explicit-untracked") extra.artifactRoots = ["personal"];
+    if (kind === "dirty") writeFileSync(join(f.path, "source"), "uncommitted changes\n");
+    if (kind === "unmerged") { git(f.path, "commit", "--allow-empty", "-qm", "Unmerged"); extra.featureTip = git(f.path, "rev-parse", "HEAD"); }
+    if (kind === "nested-repository") mkdirSync(join(f.path, "node_modules/.git"));
+    if (kind === "symlink") { rmSync(join(f.path, "node_modules"), { recursive: true }); symlinkSync(f.repo, join(f.path, "node_modules")); }
+    failed(await f.call(extra, { pluginCard: () => assert.fail("Unsafe removal must stop, not ask") }), /source changes|untracked files|Command failed|Nested repository|symlink/);
+    assert.equal(existsSync(f.path), true); assert.equal(f.receipts.some(receipt => receipt.effectStarted), false);
+    if (kind.includes("untracked")) assert.equal(readFileSync(join(f.path, "personal"), "utf8"), "keep this note\n");
+  });
+});
+test("ignored-file policy revocation and ignore-rule changes stop before deletion", async t => {
+  for (const kind of ["policy", "ignore-rule"]) await t.test(kind, async st => {
+    const f = fixture(st); f.artifact("custom-cache");
+    const exclude = join(f.repo, ".git/info/exclude"); writeFileSync(exclude, "custom-cache/\n");
+    f.set({ cleanupFeature: "allow", approvedArtifactRoots: null, ignoredArtifactPolicy: "all-in-integrated-worktree" });
+    let changed = false;
+    failed(await f.call({}, { operationReceipt(id, receipt) {
+      f.ui.operationReceipt(id, receipt);
+      if (receipt.phase === "authorized" && !changed) {
+        changed = true;
+        if (kind === "policy") f.set({ ignoredArtifactPolicy: "exact-paths" }); else writeFileSync(exclude, "");
+      }
+    } }), /policy changed|source changes|untracked files/);
+    assert.equal(changed, true); assert.equal(existsSync(join(f.path, "custom-cache/cache")), true);
+    assert.equal(f.receipts.at(-1).effectStarted, false);
+  });
+});
+test("an empty frozen directory losing ignored membership is retained even when Git status stays clean", async t => {
+  const f = fixture(t); mkdirSync(join(f.path, "empty-cache"));
+  const exclude = join(f.repo, ".git/info/exclude"); writeFileSync(exclude, "empty-cache/\n");
+  f.set({ cleanupFeature: "allow", approvedArtifactRoots: null, ignoredArtifactPolicy: "all-in-integrated-worktree" });
+  let changed = false;
+  failed(await f.call({}, { operationReceipt(id, receipt) {
+    f.ui.operationReceipt(id, receipt);
+    if (receipt.phase === "authorized" && !changed) {
+      changed = true; writeFileSync(exclude, "");
+      assert.equal(git(f.path, "status", "--porcelain"), "", "empty unignored directories do not create status rows");
+    }
+  } }), /resources changed/);
+  assert.equal(changed, true); assert.equal(existsSync(join(f.path, "empty-cache")), true);
+  assert.equal(f.receipts.at(-1).effectStarted, false);
+});
+test("ignored-file permission revocation cancels pending Ask and fences remaining effects after partial deletion", async t => {
+  for (const stage of ["pending-ask", "after-deletion"]) await t.test(stage, async st => {
+    const f = fixture(st); f.artifact("node_modules"); f.artifact(".next");
+    f.set({ cleanupFeature: stage === "pending-ask" ? "ask" : "allow", approvedArtifactRoots: null,
+      ignoredArtifactPolicy: "all-in-integrated-worktree" });
+    let revoked = false;
+    const result = await f.call({}, stage === "pending-ask" ? { pluginCard: async (_id, _card, signal) => {
+      f.set({ ignoredArtifactPolicy: "exact-paths" }); revoked = true;
+      assert.equal(signal.aborted, true, "relevant policy revocation cancels the live card");
+      return "approve"; // Even a late positive response cannot restore authority.
+    } } : { operationReceipt(id, receipt) {
+      f.ui.operationReceipt(id, receipt);
+      if (!revoked && receipt.phase === "executing" && receipt.completedEffects.length === 1) {
+        revoked = true; f.set({ ignoredArtifactPolicy: "exact-paths" });
+      }
+    } });
+    failed(result, /policy changed|settings changed/); assert.equal(revoked, true);
+    assert.equal(result.details.effects.length, stage === "pending-ask" ? 0 : 1);
+    assert.equal(existsSync(join(f.path, "node_modules/cache")), true);
+    assert.equal(existsSync(join(f.path, ".next/cache")), stage === "pending-ask");
+    assert.equal(git(f.repo, "rev-parse", "feature"), f.op.featureTip);
+    assert.equal(f.receipts.at(-1).effectStarted, stage === "after-deletion");
+  });
+});
+test("blanket ignored-file authority freezes targets and reports partial deletion when a new root appears", async t => {
+  const f = fixture(t); f.artifact("node_modules");
+  f.set({ cleanupFeature: "allow", approvedArtifactRoots: null, ignoredArtifactPolicy: "all-in-integrated-worktree" });
+  let added = false;
+  const result = await f.call({}, { operationReceipt(id, receipt) {
+    f.ui.operationReceipt(id, receipt);
+    if (!added && receipt.phase === "executing" && receipt.completedEffects.length === 1) { added = true; f.artifact("test-results"); }
+  } });
+  failed(result, /resources changed|Unknown cleanup resource/); assert.equal(added, true);
+  assert.equal(result.details.effects.length, 1); assert.equal(existsSync(join(f.path, "node_modules")), false);
+  assert.equal(existsSync(join(f.path, "test-results/cache")), true);
+  assert.equal(git(f.repo, "rev-parse", "feature"), f.op.featureTip);
+  assert.equal(f.receipts.at(-1).phase, "failed"); assert.equal(f.receipts.at(-1).effectStarted, true);
+});
 test("containment includes dot-dot-prefixed descendants but excludes actual parent components", () => {
   assert.equal(cleanupPathWithin("/tmp/feature", "/tmp/feature/..cache"), true);
   assert.equal(cleanupPathWithin("/tmp/feature", "/tmp/feature/../outside"), false);

@@ -117,7 +117,7 @@ Each of `commit`, `rebase`, `merge`, `createWorktree`, `attachWorktree`,
   Git arguments and required check commands, then waits for an explicit answer.
   That approval covers those checks and the operation, not future invocations.
 - **allow** executes without an approval question, with the same validation, except
-  cleanup artifacts missing from the reusable allowlist still require one-time
+  cleanup artifacts missing from reusable artifact authority still require one-time
   approval. Operation Allow never supplies missing artifact authority.
 
 The browser manager additionally declares `discardResources` (**Manual manager
@@ -223,14 +223,16 @@ registration and captured physical identity/state are rechecked before effects.
 
 ### Bounded cleanup
 
-Cleanup supports two complementary ways to authorize exact generated **files or
-directories** (see [ADR 0017](adr/0017-cleanup-artifact-approval.md) and its
-[nested-path revision, ADR 0019](adr/0019-nested-cleanup-artifacts.md)):
+Cleanup supports exact-path authority and an explicit integrated-worktree opt-in
+(see [ADR 0017](adr/0017-cleanup-artifact-approval.md), its
+[nested-path revision, ADR 0019](adr/0019-nested-cleanup-artifacts.md), and
+[ignored-file disposal, ADR 0043](adr/0043-integrated-worktree-ignored-files.md)):
 
 - **One-time approval:** when removing a worktree, the server proposes exact
   ignored files/directories, including nested artifacts, alongside explicitly selected `artifactRoots`. Any
   artifact missing from the reusable allowlist requires one live cleanup card,
-  **even when `cleanupFeature` is Allow**. The card lists each path, counts, byte
+  **even when `cleanupFeature` is Allow**, unless the integrated-worktree opt-in
+  below covers it. The card lists each path, counts, byte
   size and content/metadata digest, distinguishing permitted artifacts from those
   needing approval. Approve authorizes only that captured operation; Reject/Cancel
   retains the resources. It never changes settings. Missing browser UI fails closed.
@@ -242,6 +244,29 @@ directories** (see [ADR 0017](adr/0017-cleanup-artifact-approval.md) and its
   keep their meaning. Authority matches an exact selected root: permitting `src`
   does not permit a separately selected `src/meetings/__pycache__`. With all artifacts permitted, cleanup follows its ordinary
   Ask/Allow permission; the allowlist itself does not grant operation permission.
+- **All ignored contents on integrated worktree removal:** **Settings → Plugins →
+  Git Workflow → Checks and generated files → Ignored files in integrated worktrees**
+  (`ignoredArtifactPolicy`) defaults to **Require exact-path permission**
+  (`exact-paths`). Explicitly choose **Permanently delete all ignored files on
+  worktree removal** (`all-in-integrated-worktree`) to permit all safely supported
+  ignored contents without prelisting paths, only when removing a verified
+  integrated feature worktree. It applies to any eligible linked worktree,
+  regardless of who created it. **Ignored local configuration and data are deleted
+  permanently; no recovery copy is made.** Unignored untracked files and tracked
+  changes still block this removal, even if supplied as explicit artifact roots or
+  named in the allowlist. Other safety checks and conservative filename/type
+  restrictions remain. This setting does not broaden artifact-only cleanup,
+  strict `removeWorktree`, or manual manager discard.
+
+For a single merge approval followed by policy-authorized cleanup, keep **Merge**
+at **Require approval**, set **Clean up integrated feature** to **Without approval**,
+select worktree/branch removal and **Remove authorized artifacts** in workflow
+choices, and explicitly enable the ignored-file opt-in above. All applicable Ask
+workflow choices still require answers. The agent separately invokes `git_cleanup`
+after verifying integration; merge does not schedule cleanup itself. Existing
+settings/defaults/presets never enable this permission automatically. Save at
+repository scope to limit the grant, or deliberately use global/session scope under
+the normal inheritance rules. Agents cannot change these settings for themselves.
 
 There is no need to populate settings merely to reach a one-time approval. An
 agent can propose paths but cannot grant itself authority or modify the allowlist.
@@ -257,7 +282,9 @@ configured-permission provenance, not **Policy authorized**. Counts/digests are
 compact rather than one record per dependency. Inventories include contents,
 metadata, identities, tracked source and registration guards. Paths are frozen
 before approval: later files cannot be silently included. Unselected unignored
-untracked files still block; explicit generated paths may be proposed for approval.
+untracked files still block; explicit generated paths may be proposed for approval
+in exact-path mode. The all-ignored integrated-removal opt-in instead refuses every
+unignored untracked file, including explicit selections.
 Nested ignored paths are never promoted to a parent containing tracked source.
 Explicit roots must be distinct and nonoverlapping; when Git reports a wholly
 ignored directory containing an explicitly selected child, the approval lists

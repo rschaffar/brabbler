@@ -116,7 +116,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
       cleanup: { featureTip: op.featureTip, integrationCommit: op.integrationCommit, path: cleanup.path, removeWorktree: op.removeWorktree,
         deleteBranch: op.deleteBranch, artifacts: cleanup.artifacts.map(item => item.path), ancestorIdentities: cleanup.artifactParentIdentities } });
     return { fingerprint: digest([cleanup.fingerprint, relevantPolicy(policy, op.action)]), cleanup, postflight,
-      cwd: cleanup.cwd, args: [], checks: [], resources: { kind: "cleanup", snapshot: cleanup }, card: cleanupCard(op, cleanup) };
+      cwd: cleanup.cwd, args: [], checks: [], resources: { kind: "cleanup", snapshot: cleanup }, card: cleanupCard(op, cleanup, policy) };
   }
   const cwd = await checkout(op.checkout);
   const current = await head(cwd);

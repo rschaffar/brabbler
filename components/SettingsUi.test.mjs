@@ -619,6 +619,39 @@ function workflowSnapshot(manifest, sessionId = '55555555-5555-4555-8555-5555555
     sources: { ...Object.fromEntries(Object.keys(manifest.fields).map(key => [key, 'builtin'])), enabled: 'global', targetBranch: 'global' } };
 }
 
+test('ignored-file authority is an explicit scoped save with a permanent-deletion warning and readback', async t => {
+  const { f, c, setup } = await workflowSettingsFixture(t);
+  const { WorkflowSettings, gitWorkflowManifest: manifest } = c;
+  const cwd = '/repo', sessionId = '55555555-5555-4555-8555-555555555555';
+  let snapshot = workflowSnapshot(manifest, sessionId, cwd);
+  f.route('GET', '/api/plugins/bundled', { query: { cwd, sessionId },
+    reply: () => ({ data: { plugins: [{ manifest, settings: snapshot }] } }) });
+  const expected = { pluginId: manifest.id, cwd, sessionId, scope: 'project',
+    set: { ignoredArtifactPolicy: 'all-in-integrated-worktree' }, reset: [] };
+  f.route('PATCH', '/api/plugins/bundled', { body: expected, reply: () => {
+    snapshot = { ...snapshot, overrides: { ignoredArtifactPolicy: 'all-in-integrated-worktree' },
+      effective: { ...snapshot.effective, ignoredArtifactPolicy: 'all-in-integrated-worktree' },
+      sources: { ...snapshot.sources, ignoredArtifactPolicy: 'project' } };
+    return { data: { settings: snapshot } };
+  } });
+  const element = key => h(WorkflowSettings, { cwd, sessionId, id: manifest.id, key });
+  await f.mount(element('first'), { setup });
+  assert.match(matrixCell(f, 'ignoredArtifactPolicy', 'project').textContent, /Require exact-path permission/);
+  const before = f.requests.length;
+  await matrixDraft(f, 'ignoredArtifactPolicy', 'project', 'all-in-integrated-worktree');
+  assert.match(matrixDialog(f).textContent, /permanent deletion/);
+  assert.match(matrixDialog(f).textContent, /local configuration and data/);
+  assert.match(matrixDialog(f).textContent, /No recovery copy/);
+  assert.equal(f.requests.length, before, 'opening and choosing permission never saves it');
+  await f.click(f.button('Save changes', matrixDialog(f)));
+  assert.deepEqual(f.requests.at(-1).body, expected);
+  assert.match(matrixCell(f, 'ignoredArtifactPolicy', 'project').textContent, /Permanently delete all ignored files/);
+  assert.match(matrixCell(f, 'ignoredArtifactPolicy', 'global').textContent, /Require exact-path permission/);
+  await f.rerender(element('reopened'));
+  assert.match(matrixCell(f, 'ignoredArtifactPolicy', 'session').textContent, /Permanently delete all ignored files/);
+  assert.equal(snapshot.effective.cleanupFeature, 'ask', 'artifact permission does not grant operation Allow');
+});
+
 test('actual bundled Git Workflow controls preserve scope bodies, effective sources and permission-neutral presets', async t => {
   const parentWork = [];
   const { f, c: { WorkflowSettings, gitWorkflowManifest: manifest, workflowPresets }, setup } = await workflowSettingsFixture(t);

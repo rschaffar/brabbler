@@ -178,6 +178,19 @@ test("legacy cleanup remains integrated-only even when manual discard is allowed
   assert.ok(existsSync(f.path)); assert.equal(f.cards.length, 0);
 });
 
+test("integrated-worktree ignored permission does not grant manual-discard artifact authority", async t => {
+  const f = fixture(t, "integrated"); f.artifact();
+  f.set({ discardResources: "allow", approvedArtifactRoots: null, ignoredArtifactPolicy: "all-in-integrated-worktree" });
+  failed(await f.call({}, { pluginCard: async (_id, card) => {
+    assert.match(JSON.stringify(card), /Needs one-time approval/);
+    assert.equal(card.sections.some(section => section.title === "Saved ignored-file permission"), false);
+    return "reject";
+  } }), /not approved/);
+  assert.equal(existsSync(join(f.path, "generated/cache")), true);
+  assert.equal(f.receipts.at(-1).authorization.mode, "ask");
+  assert.equal(f.receipts.at(-1).effectStarted, false);
+});
+
 test("rejection, cancellation and missing browser UI retain exact resources even under Allow", async (t) => {
   for (const answer of ["reject", null, "missing"]) await t.test(String(answer), async (st) => {
     const f = fixture(st); f.set({ discardResources: "allow", approvedArtifactRoots: "generated" }); f.artifact();

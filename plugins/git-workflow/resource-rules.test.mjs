@@ -90,7 +90,7 @@ test("policy projection includes each relevant field and excludes unrelated perm
     commit: ["commit", "commitChecks"], rebase: ["rebase", "targetSelection", "targetBranch"],
     merge: ["merge", "mergeChecks", "targetSelection", "targetBranch", "methodSelection", "mergeMethod"],
     createWorktree: ["createWorktree"], attachWorktree: ["attachWorktree"], removeWorktree: ["removeWorktree"],
-    cleanupFeature: ["cleanupFeature", "targetSelection", "targetBranch", "cleanupWorktree", "cleanupBranch", "cleanupArtifacts", "approvedArtifactRoots"],
+    cleanupFeature: ["cleanupFeature", "targetSelection", "targetBranch", "cleanupWorktree", "cleanupBranch", "cleanupArtifacts", "approvedArtifactRoots", "ignoredArtifactPolicy"],
     discardResources: ["discardResources", "targetBranch", "approvedArtifactRoots"],
   };
   const policy = defaults();
@@ -99,6 +99,20 @@ test("policy projection includes each relevant field and excludes unrelated perm
     if (fields.includes(key)) assert.notDeepEqual(relevantPolicy(changed, action), relevantPolicy(policy, action), `${action}/${key}`);
     else assert.deepEqual(relevantPolicy(changed, action), relevantPolicy(policy, action), `${action}/${key}`);
   }
+});
+
+test("ignored-file permission is opt-in, not a preset, and its permanent-deletion notice is limited to whole integrated removal", () => {
+  const policy = { ...defaults(), ignoredArtifactPolicy: "all-in-integrated-worktree" };
+  assert.equal(defaults().ignoredArtifactPolicy, "exact-paths");
+  for (const preset of Object.values(gitWorkflowManifest.presets)) assert.equal(Object.hasOwn(preset.values, "ignoredArtifactPolicy"), false);
+  for (const removeWorktree of [true, false]) {
+    const card = cleanupCard({ ...cleanupOp, removeWorktree }, capture(), policy);
+    const notice = card.sections.find(section => section.title === "Saved ignored-file permission");
+    assert.equal(Boolean(notice), removeWorktree);
+    if (notice) { assert.match(notice.text, /permanent deletion/); assert.match(notice.text, /No recovery copy/); }
+  }
+  const card = browserDiscardCard(browserDiscardOperation(payload, "/repo"), policy, capture({ lossEvidence: { state: "integrated" } }));
+  assert.equal(card.sections.some(section => section.title === "Saved ignored-file permission"), false);
 });
 
 test("strict browser payload rejects authority switches and malformed subjects without native setup", () => {

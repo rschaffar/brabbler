@@ -1,6 +1,7 @@
 # ADR 0019: Exact nested generated-artifact cleanup
 
 - Status: Accepted through the user's implementation request
+- Revised by: [ADR 0043](0043-integrated-worktree-ignored-files.md), adding explicit standing ignored-file authority only for integrated whole-worktree removal
 - Revises: [ADR 0017](0017-cleanup-artifact-approval.md), only its top-level-path restriction
 
 ## Context
