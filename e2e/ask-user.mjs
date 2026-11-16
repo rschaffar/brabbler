@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { checkBlockingCard, checkBlockingCardArrival } from "./blocking-card.mjs";
+import { checkQuestionCardDesign } from "./question-card-design.mjs";
 import { checkQuestionSets } from "./question-sets.mjs";
 
 // Conditional replacement only: requires reviewed lower/default/fault gates in
@@ -52,6 +53,7 @@ export async function checkAskUserDialog(page, width) {
       const single = page.getByRole("group", { name: "E2E browser question" });
       await single.waitFor();
       await single.getByText("A detailed reason for asking", { exact: true }).waitFor();
+      await checkQuestionCardDesign(single, { batch: false, mobile: false });
       await checkReferences(single);
       await single.getByText("Second", { exact: true }).click();
       await single.getByRole("textbox", { name: "Additional details (optional)" }).fill("More context");
@@ -97,6 +99,7 @@ export async function checkAskUserDialog(page, width) {
       await long.getByText("Context", { exact: true }).tap();
       await long.getByText(/More background/).waitFor();
       await checkBlockingCard(long);
+      await checkQuestionCardDesign(long, { batch: false, mobile: true });
       await checkReferences(long);
       const field = long.getByRole("textbox", { name: "Additional details (optional)" });
       await field.fill("More context");

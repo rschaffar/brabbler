@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+  <title>Brabbler · Question card proposal</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #1a1a1a; --bg-panel: #242424; --bg-hover: #2e2e2e;
+      --border: #454545; --text: #e8e8e8; --muted: #b7b7b7;
+      --accent: #a4c2f4; --accent-contrast: #182234;
+      --body-size: 14px;
+      font-family: system-ui, sans-serif; font-size: 14px;
+    }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg: #ffffff; --bg-panel: #f5f5f5; --bg-hover: #eeeeee;
+      --border: #e0e0e0; --text: #1a1a1a; --muted: #515c6b;
+      --accent: #245bce; --accent-contrast: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg-panel); color: var(--text); }
+    button, input, textarea, select { font: inherit; }
+    button, summary, a, label.choice { -webkit-tap-highlight-color: transparent; }
+    button, a, summary, input, textarea, select { outline-offset: 4px; }
+    :focus-visible { outline: 2px solid var(--accent); }
+    a { color: var(--accent); text-underline-offset: 3px; }
+    button, select { border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 5px; padding: 7px 11px; }
+    button:disabled { color: var(--muted); opacity: .55; }
+    .preview-bar { padding: 18px 28px; display: flex; justify-content: space-between; align-items: center; gap: 16px; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .preview-bar strong { font-size: 15px; font-weight: 650; }
+    .preview-bar span { color: var(--muted); margin-left: 12px; }
+    .preview-controls { display: flex; gap: 16px; }
+    main { max-width: 880px; margin: 34px auto; padding: 0 24px; }
+    .preview-note { margin: 0 0 18px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .card { display: flex; flex-direction: column; max-height: min(760px, 65dvh); border: 1px solid var(--border); border-radius: 8px; background: var(--bg); overflow: hidden; }
+    .card-header { flex: none; padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 16px; }
+    .card-header > div { flex: 1; min-width: 0; }
+    .eyebrow { font-size: 11px; font-weight: 600; color: var(--accent); margin-bottom: 5px; }
+    .set-title { margin: 0; font-size: 14px; line-height: 1.45; font-weight: 600; }
+    .progress { font-size: 12px; color: var(--muted); margin: 5px 0 0; }
+    .collapse { padding: 0 6px; font-size: 18px; line-height: 23px; }
+    .card-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 18px; display: grid; align-content: start; gap: 20px; }
+    details { min-width: 0; }
+    summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); line-height: 1.5; }
+    .context p { margin: 8px 0 0; font-size: var(--body-size); line-height: 1.6; color: var(--muted); }
+    .shared-context { padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+    .question-nav { display: flex; gap: 7px; flex-wrap: wrap; }
+    .question-nav a { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 5px; text-decoration: none; color: var(--muted); font-size: 12px; }
+    .question-nav [aria-current="step"] { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--bg)); }
+    .question-nav .number { font-size: 11px; }
+    .review-placeholder { padding: 6px 10px; color: var(--muted); font-size: 12px; opacity: .55; }
+    .mobile-nav { display: none; }
+    .question-label { display: flex; align-items: center; gap: 9px; margin: 0 0 9px; font-size: 12px; color: var(--muted); }
+    .required { padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 11px; }
+    .question-title { margin: 0; font-size: calc(var(--body-size) + 4px); font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
+    .question-context { margin-top: 14px; padding: 0 0 0 13px; border-left: 2px solid var(--border); }
+    fieldset { margin: 0; padding: 0; min-width: 0; border: 0; }
+    legend { padding: 0; margin-bottom: 10px; color: var(--muted); font-size: 12px; font-weight: 500; }
+    .choices { display: grid; gap: 8px; }
+    .choice { display: flex; align-items: flex-start; gap: 10px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-panel); cursor: pointer; }
+    .choice:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--bg)); }
+    .choice input { margin: 3px 0 0; flex: none; accent-color: var(--accent); }
+    .choice > span { min-width: 0; }
+    .option-title { font-size: var(--body-size); line-height: 1.45; font-weight: 600; }
+    .description { display: block; margin-top: 4px; font-size: calc(var(--body-size) - 1px); line-height: 1.5; color: var(--muted); }
+    .recommended { display: inline-block; margin-left: 8px; padding: 1px 6px; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); border-radius: 4px; font-size: 11px; font-weight: 500; vertical-align: 1px; }
+    .answer-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 7px; }
+    textarea { display: block; width: 100%; resize: vertical; min-height: 62px; padding: 9px 10px; font-size: var(--body-size); line-height: 1.5; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-panel); color: var(--text); }
+    textarea, select { border-color: color-mix(in srgb, var(--text) 55%, var(--bg-panel)); }
+    textarea::placeholder { color: var(--muted); }
+    .alternative-text { margin-top: 10px; }
+    .card-footer { flex: none; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); background: var(--bg-panel); font-size: 12px; }
+    .card-footer .cancel { margin-right: auto; }
+    .footer-link { display: inline-block; text-decoration: none; border: 1px solid var(--border); border-radius: 5px; padding: 7px 11px; color: var(--text); background: var(--bg); }
+    .card-footer .primary { border-color: var(--accent); background: var(--accent); color: var(--accent-contrast); }
+    .design-note { color: var(--muted); font-size: 12px; line-height: 1.7; margin: 18px 0 0; }
+    [hidden] { display: none !important; }
+    @media (max-width: 600px) {
+      .preview-bar { padding: 13px 16px; }
+      .preview-bar span { display: none; }
+      .preview-controls { gap: 12px; }
+      main { margin: 18px auto; padding: 0 12px; }
+      .preview-note { margin-bottom: 12px; }
+      .card-header, .card-body { padding: 14px; }
+      .card-body { gap: 18px; }
+      .card-footer { padding: 10px 14px; }
+      .question-nav { display: none; }
+      .mobile-nav { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+      .mobile-nav select { width: 100%; font-size: 16px; }
+      textarea { font-size: 16px; }
+      .recommended { margin-left: 0; margin-top: 5px; }
+      .option-title { display: block; }
+      .design-note { margin-top: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="preview-bar">
+    <div><strong>brabbler</strong><span>Question card proposal</span></div>
+    <nav class="preview-controls" aria-label="Preview appearance">
+      <a id="theme-link" href="?theme=light">Light theme</a>
+      <a id="size-link" href="?size=large">Larger text</a>
+    </nav>
+  </header>
+  <main>
+    <p class="preview-note">Visual proposal · Synthetic example · Nothing here submits an answer to an agent.</p>
+    <section class="card" aria-labelledby="set-title">
+      <header class="card-header">
+        <div>
+          <div class="eyebrow">YOUR INPUT NEEDED</div>
+          <h1 id="set-title" class="set-title">Preferences for the project dashboard</h1>
+          <p class="progress">3 questions · No answers sent</p>
+        </div>
+        <button class="collapse" type="button" disabled aria-label="Collapse card (not implemented in preview)">−</button>
+      </header>
+      <div class="card-body">
+        <details class="context shared-context" open>
+          <summary>Background for all questions</summary>
+          <p>We are designing a dashboard for a small project team. These decisions cover its layout, update frequency and notifications. Each can be decided independently.</p>
+        </details>
+        <nav class="question-nav" aria-label="Questions">
+          <a data-question="1" href="?question=1"><span class="number">1</span> Layout</a>
+          <a data-question="2" href="?question=2"><span class="number">2</span> Updates</a>
+          <a data-question="3" href="?question=3"><span class="number">3</span> Notifications</a>
+          <span class="review-placeholder" aria-disabled="true">Review</span>
+        </nav>
+        <label class="mobile-nav">Question
+          <select id="question-select">
+            <option value="1">1 of 3 · Layout</option>
+            <option value="2">2 of 3 · Updates</option>
+            <option value="3">3 of 3 · Notifications</option>
+          </select>
+        </label>
+        <section aria-labelledby="question-title">
+          <p class="question-label"><span id="question-count">Question 1 of 3</span><span class="required">Required</span></p>
+          <h2 class="question-title" id="question-title">How much information should the dashboard show?</h2>
+          <details class="context question-context" open>
+            <summary>Context for this question</summary>
+            <p id="question-context">Team members check the dashboard between other tasks. A focused view is easier to scan; a detailed view reduces the need to open individual projects.</p>
+          </details>
+        </section>
+        <fieldset aria-labelledby="question-title answer-instruction">
+          <legend id="answer-instruction">Choose one answer</legend>
+          <div class="choices" id="choices"></div>
+          <div class="alternative-text" id="alternative-text" hidden>
+            <label class="answer-label" for="alternative">Your alternative answer</label>
+            <textarea id="alternative" placeholder="Describe what you would prefer…"></textarea>
+          </div>
+        </fieldset>
+        <div>
+          <label class="answer-label" for="details">Additional details <span>· Optional</span></label>
+          <textarea id="details" rows="2" placeholder="Add constraints or explain your preference…"></textarea>
+        </div>
+      </div>
+      <footer class="card-footer">
+        <button class="cancel" type="button" disabled>Cancel</button>
+        <button id="back-disabled" type="button" disabled>Back</button>
+        <a class="footer-link" id="back-link" href="?question=1" hidden>Back</a>
+        <a class="footer-link primary" id="next-link" href="?question=2">Next question →</a>
+        <button id="review-button" type="button" disabled hidden>Review answers</button>
+      </footer>
+    </section>
+    <p class="design-note">The question leads. Shared background stays above the navigation; context for the current question sits directly beneath it. Both context sections start expanded and can be collapsed.</p>
+  </main>
+  <script>
+    const questions = [
+      {
+        title: 'How much information should the dashboard show?',
+        context: 'Team members check the dashboard between other tasks. A focused view is easier to scan; a detailed view reduces the need to open individual projects.',
+        options: [
+          ['A focused overview', 'Show project status and the next action. Open a project for the full details.', true],
+          ['A detailed workspace', 'Show status, recent activity and upcoming tasks together.', false]
+        ]
+      },
+      {
+        title: 'How often should the dashboard refresh?',
+        context: 'Project status changes throughout the day. Automatic updates keep the view current but can move information while someone is reading. Manual updates keep the view stable.',
+        options: [
+          ['Refresh automatically', 'Check for changes every minute and show when the last update happened.', false],
+          ['Refresh when I ask', 'Keep the view unchanged until I choose Refresh.', false]
+        ]
+      },
+      {
+        title: 'Where should project notifications appear?',
+        context: 'The dashboard can surface important changes without interrupting other work. Keeping notifications inside the dashboard is quieter; desktop notifications can reach people who are working in another app.',
+        options: [
+          ['Inside the dashboard', 'Show a notification badge and a list of recent changes.', true],
+          ['Dashboard and desktop', 'Also request browser permission for desktop notifications.', false]
+        ]
+      }
+    ];
+    const params = new URLSearchParams(location.search);
+    const number = ['1', '2', '3'].includes(params.get('question')) ? Number(params.get('question')) : 1;
+    const question = questions[number - 1];
+    const light = params.get('theme') === 'light';
+    const large = params.get('size') === 'large';
+    document.documentElement.dataset.theme = light ? 'light' : 'dark';
+    if (large) document.documentElement.style.setProperty('--body-size', '18px');
+    function url(changes) {
+      const next = new URLSearchParams(params);
+      for (const [key, value] of Object.entries(changes)) next.set(key, value);
+      return '?' + next;
+    }
+    const themeLink = document.querySelector('#theme-link');
+    themeLink.href = url({ theme: light ? 'dark' : 'light' });
+    themeLink.textContent = light ? 'Dark theme' : 'Light theme';
+    const sizeLink = document.querySelector('#size-link');
+    sizeLink.href = url({ size: large ? 'normal' : 'large' });
+    sizeLink.textContent = large ? 'Normal text' : 'Larger text';
+    document.querySelector('#question-count').textContent = `Question ${number} of 3`;
+    document.querySelector('#question-title').textContent = question.title;
+    document.querySelector('#question-context').textContent = question.context;
+    document.querySelectorAll('[data-question]').forEach(link => {
+      link.href = url({ question: link.dataset.question });
+      if (Number(link.dataset.question) === number) link.setAttribute('aria-current', 'step');
+    });
+    const select = document.querySelector('#question-select');
+    select.value = String(number);
+    select.addEventListener('change', () => { location.search = url({ question: select.value }); });
+    const choices = document.querySelector('#choices');
+    for (const [index, option] of [...question.options, ['Write an alternative answer', '', false]].entries()) {
+      const label = document.createElement('label');
+      label.className = 'choice';
+      const input = document.createElement('input');
+      input.type = 'radio'; input.name = 'answer'; input.value = String(index);
+      const copy = document.createElement('span');
+      const title = document.createElement('span');
+      title.className = 'option-title'; title.textContent = option[0];
+      copy.append(title);
+      if (option[2]) {
+        const tag = document.createElement('span');
+        tag.className = 'recommended'; tag.textContent = 'Recommended'; copy.append(tag);
+      }
+      if (option[1]) {
+        const description = document.createElement('span');
+        description.className = 'description'; description.id = `description-${index}`;
+        description.textContent = option[1]; copy.append(description);
+        input.setAttribute('aria-describedby', description.id);
+      }
+      label.append(input, copy); choices.append(label);
+      input.addEventListener('change', () => {
+        document.querySelector('#alternative-text').hidden = index !== question.options.length;
+      });
+    }
+    const back = document.querySelector('#back-link');
+    back.hidden = number === 1; back.href = url({ question: String(number - 1) });
+    document.querySelector('#back-disabled').hidden = number !== 1;
+    const next = document.querySelector('#next-link');
+    next.hidden = number === 3; next.href = url({ question: String(number + 1) });
+    document.querySelector('#review-button').hidden = number !== 3;
+  </script>
+</body>
+</html>

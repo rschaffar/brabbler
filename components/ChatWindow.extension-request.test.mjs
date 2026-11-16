@@ -23,6 +23,21 @@ const submit = view => view.container.querySelector('[type=submit]');
 const collapse = view => view.container.querySelector('[aria-label="Collapse"]');
 const expand = view => view.container.querySelector('.blocking-card-collapsed');
 
+test('legacy question keeps one title and context preference without synthetic navigation', async t => {
+  const h = await card(t, ask({ context: 'A long explanation. '.repeat(30), contextExpanded: undefined }));
+  assert.equal(h.view.container.querySelector('.question-card-single .blocking-card-title').textContent, 'Which <script>?');
+  assert.equal(h.view.container.querySelector('nav,select') === null, true);
+  const context = h.view.container.querySelector('details');
+  assert.equal(context.open, true, 'default long context starts expanded');
+  await click(h.view, context.querySelector('summary'));
+  assert.equal(context.open, false);
+  await h.renderCard({ request: ask({ id: 'short-collapsed', context: 'Short explanation', contextExpanded: false }) });
+  assert.equal(h.view.container.querySelector('details').open, false, 'explicit preference is preserved even for short context');
+  await h.renderCard({ request: ask({ id: 'empty-context', context: '   ' }) });
+  assert.equal(h.view.container.querySelector('details') === null, true);
+  assert.equal(h.calls.length, 0);
+});
+
 for (const allowMultiple of [false, true]) test(`real question normalizes ${allowMultiple ? 'multiple' : 'single'} choices, written answers and additive details`, async t => {
   const request = ask({ allowMultiple }), h = await card(t, request);
   assert.equal(submit(h.view).disabled, true, 'recommendations/draft details do not answer');

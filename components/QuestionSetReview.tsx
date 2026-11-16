@@ -20,22 +20,22 @@ export function QuestionSetReview({ set, answers, cwd, onOpenFile, onEdit, showO
         : answer.selections.map((id) => q.options.find((o) => o.id === id)?.title ?? id).join(", ");
     return <section key={q.id} className="min-w-0 border-b border-border pb-3">
       <div className="flex items-start justify-between gap-2">
-        <h4 className="m-0 break-words text-xs font-medium">{q.question}</h4>
+        <h4 className="question-card-question m-0 break-words text-xs font-medium">{q.question}</h4>
         {onEdit && <button type="button" className="shrink-0 text-xs text-accent" onClick={() => onEdit(index)}
           aria-label={t("chat.questionsEditLabel", { label: q.shortLabel })}>{t("chat.questionsEdit")}</button>}
       </div>
-      <p className="mt-2 whitespace-pre-wrap break-words text-xs text-text-muted">{main}</p>
+      <p className="question-card-answer mt-2 whitespace-pre-wrap break-words text-xs text-text-muted">{main}</p>
       {answer && answer.kind !== "skipped" && answer.comment && <div className="mt-2 text-xs">
         <strong className="font-medium">{t("chat.questionsDetails")}</strong>
         <p className="whitespace-pre-wrap break-words text-text-muted">{answer.comment}</p>
       </div>}
       {showOptions && <>
-        {q.context && <MarkdownBody cwd={cwd} onOpenFile={onOpenFile}>{q.context}</MarkdownBody>}
+        {q.context?.trim() && <MarkdownBody cwd={cwd} onOpenFile={onOpenFile}>{q.context}</MarkdownBody>}
         <ul className="mt-2 grid list-none gap-1 p-0">{q.options.map((o) => <li key={o.id} className="blocking-card-choice"
           data-selected={answer?.kind === "selection" && answer.selections.includes(o.id) || undefined}>
-          <div className="min-w-0"><strong className="block text-xs font-medium">{o.title}
-            {o.recommended && <span className="ml-2 text-text-muted">{t("chat.questionsRecommended")}</span>}
-          </strong>{o.description && <MarkdownBody className="text-xs text-text-muted" cwd={cwd} onOpenFile={onOpenFile}>{o.description}</MarkdownBody>}</div>
+          <div className="min-w-0"><strong className="question-card-option-title block text-xs font-medium">{o.title}
+            {o.recommended && <span className="question-card-recommended ml-2 text-text-muted">{t("chat.questionsRecommended")}</span>}
+          </strong>{o.description && <MarkdownBody className="question-card-description text-xs text-text-muted" cwd={cwd} onOpenFile={onOpenFile}>{o.description}</MarkdownBody>}</div>
         </li>)}</ul>
       </>}
     </section>;

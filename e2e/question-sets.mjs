@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { checkBlockingCard, checkBlockingCardArrival } from "./blocking-card.mjs";
+import { checkQuestionCardDesign, checkQuestionReviewDesign } from "./question-card-design.mjs";
 
 // One native/default publication journey; compact input owns native select/tap,
 // focus and bounds, not a second answer/policy/deadline matrix. Private gates apply.
@@ -30,6 +31,7 @@ export async function checkQuestionSets(page, width) {
   };
   try {
     await start();
+    await checkQuestionCardDesign(card, { batch: true, mobile: !desktop });
     const id = await live.getAttribute("data-question-set");
     await card.getByRole("radio", { name: "Write an alternative answer", exact: true }).check();
     await main().fill("A tailored release");
@@ -66,6 +68,7 @@ export async function checkQuestionSets(page, width) {
     }
     await card.getByText("A tailored release", { exact: true }).waitFor();
     await card.getByText("And keep it reversible", { exact: true }).waitFor();
+    await checkQuestionReviewDesign(card);
     await checkBlockingCard(card);
     if (!desktop) {
       await card.getByRole("button", { name: "Edit Notes", exact: true }).tap();

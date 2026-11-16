@@ -41,7 +41,7 @@ export const scenarios = {
   "privacy": ["privacy/native-owned-v3@legacy-desktop", "privacy/native-owned-v3@legacy-tablet", "privacy/native-owned-v3@legacy-mobile"],
   "activity": ["activity/main-review-toolbar-v6@legacy-desktop", "activity/main-review-responsive-v5@legacy-tablet", "activity/main-review-navigation-v7@legacy-mobile"],
   "accounts": ["accounts/created-device-owner-v3@legacy-desktop", "accounts/created-device-owner-v3@legacy-mobile", "accounts/shared-device-owner-v3@en-desktop", "accounts/shared-device-owner-v3@en-mobile-short"],
-  "questions": ["questions/native-publication-files-v3@legacy-desktop", "questions/compact-native-files-v3@legacy-mobile"],
+  "questions": ["questions/native-publication-design-v4@legacy-desktop", "questions/compact-native-design-v4@legacy-mobile"],
   "session-links": ["session-links/copy-follow@legacy-desktop", "session-links/copy-follow@legacy-mobile"],
   "bulk": ["bulk/native-selection-mutations-v2@legacy-desktop", "bulk/native-selection-mutations-v2@legacy-mobile"],
   "move": ["move/picker-recovery-native-v2@legacy-desktop", "move/picker-modal-browse-v2@legacy-mobile"],

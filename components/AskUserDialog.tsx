@@ -45,7 +45,7 @@ export function AskUserDialog({ request, cwd, onOpenFile, onRespond }: {
   return <div onKeyDown={(event) => {
     if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
     event.preventDefault(); event.stopPropagation(); cancel();
-  }} className="w-full min-w-0">
+  }} className="question-card question-card-single w-full min-w-0">
     <BlockingCard title={request.question} label={t("chat.askUserTitle")} collapsed={collapsed}
       onCollapse={() => setCollapsed(true)} onExpand={() => setCollapsed(false)}
       meta={remaining !== null ? t("chat.extensionExpiresIn", { seconds: remaining }) : undefined}
@@ -54,8 +54,8 @@ export function AskUserDialog({ request, cwd, onOpenFile, onRespond }: {
         <button type="button" onClick={cancel}>{t("chat.cancel")}</button>
         <button type="submit" data-primary disabled={!answer}>{t("chat.submit")}</button>
       </>}>
-      {request.context && <details open={request.contextExpanded || request.context.length <= 240} className="min-w-0 text-xs text-text-muted">
-        <summary className="blocking-card-section-title cursor-pointer">{t("chat.askUserContext")}</summary>
+      {request.context?.trim() && <details open={request.contextExpanded ?? true} className="question-card-context">
+        <summary>{t("chat.askUserContext")}</summary>
         <div className="break-words"><MarkdownBody cwd={cwd} onOpenFile={onOpenFile}>{request.context}</MarkdownBody></div>
       </details>}
       {request.options.length > 0 && <fieldset className="m-0 grid gap-2 border-0 p-0">
@@ -68,9 +68,9 @@ export function AskUserDialog({ request, cwd, onOpenFile, onRespond }: {
                 <input type={request.allowMultiple ? "checkbox" : "radio"} name="ask-user-choice" checked={active} autoFocus={index === 0}
                   aria-describedby={option.description ? `${descriptionPrefix}-${index}` : undefined}
                   onChange={() => select(option.title)} className="mt-0.5 accent-accent" />
-                <strong className="block text-[13px] font-medium text-text">{option.title}</strong>
+                <strong className="question-card-option-title block text-[13px] font-medium text-text">{option.title}</strong>
               </label>
-              {option.description && <div id={`${descriptionPrefix}-${index}`} className="ml-6 mt-1 text-xs text-text-muted">
+              {option.description && <div id={`${descriptionPrefix}-${index}`} className="question-card-description ml-6 mt-1 text-xs text-text-muted">
                 <MarkdownBody cwd={cwd} onOpenFile={onOpenFile}>{option.description}</MarkdownBody>
               </div>}
             </div>
@@ -78,7 +78,7 @@ export function AskUserDialog({ request, cwd, onOpenFile, onRespond }: {
         })}
       </fieldset>}
       {(request.allowFreeform || request.options.length === 0) && <div className="min-w-0">
-        {request.options.length > 0 && <label className="blocking-card-choice mb-2" data-selected={writing}>
+        {request.options.length > 0 && <label className="question-card-alternative blocking-card-choice mb-2" data-selected={writing}>
           <input type="radio" name="ask-user-choice" checked={writing} onChange={() => setWriting(true)} className="accent-accent" />
           {t("chat.askUserOther")}
         </label>}

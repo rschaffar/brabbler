@@ -46,6 +46,56 @@ for (const branch of ['desktop', 'mobile']) test(`original scope/platforms/notes
   assert.equal(h.calls.length, 1);
 });
 
+test('context scopes surround navigation and question, collapse independently and omit empty sections', async t => {
+  const h = await dialog(t), request = batchRequest('context-scopes');
+  request.questions[1].context = 'Platform-specific explanation';
+  request.questions[2].context = '  \n ';
+  await h.fresh(request);
+  const root = h.view.container;
+  const background = root.querySelector('.question-card-background');
+  const specific = () => root.querySelector('.question-card-specific');
+  const heading = () => root.querySelector('h3');
+  const before = (a, b) => Boolean(a.compareDocumentPosition(b) & h.view.window.Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.equal(Boolean(specific()), true, 'current question context must be rendered');
+  assert.equal(background.querySelector('summary').textContent, 'Background for all questions');
+  assert.equal(specific().querySelector('summary').textContent, 'Context for this question');
+  assert.equal(before(background, root.querySelector('nav')), true);
+  assert.equal(before(root.querySelector('nav'), heading()), true);
+  assert.equal(before(heading(), specific()), true);
+  assert.equal(root.querySelector('fieldset').getAttribute('aria-labelledby'), heading().id);
+  assert.equal(background.open && specific().open, true);
+  assert.deepEqual(checked(h.view), [], 'recommended choice is not selected');
+  await click(h.view, background.querySelector('summary'));
+  assert.equal(background.open, false); assert.equal(specific().open, true);
+  await click(h.view, specific().querySelector('summary'));
+  assert.equal(specific().open, false); assert.equal(background.open, false);
+  await click(h.view, footer(h.view, 'Next'));
+  assert.equal(root.querySelector('.question-card-background') === background, true);
+  assert.equal(background.open, false, 'shared disclosure retains its state');
+  assert.equal(specific().open, true, 'new question context starts expanded');
+  assert.match(specific().textContent, /Platform-specific explanation/);
+  assert.equal(heading().textContent, 'Choose platforms');
+  await click(h.view, footer(h.view, 'Next'));
+  assert.equal(specific() === null, true, 'whitespace context has no empty section');
+  await h.fresh({ ...batchRequest('empty-context'), context: ' \n ', questions: [{ ...request.questions[2], context: undefined }] });
+  assert.equal(root.querySelector('details') === null, true);
+  assert.equal(h.calls.length, 0, 'disclosures/navigation never send answers');
+});
+
+test('shared fields preserve caller-supplied restricted context and literal descriptions', async t => {
+  const h = await dialog(t), { QuestionFields } = await h.load('./QuestionFields.tsx');
+  const question = batchRequest().questions[0], rendered = [];
+  await h.render(createElement(QuestionFields, { question: { ...question, context: 'Restricted background',
+    options: [{ id: 'small', title: 'Small', description: '**literal description**' }] },
+    draft: { selections: [], text: '', comment: '', writing: false, skipped: false }, update() {}, name: 'restricted',
+    renderContext(text) { rendered.push(text); return createElement('span', { 'data-restricted': '' }, text); } }));
+  assert.equal(h.view.container.querySelector('legend').textContent, 'Required');
+  assert.equal(h.view.container.querySelector('[data-restricted]').textContent, 'Restricted background');
+  assert.equal(rendered.every(text => text === 'Restricted background'), true);
+  assert.equal(h.view.container.querySelector('.markdown-body') === null, true);
+  assert.equal(h.view.container.querySelector('.question-card-description').textContent, '**literal description**');
+});
+
 test('finite actual choice matrix: small/large × desktop/mobile/both/none × text/skipped notes', async t => {
   const h = await dialog(t);
   let row = 0;
