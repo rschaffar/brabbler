@@ -15,7 +15,7 @@ const setQuestionSchema = Type.Object({
   id: Type.String({ description: "Stable unique question ID", pattern: "^[a-zA-Z0-9_-]{1,64}$" }),
   shortLabel: Type.String({ minLength: 1, maxLength: 60, description: "Short navigation label" }),
   question: Type.String({ minLength: 1, maxLength: 2000 }),
-  context: Type.Optional(Type.String({ maxLength: 8000 })),
+  context: Type.Optional(Type.String({ maxLength: 8000, description: "Markdown context for this question. Structure longer explanations with short paragraphs, headings and lists." })),
   type: Type.Unsafe<"single" | "multiple" | "text">({ type: "string", enum: ["single", "multiple", "text"] }),
   required: Type.Optional(Type.Boolean({ description: "Default true. Optional questions may be explicitly skipped." })),
   options: Type.Optional(Type.Array(Type.Object({
@@ -44,10 +44,11 @@ export function createAskUserExtension(): InlineExtension {
       pi.registerTool({
         name: "ask_user",
         label: "Ask User",
-        description: "Ask the user a question, or a small set of related independent questions answered together. Use either question (legacy single) or title and questions (1–6 mixed single/multiple/text questions), never both. Users can revise all answers before submitting the set. Every batch question supports an alternative written answer and separate additive details. Gather context first and include a short summary.",
+        description: "Ask the user a question, or a small set of related independent questions answered together. Use either question (legacy single) or title and questions (1–6 mixed single/multiple/text questions), never both. Users can revise all answers before submitting the set. Every batch question supports an alternative written answer and separate additive details. Gather context first and include a short summary formatted with Markdown for readability.",
         promptSnippet: "Ask one question or a small set of related independent questions, with editable drafts and one submission",
         promptGuidelines: [
           "Before calling ask_user, gather context with tools (read/web/ref) and pass a short summary via the context field.",
+          "Use Markdown in shared and per-question context: short paragraphs, headings and lists for longer explanations, inline code for paths/API names, and tables when they clarify comparisons. Avoid dense unstructured paragraphs; keep simple contexts brief.",
           "Use ask_user when the user's intent is ambiguous, when a decision requires explicit user input, or when multiple valid options exist.",
           "Batch 2–4 related independent decisions in questions (maximum 6); use stable question and option IDs and concise shortLabel values.",
           "Keep each question focused. Do not bundle unrelated decisions or questions that depend on an earlier answer; ask dependent follow-ups after receiving the set.",
@@ -58,7 +59,7 @@ export function createAskUserExtension(): InlineExtension {
           question: Type.Optional(Type.String({ description: "Single question; mutually exclusive with questions" })),
           title: Type.Optional(Type.String({ minLength: 1, maxLength: 200, description: "Required for a question set" })),
           questions: Type.Optional(Type.Array(setQuestionSchema, { minItems: 1, maxItems: 6, description: "Related independent questions submitted together; do not combine with legacy single-question fields" })),
-          context: Type.Optional(Type.String({ description: "Relevant context to show before the question (summary of findings)" })),
+          context: Type.Optional(Type.String({ description: "Markdown summary of findings shown before the question or shared across the set. Structure longer explanations with short paragraphs, headings and lists." })),
           options: Type.Optional(Type.Array(Type.Object({
             title: Type.String({ description: "Short title for this option" }),
             description: Type.Optional(Type.String({ description: "Longer description explaining this option" })),
