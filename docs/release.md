@@ -9,7 +9,7 @@ this is not an upstream release.
 - Repository selected by the owner: `https://github.com/rschaffar/brabbler`.
   Selection/local remote configuration does not create or remotely verify it.
 - Initial Brabbler version: **0.1.0**; Pi SDK compatibility is recorded separately
-  as **1.5.1**, including the guarded downstream policies below.
+  as **1.5.2**, including the guarded downstream policies below.
 - The root manifest remains `private: true`. No npm registry publication or
   package-name ownership is assumed. There is no automatic update query,
   release-upload job or demo deployment.
@@ -91,8 +91,8 @@ need separate review/authorization.
 
 The modular SDK retains the existing exact-byte child-environment patch.
 The application pins modular Undici **8.12.4**. A parent/version-scoped override
-also updates SDK 1.5.1's declared 8.12.3 dependency for the newer security fixes.
-The 1.5.1 manifest, twelve child-environment targets/helper and complete 85-entry
+also updates SDK 1.5.2's declared 8.12.3 dependency for the newer security fixes.
+The 1.5.2 manifest, twelve child-environment targets/helper and complete 85-entry
 standalone inventory are fingerprinted from actual upstream bytes. The
 owner-approved exclusion of the standalone `dist/bundle/` tree and its own `pi` CLI link remains the support
 boundary for Brabbler-owned installations, with a refreshed exact inventory. It is
@@ -109,6 +109,23 @@ Startup checks the policy read-only; it never removes or repairs dependencies.
 See [dependency dispositions](dependencies.md) for scope and remaining obligations.
 
 ## Current evidence and release gates
+
+The November 16 Pi 1.5.2 upgrade passed complete fresh Linux acceptance:
+**534 core files / 4,669 tests / 14 suites**, **26 browser/terminal groups / 61
+receipts**, and the genuine Home Manager VM in **467s**, including realization.
+The exact archive passed ordinary Linux x86_64 / Node 24.22.2 container smoke in
+**18s**, including installation/SDK policy, auth/restart/rotation, HTTP PTY and
+source/notices. [Dependency maintenance](dependencies.md) records phase timings
+and compatibility limits. Later documentation-only updates preserve application
+bytes and the production derivation; the suite is not relabelled as a new-tip run.
+
+Application SHA-256:
+`ca1a00141c3157e4d7651ebb138a4d56db58ec2a4cef037c41ae5eba6c291bee`.
+Accompanying source SHA-256:
+`d7213b6a8a2be8c8ca196180c4e50067c8472b035276d4a13e5ac48ee56a381d`.
+For this bounded upgrade, the owner explicitly deferred native macOS archive
+verification until publication. No remote CI dispatch, publication or installed-
+service activation occurred. Earlier candidate results below remain historical.
 
 The November 10 dependency refresh (Node 24.22.2/shared Brotli 1.2.1, Pi 1.5.1,
 Next 16.4.6 and Mermaid 12.3/ELK 0.12.1) passed complete Linux acceptance:
