@@ -231,7 +231,7 @@ The selected upstream runtime also uses shared Brotli **1.2.1**, including the
 required decoder security fix. [Dependency maintenance](./docs/dependencies.md)
 records versions, compatibility exceptions and verification limits.
 
-SDK 1.5.1 has a [version-pinned child-environment patch](./docs/sdk-command-environment.md)
+SDK 1.5.2 has a [version-pinned child-environment patch](./docs/sdk-command-environment.md)
 for the embedded modular runtime. Nix applies it before publishing shared modules;
 maintained npm postinstall uses the same guarded installer. Startup verifies the
 installed SDK read-only and refuses missing/unknown patches rather than repairing

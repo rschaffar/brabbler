@@ -7,6 +7,44 @@ Lockfile changes also require updating `nix/npm-deps.nix`. Nix realizes matching
 built dependencies automatically for packages and acceptance. Writable manual-development
 shells still enforce their checkout dependency marker; never bypass it.
 
+## Pi SDK 1.5.2 checkpoint (2026-11-16; verified)
+
+The four direct Pi pins and all eight coordinated resolved packages move from
+**1.5.1 to 1.5.2**. No unrelated lock resolution, independent demo dependency,
+Node/toolchain, native PTY or application version changes. The coding-agent-scoped
+Undici override moves to 1.5.2 while retaining resolved **8.12.4** against upstream's
+8.12.3 declaration. Existing TypeBox and streaming-only cache-warming policies stay.
+
+All twelve command-environment target modules are byte-identical to 1.5.1; exact
+recipes and original/patched hashes remain unchanged. Requalify the manifest,
+helper version/hash and complete **85-entry** standalone bundle digest from the
+published archive. Both private MCP guards remain exact-version checks at 1.5.2,
+not broadened compatibility ranges. See [SDK installation policy](sdk-command-environment.md).
+
+Upstream fixes Anthropic OAuth's reported Claude Code version and interactive
+missing-folder session fork/import handling. This is not an installed-service
+activation, a new Brabbler relocation feature or a credential migration.
+Complete fresh Linux acceptance passed **534 core files / 4,669 tests / 14 suites**,
+all **26 browser/terminal groups / 61 receipts**, and the genuine Home Manager VM.
+`nix run --no-write-lock-file .#test -- all --workers 4 --jobs 12` ran in **467s**,
+with twelve requested/effective core workers and four browser sandboxes overlapping.
+Core took 284.5s (1.8s before lifecycle; 281.3s file window); browser took 354.8s
+(118.3s support realization, 5.3s definition publication, 231.2s group-client window);
+service took 106.1s including realization, with a 59.3s guest evidence interval.
+These overlapping envelopes are not additive. Earlier focused checks prepared
+modules/static outputs; this is not a cold-cache benchmark comparison.
+
+The exact archive passed ordinary Linux x86_64 / Node 24.22.2 container smoke in
+**18s**, including SDK installation policy, auth/restart/rotation, HTTP PTY and
+source/notices. Independent review confirmed all pins/fingerprints and no required
+host API or persistent-format adaptation. Subsequent changes are documentation
+only; application bytes and the production derivation remain identical to the
+verified snapshot. No new live-provider certification is claimed. Native macOS
+archive verification is explicitly owner-deferred to publication for this update.
+The [upgrade record](plans/archived/2026-11-16_pi-sdk-1.5.2-upgrade-plan.md) binds
+source identity, initial realization refusal, evidence and scope. Older results
+below remain historical, not this candidate's acceptance.
+
 ## Dependency refresh (2026-11-10; verified)
 
 The receiving candidate updates Node to **24.22.2**, coordinated Pi packages to

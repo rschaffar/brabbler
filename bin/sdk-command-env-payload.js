@@ -1,16 +1,16 @@
 "use strict";
-/* Generated from public SDK 1.5.1 dist bytes; no SDK source vendoring. */
+/* Generated from public SDK 1.5.2 dist bytes; no SDK source vendoring. */
 module.exports = {
   "schemaVersion": 1,
-  "patchId": "brabbler-sdk-command-env-1.5.1-v2",
+  "patchId": "brabbler-sdk-command-env-1.5.2-v2",
   "packageName": "@earendil-works/pi-coding-agent",
-  "packageVersion": "1.5.1",
-  "packageJsonSha256": "58b1ebce6c1a5d63614279bac55c1117ed6015707d09a8d963ad0dad0dcc805c",
+  "packageVersion": "1.5.2",
+  "packageJsonSha256": "18b422b7d80f2caa2551d253c0a8409e1caa54b954bfb7d18252e507bb8a0318",
   "scope": "Twelve pinned modular SDK targets, including clipboard/browser helpers and RpcClient launch; excludes interactive-UI-only direct spawns, CLI/RPC bundles and arbitrary extension Node.js.",
   "helper": {
     "path": "dist/utils/brabbler-command-env.js",
-    "content": "/** Brabbler child-command environment policy, pinned to SDK 1.5.1.\n * Install-time downstream patch; never imported from the application runtime.\n * This is hygiene, not an extension sandbox. Filter only the final child copy:\n * explicit empty environments stay empty, and SSH/account/session values survive.\n */\nexport function sdkCommandEnvironment(source = process.env, platform = process.platform) {\n    const environment = { ...source };\n    for (const key of Object.keys(environment)) {\n        const name = platform === \"win32\" ? key.toUpperCase() : key;\n        if (name === \"BRABBLER_PASSWORD\" || name === \"BRABBLER_SSH_RUNTIME\") delete environment[key];\n    }\n    return environment;\n}\n",
-    "sha256": "b9a8822fbd106d171d833ee4c33b6c8cb45d8956b691af2651995694b3df047e"
+    "content": "/** Brabbler child-command environment policy, pinned to SDK 1.5.2.\n * Install-time downstream patch; never imported from the application runtime.\n * This is hygiene, not an extension sandbox. Filter only the final child copy:\n * explicit empty environments stay empty, and SSH/account/session values survive.\n */\nexport function sdkCommandEnvironment(source = process.env, platform = process.platform) {\n    const environment = { ...source };\n    for (const key of Object.keys(environment)) {\n        const name = platform === \"win32\" ? key.toUpperCase() : key;\n        if (name === \"BRABBLER_PASSWORD\" || name === \"BRABBLER_SSH_RUNTIME\") delete environment[key];\n    }\n    return environment;\n}\n",
+    "sha256": "bd92c41da81f2af9e70fabe55aaf5c35661bfc26868d4878283c2e68c016fb52"
   },
   "files": [
     {

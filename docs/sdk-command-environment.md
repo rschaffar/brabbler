@@ -12,7 +12,7 @@ consumed. Removing browser SSH does not remove this command-secret protection.
 ## Installation and verification
 
 `bin/sdk-command-env-payload.js` pins the public `@earendil-works/pi-coding-agent`
-**1.5.1** manifest and all twelve target modules by SHA-256, with original and
+**1.5.2** manifest and all twelve target modules by SHA-256, with original and
 patched hashes and exact replacement recipes. It contains only patch snippets,
 not vendored SDK modules. Its self-contained ESM helper is installed at
 `dist/utils/brabbler-command-env.js` inside the SDK and imports no application code.
@@ -106,15 +106,16 @@ hygiene, not isolation; a successful check is not a whole-SDK sandbox certificat
 The patch adds import lines to distributed JavaScript; existing upstream source
 maps are not regenerated and can show pre-patch coordinates. Reassess this bounded
 patch on every SDK change rather than widening accepted fingerprints casually.
-The 1.5.1 rebase retains all twelve targets: nine originals are unchanged; bash,
-grep and find have new exact fingerprints. Grep's replacement inserts filtering
-into the new multiline spawn options while preserving search-directory cwd and
-rg's JSON context handling. Exec's output cap/UTF-8/termination logic and the
-browser/clipboard root cwd recipes remain unchanged. The macOS stop-before-kill,
-unsupported-download-target checks, `rg --no-config` and detached POSIX clipboard
-behavior remain intact. No new environment hook replaces this policy.
+The 1.5.2 requalification retains all twelve original and patched target hashes
+from 1.5.1: every target is byte-identical and all exact replacement recipes remain
+unchanged. The helper's version comment and hash, upstream manifest fingerprint
+and complete bundle digest move to the new release. Grep's search-directory cwd
+and JSON context handling, exec's output cap/UTF-8/termination logic, browser and
+clipboard root cwd, macOS stop-before-kill, unsupported-download-target checks,
+`rg --no-config` and detached POSIX clipboard behavior remain intact. No new
+environment hook replaces this policy.
 The standalone exclusion fingerprints all **85** inventory entries. Upstream SDK
-1.5.1 still declares Undici 8.12.3, but the application and its parent/version-scoped
+1.5.2 still declares Undici 8.12.3, but the application and its parent/version-scoped
 override resolve **8.12.4**. The runtime guard requires that exact resolution;
 manifest, helper, target and complete bundle fingerprints are requalified from
 actual upstream bytes, never widened to unknown versions. A clean registry audit alone does
