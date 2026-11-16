@@ -322,6 +322,7 @@ export const enLocale: LocalePlugin = {
     "common.skills": "Skills",
     "common.agents": "Sub-agents",
     "common.plugins": "Plugins",
+    "plugins.selectBuiltin": "Select a built-in feature",
     "common.settings": "Settings",
     "settings.title": "Settings",
     "settings.general": "General",

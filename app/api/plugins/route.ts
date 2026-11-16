@@ -67,36 +67,6 @@ function getDisabledPackages(settingsManager: SettingsManager): Map<string, bool
   return disabled;
 }
 
-function setPackageDisabled(
-  settingsManager: SettingsManager,
-  source: string,
-  scope: PluginScope,
-  disabled: boolean,
-): boolean {
-  const current = scope === "project"
-    ? settingsManager.getProjectSettings().packages ?? []
-    : settingsManager.getGlobalSettings().packages ?? [];
-  let changed = false;
-  const next = current.map((entry): PackageSource => {
-    if (getPackageSource(entry) !== source) return entry;
-    changed = true;
-    if (disabled) {
-      return {
-        ...(typeof entry === "string" ? { source: entry } : entry),
-        extensions: [],
-        skills: [],
-        prompts: [],
-        themes: [],
-      };
-    }
-    return getPackageSource(entry);
-  });
-  if (!changed) return false;
-  if (scope === "project") settingsManager.setProjectPackages(next);
-  else settingsManager.setPackages(next);
-  return true;
-}
-
 function addCount(counts: PluginResourceCounts, kind: keyof PluginResourceCounts): void {
   counts[kind] += 1;
 }
@@ -338,6 +308,14 @@ export async function POST(req: Request) {
       scope?: PluginScope;
       cwd?: string;
     };
+    // Fence legacy availability writers even before the first scoped import.
+    // Package management remains separate; never fall back to native filters.
+    if (body?.action === "enable" || body?.action === "disable") {
+      return NextResponse.json(
+        { error: "Legacy package availability controls are retired", code: "LEGACY_RESOURCE_AVAILABILITY_RETIRED" },
+        { status: 410, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
     if (!body.action) return NextResponse.json({ error: "action required" }, { status: 400 });
     const allowedRoots = await getAllowedFileRoots();
@@ -382,16 +360,6 @@ export async function POST(req: Request) {
       }
       finishMutation = beginSettingsListingMutation(agentDir);
       await packageManager.update(source);
-    } else if (body.action === "disable") {
-      if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
-      finishMutation = beginSettingsListingMutation(agentDir);
-      setPackageDisabled(settingsManager, source, scope, true);
-      await settingsManager.flush();
-    } else if (body.action === "enable") {
-      if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
-      finishMutation = beginSettingsListingMutation(agentDir);
-      setPackageDisabled(settingsManager, source, scope, false);
-      await settingsManager.flush();
     } else {
       return NextResponse.json({ error: `Unsupported action: ${body.action}` }, { status: 400 });
     }

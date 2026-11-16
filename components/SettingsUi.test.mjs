@@ -992,6 +992,37 @@ test('actual keyed settings fence obsolete load/save success and error across se
   }
 });
 
+test('actual PluginsConfig ignores remembered external selections and only admits bundled settings reads', async t => {
+  for (const remembered of ['project\u0000npm:remembered', 'extension\u0000/extensions/example.ts', 'bundled:git-workflow']) {
+    await t.test(JSON.stringify(remembered), async t => {
+      const { f, c: { PluginsConfig, gitWorkflowManifest: manifest }, setup } = await workflowSettingsFixture(t);
+      const cwd = '/repo', sessionId = '55555555-5555-4555-8555-555555555555';
+      f.route('GET', '/api/plugins/bundled', { query: { cwd, sessionId },
+        reply: { data: { plugins: [{ manifest, settings: workflowSnapshot(manifest, sessionId, cwd) }] } } });
+      // No external listing/check/action route is admitted: any such request fails the fixture.
+      await f.mount(h(PluginsConfig, { embedded: true, cwd, sessionId, onClose() {} }), { setup(window) {
+        setup(window);
+        window.localStorage.setItem('brabbler:settings-navigation', JSON.stringify({ selections: { '["plugins","/repo"]': remembered } }));
+      } });
+      assert.equal(f.view.container.querySelectorAll('.config-sidebar-item').length, 1);
+      assert.equal(f.node('.config-sidebar-item').textContent.trim(), 'Git Workflow');
+      assert.equal(f.view.container.querySelector('.config-list-action-button') === null, true, 'no external Add action');
+      assert.equal(f.view.container.querySelector('#plugin-source') === null, true, 'no package installer');
+      assert.equal(f.view.container.querySelector('.config-footer').textContent.trim(), '', 'no external maintenance actions');
+      if (remembered.startsWith('bundled:')) {
+        assert.equal(f.view.container.querySelector('[data-plugin-settings-matrix]') !== null, true, 'remembered builtin still opens');
+      } else {
+        assert.equal(f.node('.config-empty-state').textContent.trim(), 'Select a built-in feature');
+        await f.click(f.button('Git Workflow'));
+        assert.equal(f.view.container.querySelector('[data-plugin-settings-matrix]') !== null, true, 'builtin remains reachable');
+      }
+      assert.equal(f.requests.length > 0, true);
+      assert.equal(f.requests.every(request => request.method === 'GET' && request.path === '/api/plugins/bundled'), true);
+      f.check();
+    });
+  }
+});
+
 test('actual SettingsPanel/PluginsConfig preserves inner Escape, matrix opt-in and Session Launch legacy immediate save', async t => {
   const { f, c: { SettingsPanel, gitWorkflowManifest: manifest, sessionLaunchManifest: launch }, setup } = await workflowSettingsFixture(t);
   const cwd = '/repo', sessionId = '55555555-5555-4555-8555-555555555555';

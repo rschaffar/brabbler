@@ -6,25 +6,96 @@ Control which skills and external Pi extensions a session receives, and therefor
 what they add to context, through one **Skills & extensions** view with groups,
 native packages, individual resources and Global → Project → Session overrides.
 
-**Status:** the visual direction and compact enabled-status row are accepted.
-The user explicitly accepts incomplete intermediate code/UI in **one shared feature
-worktree**. This is a planning revision, not authorization to implement, migrate live
-settings, deploy or publish. No production source or live service has changed.
+**Status:** implementation resumed by explicit owner request under the execution reset
+below. Reinspection confirmed the existing branch, HEAD and intentional dirty handoff.
+Keep the existing shared worktree, scoped implementers and independent reviewers. The visual
+direction, compact enabled-status row and incomplete intermediate checkpoints remain
+accepted. Live migration, deployment, publication and cleanup are not authorized.
+Foundations are implemented, but no end-to-end UI-to-runtime flow is connected.
 
 ## Current handoff
 
-- **Completed:** interactive prototype, compact-status revision and prototype checks.
-- **When implementation is authorized:** W02 can remove the old external Plugins
-  UI first; it does not depend on finishing the new backend/view. W00 decisions and
-  W01 lifecycle research can proceed independently, with only one repository writer.
-- **Blockers for dependent work:** group/identity interchange agreement with the
-  configuration effort; approved missing/moved/legacy-state semantics; supported
-  extension lifecycle. These do not block unrelated source-only teardown/layout work.
-- **Implementation:** W00–W14 are not started. Planning/research is not implementation.
-- **Git:** keep the existing receiving feature branch/worktree. A planning commit
-  does not authorize implementation or establish integration. Native Git policy and
-  stronger repository rules own commits, rebases, exact-state approval and the final
-  local non-FF merge.
+**Accepted decisions:** [configuration handoff](2026-11-16_pi-resource-configuration-handoff.md),
+[ADR 0044](../adr/0044-scoped-agent-resources.md) and [catalog contract](../agent-resource-catalog.md)
+own installed-path identity (superseding permanent IDs/placement review), flat single-parent groups, direct parent gates,
+retained preferences, independent Pi/Brabbler availability, Nix-owned contents, global v1/location,
+`agentDir` preferences, Enabled baseline, unambiguous package-Off and automatic first-use import.
+Project overrides require registered checkout roots; disabled-skill inspection retains independent trust/path/profile/access checks.
+
+| Unit / verified scope | Evidence and review state | Private evidence labels (current task root) |
+| --- | --- | --- |
+| W01 actual SDK 1.5.2 observations | Reviewed post-load whole-record suppression: ten faux requests, 0.715s; valid-image bytes retained, 0.866s. Not host lifecycle proof. | Original SDK reports retained |
+| W02 external Plugins teardown | Static + 51/58; seven expected obsolete-UI failures; separate i18n 5/5. Reviewed, no material source findings; defect-red qualification open. | w02/, w02-review/, w02-i18n/ |
+| W03 pure scoped resolver | Static + 19/19; independent review accepted. Binding/storage/runtime unwired. | w03/handoff.md |
+| W04a/W04b aligned reader/catalog | Static + 36/36 (18 each), 41.808s; independent reviews closed findings. Producer format aligned locally; no Nix changes. | w04b-verification/, w04b-implementation-review/, reader-alignment-review/ |
+| W05a isolated preferences store | Static + 26/26; independently reviewed; no live wiring. | w05a-verification/, w05a-review/ |
+| W06a isolated import receipt transaction | Static + 38/38, 40.461s; reviewed; admitted choices + completion/provenance include empty imports. | w06a/, w06a-review/, w06a-qualification/ |
+| W05b context/store/import receipt guards | Static + 83/83, 44.056s; final guard rereview **CLOSED both findings**. No endpoint/live writer connected. | w05b-guard-repair/, w05b-context-review/ |
+| W06b actual native-import library | **UNCONNECTED**; both alias/hierarchy findings closed by conservative pre-commit refusal. New actual-SDK/resolver/no-receipt regressions: static + 48/48, 44.232s; independent correction review accepted. Prior 106/106 remains bounded evidence, not end-to-end proof. | w06b/, w06b-review/; resumed import-fix/, import-review/ |
+| W06c old availability writers | Package enable/disable and skills PATCH return 410; static + 4/4, 44.407s. Original-handler defect witness retained; independent review accepted, no material findings. | w06c/report.md; resumed legacy-review/ |
+| W09a reusable state controller | Static + 13/13, 42.518s; independently reviewed. Not a host idle detector. | w09a/report.md, w09a-review/report.md |
+
+Latest verified inputs: W05b `4f4ffb0c6beb8547859d175b819ff56758830605e2cfa7301aaa03798d420aca`;
+W06b `56c10c06db2c4b5f6e8c330ccd6da308cb7ea9a2fa88eadbea302b15b1c3d568`.
+W06b private stale-evidence run: 43/45, two intended failures, 46.023s; not a green run.
+Resumed correction input: `a74584486ad76a49773a5e1addd17d030098928f16960a1de5724323407269c3`;
+new regressions first exposed three intended failures (45/48), then passed 48/48.
+Resumed evidence labels refer to the new coordinator's private task root, not the prior evidence tree.
+
+**Limits/blockers:** these are bounded unit/reader/catalog/store/controller results, not full-feature or full-acceptance evidence.
+Actual-SDK ordinary-record suppression is accepted; retained sends/bus/providers and initialization remain possible.
+This supersedes pre-import exclusion as a requirement; no SDK patch/monkeypatch or non-circumventable guard is approved.
+Real HTTP facade, W09b host admission/settlement,
+W07/W08/W10 runtime application and replacement UI remain pending.
+Native-enabled host replacement, durable reopen, detailed recovery/lifecycle boundaries and composed acceptance remain unproven; no power-loss durability claim.
+
+**Retention:** raw private reports retain original reds, fixture/EACCES/invocation/restoration failures and defect witnesses
+(W03 six, W04a two, W05a four, W09a two, W06a one, W05b eighteen intended failures).
+W04a's mislabeled mutant is not green; its reviewed identity-verified pristine result remains valid.
+W06a's extra pristine run never started because of an unnecessary process scan; original green/red remain valid.
+Later normal 83/106 regressions use **new inputs**, not relabeled old restoration evidence. No process-inventory gate or unchanged-check repetition is required.
+
+**Dirty checkpoint:** HEAD `cc3bbf20`, existing `design/skills-extensions-mockup`; all feature work remains uncommitted.
+Preserve existing dirty UI/i18n/test-lane/plan changes, expected user handoff and new docs/modules.
+The owner additionally authorized periodic progress commits; they are unfinished checkpoints,
+not integration or acceptance. No live import, deployment, remote action or cleanup is authorized.
+**Active next connection:** connect first-use import and the scoped API, then runtime idle
+application and the hierarchy view for the first connected flow below. Do not start more detached foundations
+merely because they can proceed independently. The previous implementing/reviewing agents are
+stopped; the resumed coordinator owns new assignments. Preserve the worktree and Git boundaries.
+
+## Execution reset — one connected flow first
+
+The owner requested tighter scope after excessive edge-case depth and verification
+orchestration delayed integration. These rules change execution priority, not the
+agreed feature behavior or final acceptance requirements.
+
+1. **First integrated milestone:** change one supported managed package/resource choice
+   in the new view, save it at a valid scope, apply it when the actual runtime is idle,
+   and verify the resulting advertised resources. Include explicit skill invocation
+   exclusion where the selected resource is a skill. Unit counts alone do not satisfy
+   this milestone; it is an unfinished-feature checkpoint, not a release or merge gate.
+2. **Order the next connections:** finish the bounded import corrections/review, connect
+   first-use import and scoped APIs, connect actual runtime filtering/idle application,
+   and connect the hierarchy view. Then finish remaining scopes/lifecycle cases, recovery,
+   package actions and documentation before composed review and full acceptance.
+3. **Every task must close a named connection or a concrete correctness/safety blocker.**
+   Defer hypothetical cases and generalization. Unsupported arrangements get actionable
+   errors rather than a discovery framework, alias registry or guessed migration.
+4. **Freeze scope:** no SDK patch, other-setting integration, second catalog format,
+   additional generalized framework or extra migration machinery without an explicit
+   owner decision. Finish and reuse existing components rather than adding layers.
+5. **Keep verification proportional:** run required focused checks and independent
+   review, reuse unchanged evidence, and perform full acceptance on the finished
+   candidate. Do not invent process scans, redundant private-copy/restoration runs or
+   other gates solely for an agent's reporting convention. Real failures remain retained.
+6. **Report connected behavior:** at handoffs, briefly state what works end to end,
+   what is still disconnected, and the next connection/blocker. Keep detailed evidence
+   private and linked by its existing labels; do not present accumulated unit passes
+   as proof of feature completion. The coordinator stays at plan level and delegates
+   bounded implementation and independent review with one repository writer.
+
+No implementation resumes from this documentation update alone.
 
 ## Shared-worktree working agreement
 
@@ -74,8 +145,15 @@ already delivers them:
   and editable while gated off.
 - Disabled skills are absent from advertising and explicit skill invocation, not
   merely hidden from automatic selection. Preserve authored invocation metadata.
-- Apply selection before the next safely admitted turn without interrupting current
-  work. Already-consumed instructions cannot be erased from conversation history.
+- Extension Off means practical whole-record contribution suppression, not guaranteed
+  non-execution. Initialization and retained SDK capabilities/effects may remain;
+  remove ordinary advertised tools/commands/instructions/handlers. No SDK patch solely
+  for zero-import or non-bypassable availability. Keep source/trust/profile hard ceilings.
+- Save choices immediately; apply by idle replacement after admitted work and accepted
+  queues settle. Refuse fresh input visibly before hooks while pending; no hidden
+  retries or mid-run/per-model-turn switching. Already-consumed instructions remain.
+  Resource construction may admit a fixed old snapshot before a child is scheduled;
+  no scheduler-time recopy/reconstruction is required. See ADR 0044.
 - Enabled status: **✓ Included in next-turn selection**, compact and without a
   subtitle/operation-permission warning. Disabled states explain useful reasons.
 - Distinguish skill advertising/full instructions from extension tool descriptions
@@ -115,8 +193,9 @@ The prototype's scenario/reset/next-turn buttons are demo controls, not producti
 requirements or lifecycle proof. Temporary new UI may show honest “not connected yet”/
 unavailable states; it must not pretend a resource was applied to a live session.
 
-The draft keeps Git Workflow, Session Launch and Acceptance under **Built-in features**;
-confirm that boundary in W00 without relaxing their existing scope/permissions.
+The accepted final home is **Built-in features** for Git Workflow, Session Launch and
+Acceptance, without relaxing their existing scope/permissions. New group/package gates
+affect only skills/extensions; prompt templates/themes keep existing native behavior.
 
 Out of scope: a universal permission/sandbox system; replacing MCP/native-tool or
 built-in tool selection, accounts/models/trust/AGENTS instructions; nested Pi packages;
@@ -127,6 +206,8 @@ implicit dependency auto-enablement; live activation, publication or cleanup.
 The companion configuration effort owns Home Manager package construction, installation
 and Pi declarations. This plan owns Brabbler's catalog, selection, lifecycle and UI.
 Agree interchange and live cutover ordering; do not guess the other effort's schema.
+The companion effort is planning, not implementing or activating configuration; its
+owner decisions are recorded in the linked configuration handoff.
 Plain Pi must still understand native packages without Brabbler's logical groups.
 Duplicate standalone installations must not bypass package selection.
 
@@ -161,8 +242,10 @@ and current owners. Reuse these source findings; they are not executed lifecycle
 
 - `skillsOverride` can filter initial and later extension-provided `resources_discover`
   skills; filtering only initial discovery is insufficient.
-- `extensionsOverride` runs **after imports/factories**. Active-tool filtering also
-  leaves commands/events and some deferred paths. Neither proves Disabled.
+- `extensionsOverride` runs **after imports/factories**. Active-tool filtering alone
+  leaves commands/events/deferred paths. Later actual-SDK proof confirms whole-record
+  filtering removes ordinary session contributions, with retained SDK capabilities
+  explicitly accepted as a limit of practical Off; it is not pre-execution exclusion.
 - SDK reload is nontransactional; native-enabled wrappers already use idle replacement.
   Shutdown failures and arbitrary unowned extension effects need explicit treatment.
 - Input hooks/skill expansion can happen before queueing. `agent_end`, `agent_settled`
@@ -173,19 +256,20 @@ and current owners. Reuse these source findings; they are not executed lifecycle
 
 ## Decisions for W00
 
-The user previously paused questions. This revision sends none; the next authorized
-conversation must resolve material decisions when questions resume. Unknowns block
-only the work that depends on them, not all independent edits.
+Questions are now authorized and welcome. Reuse the configuration handoff's accepted
+owner decisions rather than asking them again. Unknowns block only dependent work.
+The handoff approves neither a concrete interchange schema nor runtime feasibility.
 
 | Decision | Recommendation / unresolved boundary |
 | --- | --- |
-| Groups and metadata | Flat single-parent logical groups; inert versioned interchange separate from native Pi resources; confirm with configuration ownership |
-| Identity | Stable explicit IDs where supplied, documented source-scoped fallback; never infer continuity from display name/content alone |
-| Project/inspection scope | Canonical shared-worktree identity; explicitly choose non-Git/subdirectory and excluded-resource inspection behavior |
-| Missing/moved/replaced resources | Retain choices; same identity/placement restores them; changed placement requires review before activation; ambiguous replacement is not continuity |
-| Legacy/authored state | Distinguish Pi filters, previous user choices and authored manual-only frontmatter; decide transfer rather than duplicate hidden off gates |
-| Built-ins/package operations | Confirm built-in home, mixed-package actions and safe source update/remove timing |
-| Admission/dependencies | Define fresh/reopen/fork/BTW/child/move semantics, actual admission event and required-resource constraints; child construction alone is not admission |
+| Groups and metadata | Accepted: flat groups, at most one controlling parent; CodeGraph ungrouped. Align solely to actual producer v1 at `<agentDir>/resource-catalog.json`, flat package-referencing resources; see catalog contract. No dual format or Nix changes. |
+| Identity | Accepted: installed source/member paths and group keys; same installed path across store-target updates retains choices. No permanent-ID registry or guessed aliases. |
+| Project/inspection scope | Accepted: Project overrides only at registered checkout roots, shared across linked worktrees; elsewhere Global/own Session where applicable. Disabled skill Markdown inspection allowed only under independent source/trust/path/profile/access admission and contained-reference bounds. |
+| Missing/moved/replaced resources | Accepted: retain unused choices, same-path return restores them, moves are new objects, changed parent gates apply directly. Broken declared sources/conflicting copies error. No placement-review workflow. |
+| Legacy/authored state | Accepted: separate state per `agentDir`, not provider account; one-time proven import, unambiguous whole-package Off becomes package gate Off including new members. Ambiguity errors. Exact evidence, authored metadata handling and writer cutover pending. |
+| Defaults | Accepted: eligible objects inherit an Enabled baseline; parent gates, trust, authored invocation rules and profile ceilings remain independent. |
+| Built-ins/package operations | Accepted: existing scoped Git Workflow/Session Launch/Acceptance controls under Built-in features; new gates affect only skills/extensions, preserving native prompt/theme handling. Nix owns managed contents/registration; runtime must not mutate them. Unmanaged source mutation timing pending. |
+| Admission/dependencies | Accepted simplified idle application: save immediately, drain admitted work, refuse fresh input visibly while pending. New IDs copy current own Session choices once at creation, not permissions/effective inherited values. Child construction may admit a fixed pre-import snapshot; no scheduler-time recopy. Executable settlement/host-loader proof remains open. |
 
 Record durable accepted decisions in an ADR. UI source removal can precede migration
 implementation, but **activating a new durable writer/source of truth cannot** precede
@@ -223,8 +307,9 @@ proposed owners, not claims that future files already exist.
 
 ### W00 — Decide contracts
 
-- [ ] Agree versioned groups/IDs/placement, origin versus setting scope, conflicts,
-  supported projects and configuration ordering; capture synthetic examples in an ADR.
+- [x] Agree global v1 groups/path identities/current placement, origin versus setting
+  scope, conflict errors, supported Project boundary and producer ordering; captured
+  in ADR 0044 and the synthetic catalog contract. Project metadata production deferred.
 - [ ] Define lifecycle/admission, profile ceilings, legacy authority and recovery policy.
 
 **Verify:** examples have unambiguous expected outcomes and plain Pi compatibility.
@@ -245,11 +330,12 @@ unowned extension side effects are not a sandbox guarantee.
 
 ### W02 — Remove the old external Plugins UI first
 
-- [ ] Remove external Pi package/standalone-extension rows and their old availability
-  controls from Plugins; retain built-in permission/settings behavior. Record package
-  actions to rehome in W13 instead of maintaining a temporary duplicate view.
-- [ ] Leave an honest gap in navigation if the new view is not ready. No requirement
-  to add a placeholder replacement or keep obsolete UI tests passing in this unit.
+- [x] Remove external Pi package/standalone-extension rows and their old availability
+  controls from Plugins; retain built-in permission/settings behavior. Package actions
+  inventoried privately for W13. Static and new mounted boundary cases passed;
+  independent review found no material issues. Full acceptance remains W14.
+- [x] Leave the honest external-UI gap without a temporary duplicate or replacement.
+  Seven obsolete assertion failures remain explicitly assigned to W11–W14.
 
 **Verify:** inspect the source/diff and run the narrow relevant checks; document old
 UI tests now expected to fail and their replacement owners. This source-only teardown
@@ -259,9 +345,11 @@ no backend compatibility layer is required solely for the gap.
 
 ### W03 — Pure selection model and resolver
 
-- [ ] Add immutable identities/choices, scope provenance and effective parent gates.
-- [ ] Cover inheritance/explicit values, session override of global-off groups,
+- [x] Add immutable identities/choices, scope provenance and effective parent gates.
+- [x] Cover inheritance/explicit values, session override of global-off groups,
   project-local scope limits, standalone items, conflicts/cycles and missing parents.
+  Verified 19/19 actual-module tests, six intended parent-gate defect reds, restored
+  19/19 and independent source/evidence review; see current handoff.
 
 **Verify:** actual-module tests (suggested `selection.test.mjs`) prove child choices
 never mutate and cannot bypass off parents. Storage, UI and SDK need not work yet.
@@ -290,8 +378,9 @@ behavior. Runtime observation belongs to W10; do not build that merely to finish
 
 ### W06 — Reconciliation and migration
 
-- [ ] Implement approved disappearance/return/move/replacement behavior while retaining
-  own choices and placement review; no guessed identity or automatic expiry.
+- [ ] Implement accepted path-based disappearance/return/move behavior and direct new
+  parent gates, retaining unused own choices; no identity guesses, aliases, placement
+  review or automatic expiry. Same-path store-target updates retain choices.
 - [ ] Define migration trigger, authoritative store per phase, legacy-writer fencing
   or fail-closed detection, commit point, interruption recovery and rollback/re-upgrade.
   Transfer only proven legacy choices; preserve authored metadata and unrelated state.
@@ -312,26 +401,32 @@ sources of truth. W02's removal of UI does not relax this final/live-state gate.
 disabled skills. Previously-expanded/consumed input remains unchanged. UI may still
 be absent or incomplete; no need for a temporary view or fake selection endpoint.
 
-### W08 — Extension selection on creation/reopen
+### W08 — Extension contribution selection on creation/reopen
 
-- [ ] Apply selection before optional extension import/factory execution; preserve
-  required host factories, profile/trust ceilings and saved child restrictions.
-- [ ] Exclude tool descriptions, snippets/guidelines, commands, handlers and dynamic
-  resources through the real supported loader boundary proved in W01.
+- [ ] Filter whole optional extension records with existing public SDK composition;
+  preserve required host factories, profile/trust ceilings and saved child restrictions.
+  Initialization is allowed; this is not a sandbox/unload guarantee.
+- [ ] Exclude ordinary tool descriptions, snippets/guidelines, commands, handlers and
+  dynamic resources, retaining honest limits for initialization-held SDK capabilities.
 
-**Verify:** native startup/reopen sentinel fixtures prove excluded factories never
-start and enabled ones work. This unit does not yet claim live-wrapper switching.
+**Verify:** actual host startup/reopen fixtures exclude ordinary disabled contributions
+while enabled/required ones work. Do not assert zero imports/factories or complete
+execution isolation. Live-wrapper switching remains W09/W10.
 
 ### W09 — Admission/settlement boundary
 
-- [ ] Add a host-owned serialized barrier across HTTP, direct SDK and extension
-  ingress before input hooks/skill expansion; reuse existing runtime coordination.
-- [ ] Preserve accepted queued text/images and apply W00's definition of child admission,
-  including construction → preference change → enqueue/start as a distinct case.
+- [ ] Extend existing host admission/replacement ownership across HTTP, direct SDK
+  and extension ingress before hooks/skill expansion; visibly refuse fresh input
+  while desired selection waits for idle replacement. No parallel mutex/polling system.
+- [ ] Preserve accepted queued text/images and active effects. Count fixed pre-import
+  child resource construction, held preflight and queued children as ownership even
+  when not streaming. Existing admitted children may start under their old snapshot;
+  no scheduler-time factory deferral, recopy or mid-run model-turn switching.
 
-**Verify:** held work/async input, steering/follow-up, child scheduling and Stop/Pause
-cannot bypass or deadlock the barrier. No streaming/event flag alone counts as proof.
-W10 supplies actual replacement; an unwired barrier is not a working live switch.
+**Verify:** held work/async input, steering/follow-up, child construction/scheduling
+and Stop/Pause cannot bypass or deadlock ownership. Save does not wait for settlement;
+application does. No streaming/event flag alone proves idle. W10 supplies actual
+replacement; an unwired guard is not a working switch.
 
 ### W10 — Apply selection at the safe next-turn boundary
 
@@ -360,7 +455,8 @@ behind a temporary feature flag or demanding the whole app pass now.
 ### W12 — Connect editing and recovery UI
 
 - [ ] Connect scoped controls/reset, effective reasons and revisions to W05; off parents
-  never disable editing of child preferences. Add W06's missing/moved review.
+  never disable editing of child preferences. Add W06's actionable broken-source and
+  ambiguity diagnostics; no historical-placement review workflow.
 - [ ] Connect W10's desired/applied/error state when ready. Preserve scope identity,
   draft/conflict handling and focus through rapid switching and obsolete responses.
 

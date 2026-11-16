@@ -628,7 +628,7 @@ export function SettingsPanel({ cwd, defaultsCwd = cwd, sessionId, catalogAccoun
           {sectionHost("mcp", <McpSettings key={defaultsCwd ?? "global"} cwd={defaultsCwd} />)}
           {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
           {cwd && sectionHost("agents", <AgentsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} onClose={onClose} onReloaded={onSessionReloaded} />)}
-          {cwd && sectionHost("plugins", <PluginsConfig embedded key={`${cwd}:${sessionId ?? ""}`} cwd={cwd} sessionId={sessionId} initialPluginScope={initialPluginScope} onClose={onClose} onReloaded={onSessionReloaded} />)}
+          {cwd && sectionHost("plugins", <PluginsConfig embedded key={`${cwd}:${sessionId ?? ""}`} cwd={cwd} sessionId={sessionId} initialPluginScope={initialPluginScope} onClose={onClose} />)}
         </main>
       </div>
     </div>
