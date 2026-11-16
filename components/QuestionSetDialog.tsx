@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { draftAnswer, type QuestionDraft, type SetAnswer } from "@/lib/question-set";
 import { clearQuestionDraft, loadQuestionDrafts, saveQuestionDrafts } from "@/lib/question-set-drafts";
@@ -32,6 +32,7 @@ export function QuestionSetDialog({ request, sessionId, cwd, onOpenFile, onRespo
   const sending = useRef(false);
   const settled = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
+  const headingId = useId();
   const review = page === request.questions.length;
   const question = request.questions[page];
   const draft = question ? drafts[question.id] : undefined;
@@ -80,7 +81,7 @@ export function QuestionSetDialog({ request, sessionId, cwd, onOpenFile, onRespo
   const status = (index: number) => answers[index]?.kind === "skipped" ? t("chat.questionsSkipped")
     : answers[index] ? t("chat.questionsAnswered") : t("chat.questionsUnanswered");
 
-  return <div className="w-full min-w-0" data-question-set={request.id} onKeyDown={(event) => {
+  return <div className="question-card w-full min-w-0" data-question-set={request.id} onKeyDown={(event) => {
     // Escape never discards a set. Enter in fields never submits it implicitly.
     if (event.key === "Escape" && !event.nativeEvent.isComposing) {
       event.preventDefault(); event.stopPropagation(); setConfirmCancel(false);
@@ -105,8 +106,8 @@ export function QuestionSetDialog({ request, sessionId, cwd, onOpenFile, onRespo
       </>}>
       {error && <p role="alert" className="text-xs text-red-400">{t("chat.questionsSendFailed")}</p>}
       {!storageAvailable && <p role="status" className="text-xs text-text-muted">{t("chat.questionsStorageUnavailable")}</p>}
-      {request.context && <details open className="min-w-0 text-xs text-text-muted">
-        <summary className="blocking-card-section-title cursor-pointer">{t("chat.askUserContext")}</summary>
+      {request.context?.trim() && <details open className="question-card-context question-card-background">
+        <summary>{t("chat.questionsBackground")}</summary>
         <MarkdownBody cwd={cwd} onOpenFile={onOpenFile}>{request.context}</MarkdownBody>
       </details>}
       <nav aria-label={t("chat.questionsNavigation")} className="hidden flex-wrap gap-1 sm:flex">
@@ -124,13 +125,17 @@ export function QuestionSetDialog({ request, sessionId, cwd, onOpenFile, onRespo
           <option value={request.questions.length}>{t("chat.questionsReview")}</option>
         </select>
       </label>
-      <h3 ref={heading} tabIndex={-1} className="m-0 break-words text-sm font-medium outline-none">
+      {!review && <p className="question-card-position">
+        {t("chat.questionsPosition", { current: page + 1, total: request.questions.length })}
+        <span className="question-card-badge">{t(question.required ? "chat.questionsRequired" : "chat.questionsOptional")}</span>
+      </p>}
+      <h3 id={headingId} ref={heading} tabIndex={-1} className={review ? "question-card-review-title" : "question-card-question"}>
         {review ? t("chat.questionsReview") : question.question}
       </h3>
       {review ? <>
         <p className="text-xs text-text-muted">{t("chat.questionsNotSent")}</p>
         <QuestionSetReview set={request} answers={answers} cwd={cwd} onOpenFile={onOpenFile} showOptions onEdit={submitting ? undefined : setPage} />
-      </> : question && draft && <QuestionFields question={question} draft={draft} update={update} cwd={cwd} onOpenFile={onOpenFile} disabled={submitting} name={`question-${request.id}-${question.id}`} />}
+      </> : question && draft && <QuestionFields key={question.id} labelledBy={headingId} question={question} draft={draft} update={update} cwd={cwd} onOpenFile={onOpenFile} disabled={submitting} name={`question-${request.id}-${question.id}`} />}
     </BlockingCard>
   </div>;
 }

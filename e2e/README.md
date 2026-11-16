@@ -151,7 +151,7 @@ The running-forks mobile `first-user-quote-stop-v3` chain measures the current S
 
 These are native Chromium proofs, not every browser/codec combination; the static demo and Markdown-file previews are outside this feature's scope.
 
-The question group's `native-publication-files-v3` / `compact-native-files-v3` receipts retain the prior desktop/mobile chains and additionally prove live context/option links open the real Files pane at a source line without browser navigation or native label selection; desktop also checks saved-receipt file navigation. Mounted `ChatWindow.extension-request.test.mjs` owns the broader card/review/receipt/compaction link matrix and no-answer behavior. This is additive coverage, not retirement of the existing native input chains.
+The question group's `native-publication-design-v4` / `compact-native-design-v4` receipts retain the prior desktop/mobile chains and live context/option links opening the real Files pane at a source line without browser navigation or native label selection; desktop also checks saved-receipt file navigation. They additionally measure live set/legacy question typography at default and enlarged chat sizes in light/dark themes, subordinate context/description Markdown headings, context order, unselected recommendations, stronger editable borders, mobile 16px minimum controls, horizontal overflow and bounded footer geometry. Mounted `ChatWindow.extension-request.test.mjs` owns the broader card/review/receipt/compaction link matrix and no-answer behavior. This is additive coverage, not retirement of the existing native input chains.
 
 The state chain's `api-append-accounts-gzip-v2@service` receipt adds explicit gzip
 negotiation and successful JSON decoding for the installed catalogue/detail

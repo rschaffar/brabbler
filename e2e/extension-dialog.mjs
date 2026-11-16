@@ -27,9 +27,9 @@ export const extensionSource = `export default function (pi) {
   pi.registerCommand("e2e-ask-user", {
     handler: async (mode, ctx) => {
       if (mode.startsWith("batch")) {
-        const answer = await ctx.ui.askUserBatch({ title: "E2E question set", context: "Related decisions", questions: [
-          { id: "scope", shortLabel: "Scope", question: "Choose scope", context: "Scope background", type: "single", required: true, options: [
-            { id: "small", title: "Small", description: "Start small", recommended: true }, { id: "large", title: "Large" },
+        const answer = await ctx.ui.askUserBatch({ title: "E2E question set", context: "# Shared background\\n\\nRelated decisions", questions: [
+          { id: "scope", shortLabel: "Scope", question: "Choose scope", context: "Scope background\\n\\n# Question background\\n\\n" + "A focused view is easier to scan; a detailed view keeps more information together. ".repeat(8), type: "single", required: true, options: [
+            { id: "small", title: "Small", description: "Start small\\n\\n# Option details\\n\\nKeep the first release focused.", recommended: true }, { id: "large", title: "Large" },
           ] },
           { id: "platforms", shortLabel: "Platforms", question: "Choose platforms", type: "multiple", required: true, options: [
             { id: "desktop", title: "Desktop" }, { id: "mobile", title: "Mobile" }, { id: "none", title: "None", exclusive: true },

@@ -4,7 +4,9 @@
 
 ## Answering a set
 
-Context sections start expanded in live question cards, including set-level and per-question context, and remain collapsible. Legacy single questions also expand long context by default; an explicit `contextExpanded` argument or `BRABBLER_ASK_USER_CONTEXT_EXPANDED` environment preference still overrides that default. Completed receipts remain collapsed.
+The actual question is the strongest text in a live card: 18px semibold by default, compared with 14px context and option titles and 13px option descriptions. These sizes follow the chat text setting while retaining the four-pixel question/body difference. Context Markdown headings remain subordinate to the question. Helper/navigation labels stay at 12px; mobile textareas and selectors use at least 16px text, with stronger theme-derived editable borders. These styles apply only to live questions, not unrelated approvals or notebook renderers.
+
+**Background for all questions** appears above navigation and applies to the entire set. **Context for this question** appears immediately below the actual question. Empty or whitespace-only contexts are omitted. Context sections start expanded in live question cards, including set-level and per-question context, and remain independently collapsible. Shared background retains its disclosure state during navigation; entering a different question starts its context expanded. Legacy single questions also expand long context by default; an explicit `contextExpanded` argument or `BRABBLER_ASK_USER_CONTEXT_EXPANDED` environment preference still overrides that default. Completed receipts remain collapsed.
 
 - Use the labelled question buttons (desktop), question selector (mobile), or Back/Next to move freely. Required questions must have a main answer. Optional questions must be answered or explicitly skipped.
 - Single choice, multiple choice and text questions can be mixed. Recommendations are labels, never defaults. An exclusive option such as None cannot be combined with another option; an empty selection is not an answer.
