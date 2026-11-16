@@ -31,6 +31,8 @@ No cross-device draft syncing or exact pending-request recovery after a server r
 
 ## Tool contract
 
+Write shared and per-question context as Markdown. Keep simple context brief; structure longer explanations with short paragraphs, headings and lists rather than a dense paragraph. Use inline code for paths/API names and tables when they clarify comparisons. Markdown support does not automatically add structure to plain text. This is authoring guidance, not a validation requirement; existing plain-text requests remain valid.
+
 Use either the legacy `question` plus optional `options`/flags, or `title` and `questions`. Mixing those modes is rejected. The legacy result remains `details.response`; optional comments now also accompany written answers. Comments default on unless explicitly disabled or overridden by `BRABBLER_ASK_USER_ALLOW_COMMENT`.
 
 Example batch:
@@ -38,7 +40,7 @@ Example batch:
 ```json
 {
   "title": "Implementation decisions",
-  "context": "The current application runs locally. These decisions are independent.",
+  "context": "### Current behavior\n\nThe application runs locally.\n\n### Decisions\n\n- Choose the implementation scope.\n- Choose supported platforms.\n\nThese decisions are independent.",
   "questions": [
     {
       "id": "scope",
