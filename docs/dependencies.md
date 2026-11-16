@@ -7,6 +7,53 @@ Lockfile changes also require updating `nix/npm-deps.nix`. Nix realizes matching
 built dependencies automatically for packages and acceptance. Writable manual-development
 shells still enforce their checkout dependency marker; never bypass it.
 
+## Maintenance refresh (2026-11-16; verified)
+
+Root/demo update ESLint **10.14.0 → 10.15.0** and PostCSS **8.5.32 → 8.5.33**.
+Root additionally updates Playwright **1.65.0 → 1.65.1** (with matching
+playwright-core) and direct TypeBox **1.4.6 → 1.4.7**. Private test support updates
+jsdom **31.0.0 → 31.0.1**. Both Nix dependency-cache hashes use fetcher format 2.
+Pi SDK **1.5.2**, its nested TypeBox **1.3.27**, native PTY, compiler, Node runtime,
+Node typings, flake inputs and existing overrides remain unchanged.
+
+ESLint and its config-array **0.23.6** dependency now use minimatch **11.0.8**.
+Normalize both independent locks to the offline clean-install layout: hoist that
+fixed version and retain minimatch **10.2.6** only beneath TypeScript-ESLint's
+parser dependency. The SDK keeps its exact minimatch **11.0.3**. Online lock-only
+resolution initially retained the opposite placement, which Nix's offline
+`npm ci` rejected. The corrected graph follows npm's offline solver while retaining
+public license/funding metadata; no forced peer resolution, minimatch override,
+unrelated refresh or lint-rule suppression is introduced. Keep the existing
+ESLint-plugin peer-support exception below.
+
+Fresh public lock-only audits report **7 moderate package findings** in each
+root/demo full graph, down from 9; all remain in the TypeScript-ESLint minimatch
+chain (`GHSA-g3hv-75wg-m249`). Both runtime-only audits and private support report
+zero findings. These counts include affected parents, not seven independent
+advisories. Nix retains development modules, so this is not whole-artifact security
+clearance.
+
+Complete fresh Linux acceptance passed **534 core files / 4,669 tests / 14 suites**,
+all **26 browser/terminal groups / 61 receipts**, and the genuine Home Manager VM.
+`nix run --no-write-lock-file .#test -- all --workers 4 --jobs 12` ran in **545s**,
+including in-run realization, with twelve requested/effective core workers and
+four browser sandboxes overlapping. Core took 390.9s (93.4s before lifecycle;
+296.2s file-execution window). Browser took 398.3s (136.3s support realization,
+7.3s definition publication, 254.7s group-client window). Service took 139.7s,
+including realization, with a 73.1s guest evidence interval. Overlapping envelopes
+are not additive. Dependency-cache preparation and the initial cache-format hash
+mismatch/offline lock-placement refusals preceded this successful run; they are
+not application-test failures or cold-cache benchmark evidence.
+
+Independent demo installation took 8s; type generation, typecheck, lint, two search
+regressions and eight actual-config lint probes passed in a further 20s against
+its separate lock. Independent review found no scope or lock-placement issue.
+The verified snapshot's content/mode SHA-256 is
+`df2787c4416b6949d5a5321fc77a7ab43c12608ebfc63e3588d282cb428f36eb`.
+Subsequent changes only document these results, not a new application-suite run.
+No host-service activation, publication, native macOS or live-provider verification
+is claimed.
+
 ## Pi SDK 1.5.2 checkpoint (2026-11-16; verified)
 
 The four direct Pi pins and all eight coordinated resolved packages move from

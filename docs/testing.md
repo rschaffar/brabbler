@@ -152,7 +152,7 @@ inputs still admit their required support. Keep `package.json`'s packed-file
 exclusions in agreement and verify the realized package inventory and dependency
 input graph when support changes. The package's `node_modules` symlink exposes the
 full application module set, so a root devDependency would ship too. Do not add
-jsdom to the root manifest. **`jsdom@31.0.0`** instead has a private manifest/lock at
+jsdom to the root manifest. **`jsdom@31.0.1`** instead has a private manifest/lock at
 `lib/testing/package.json` and `lib/testing/package-lock.json`. The separate
 `nix/test-support.nix` output built successfully without React or node-pty and is
 linked only at `lib/testing/node_modules` in private core/static workspaces. Root
