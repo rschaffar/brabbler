@@ -467,7 +467,7 @@ let nativeToolsFixture;
 
   async function runSessionLaunchChecks() {
     browser ??= await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`session-launch/${inputId === "en-desktop" ? "feedback-and-independent-native-v2" : "independent-native-compact-v2"}@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`session-launch/${inputId === "en-desktop" ? "feedback-and-independent-native-v3" : "independent-native-compact-v2"}@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage(); page.setDefaultTimeout(30_000);
@@ -522,7 +522,7 @@ let nativeToolsFixture;
     });
   } else if (group === "git-plugin") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/git-backed-review-v11@${inputId}`, async () => {
+    for (const inputId of ["en-desktop", "en-mobile-tall"]) await coverage.run(`git-plugin/git-backed-review-v12@${inputId}`, async () => {
       const { viewport } = browserInputs[inputId].options;
       context = await newInputContext(inputId);
       page = await context.newPage();
@@ -853,7 +853,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "activity") {
-      const activityScenario = inputId === "legacy-desktop" ? "activity/main-review-toolbar-v6" : inputId === "legacy-mobile" ? "activity/main-review-navigation-v7" : "activity/main-review-responsive-v5";
+      const activityScenario = inputId === "legacy-desktop" ? "activity/main-review-toolbar-v7" : inputId === "legacy-mobile" ? "activity/main-review-navigation-v7" : "activity/main-review-responsive-v6";
       await coverage.run(`${activityScenario}@${inputId}`, async () => {
       const finishActivityStage = stage.start(`activity/${inputId}/chain`);
       // Seed only after the selected chat has loaded, so clicking its newly

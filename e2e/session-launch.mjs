@@ -83,7 +83,7 @@ export async function checkSessionLaunch(page, { base, api, post, project, agent
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "Settings", exact: true });
   if (width <= 600) await settings.getByRole("combobox", { name: "Settings", exact: true }).selectOption("plugins");
-  else await settings.getByRole("button", { name: "Plugins", exact: true }).click();
+  else await settings.getByRole("button", { name: "Built-in features", exact: true }).click();
   await settings.getByRole("button", { name: "Session Launch", exact: true }).click();
   const panel = settings.getByRole("region", { name: "Session Launch settings" });
   await panel.getByLabel("Plugin settings scope").selectOption("session");
