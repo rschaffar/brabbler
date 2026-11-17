@@ -10,7 +10,6 @@ on 2026-10-27.
 
 | Plan | Remaining scope |
 | --- | --- |
-| [Scoped skills and extensions](2026-11-16_skills-extensions-plan.md) | Visual direction accepted; 15 editing units in one shared feature worktree, with incomplete intermediate checkpoints allowed. Final acceptance remains mandatory; dependent decisions, lifecycle proof and application implementation are pending. |
 | [Rename-aware committed Git reviews](2026-11-03_git-rename-support-plan.md) | Implementation and independent review complete; committed Explorer and operation-review rename presentation preserves authored comparisons and saved outcomes/equality. Full Nix acceptance passed; local integration uses separate native approval/receipt. |
 | [Guided reading and native notebook authoring](2026-11-05_notebook-authoring-plan.md) | Reader simplification and native inspect/update/reference maintenance implemented; checkpoint and overall independent reviews closed. Rebased onto current main with independent review. Complete Nix acceptance passed: 531 core files / 4,590 tests, 26 browser/terminal groups / 60 input chains and genuine deployment VM. Ready for exact-state local non-FF merge approval; integration remains pending. |
 | [Git-backed operation reviews](2026-10-31_git-backed-operation-reviews-plan.md) | Feature-branch metadata production and existing Git-backed viewer/API are independently reviewed, with focused native/mounted/installed-browser checks. Offline converter, real-data rehearsal and complete acceptance remain open; live migration, activation and old-state removal still require separate approval. |
@@ -26,6 +25,22 @@ on 2026-10-27.
 Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
+
+## Scoped skills and extensions
+
+The [completed implementation record](archived/2026-11-16_skills-extensions-plan.md)
+connects scoped hierarchy choices, independently admitted skill inspection and explicit
+**Apply saved changes**, not automatic idle switching. Package management stays with
+Pi/Nix; bundled permission controls are Built-in features. Complete acceptance passed
+**543 core files / 4,911 tests**, **26 browser/terminal groups / 61 scenarios** and the
+genuine Home Manager VM with **32 converter cases**, in **945.744 seconds** of summed
+command time including realization. Source and browser/VM application identities match.
+[Feature contracts](../feature-internals.md), [session contracts](../session-internals.md)
+and ADRs [0044](../adr/0044-scoped-agent-resources.md),
+[0045](../adr/0045-explicit-resource-application.md) and
+[0046](../adr/0046-agent-resource-availability-only.md) own current behavior.
+Exact-state local non-FF integration remains owned by native approval/outcome receipts;
+archival is not integration, deployment, publication or cleanup authority.
 
 ## Integrated-worktree ignored-file disposal
 

@@ -2,7 +2,7 @@
 
 Owner decisions from the companion Nix/Home Manager requirements discussion,
 2026-11-16. This is an input to
-[W00](2026-11-16_skills-extensions-plan.md). The owner subsequently authorized
+the [Brabbler implementation record](archived/2026-11-16_skills-extensions-plan.md). The owner subsequently authorized
 producer implementation on its existing branch and approved the exact small producer
 contract below. This does not authorize Brabbler readers/runtime changes or prove
 lifecycle support. No configuration activation is authorized.

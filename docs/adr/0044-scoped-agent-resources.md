@@ -1,7 +1,7 @@
 # ADR 0044: Scoped skill and extension selection
 
-- Status: Accepted decisions; automatic idle-application and pending-input policy superseded by [ADR 0045](0045-explicit-resource-application.md). Other contracts remain accepted; implementation and runtime feasibility remain incomplete.
-- Plan: [Scoped skills and extensions](../plans/2026-11-16_skills-extensions-plan.md)
+- Status: Accepted decisions; automatic idle-application and pending-input policy superseded by [ADR 0045](0045-explicit-resource-application.md). Other contracts remain accepted. The documented installed-local pilot is implemented and verified; contemporaneous pending-proof language below is historical, not an active work queue.
+- Implementation record: [Scoped skills and extensions](../plans/archived/2026-11-16_skills-extensions-plan.md)
 - Configuration input: [Owner handoff](../plans/2026-11-16_pi-resource-configuration-handoff.md)
 
 ## Context
