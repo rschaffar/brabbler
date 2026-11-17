@@ -34,6 +34,7 @@ Project overrides require registered checkout roots; disabled-skill inspection r
 | W06b actual native-import library | **UNCONNECTED**; both alias/hierarchy findings closed by conservative pre-commit refusal. New actual-SDK/resolver/no-receipt regressions: static + 48/48, 44.232s; independent correction review accepted. Prior 106/106 remains bounded evidence, not end-to-end proof. | w06b/, w06b-review/; resumed import-fix/, import-review/ |
 | W06c old availability writers | Package enable/disable and skills PATCH return 410; static + 4/4, 44.407s. Original-handler defect witness retained; independent review accepted, no material findings. | w06c/report.md; resumed legacy-review/ |
 | W09a reusable state controller | Static + 13/13, 42.518s; independently reviewed. Not a host idle detector. | w09a/report.md, w09a-review/report.md |
+| Scoped HTTP / first-use connection | Actual GET/PATCH → canonical context/catalog/import/store connected; static + 8/8, 52.951s. Independent review accepted within supported pilot. Desired state only; runtime notification/application disconnected. | resumed scoped-api/, scoped-api-review/ |
 
 Latest verified inputs: W05b `4f4ffb0c6beb8547859d175b819ff56758830605e2cfa7301aaa03798d420aca`;
 W06b `56c10c06db2c4b5f6e8c330ccd6da308cb7ea9a2fa88eadbea302b15b1c3d568`.
@@ -45,8 +46,10 @@ Resumed evidence labels refer to the new coordinator's private task root, not th
 **Limits/blockers:** these are bounded unit/reader/catalog/store/controller results, not full-feature or full-acceptance evidence.
 Actual-SDK ordinary-record suppression is accepted; retained sends/bus/providers and initialization remain possible.
 This supersedes pre-import exclusion as a requirement; no SDK patch/monkeypatch or non-circumventable guard is approved.
-Real HTTP facade, W09b host admission/settlement,
-W07/W08/W10 runtime application and replacement UI remain pending.
+W09b host admission/settlement, W07/W08/W10 runtime application and replacement UI remain pending.
+Project-local source admission currently refuses before import: the SDK trust-status reader
+creates native lock files. Managed-global Project overrides work; read-only canonical
+Project-local trust admission remains a concrete final-support blocker.
 Native-enabled host replacement, durable reopen, detailed recovery/lifecycle boundaries and composed acceptance remain unproven; no power-loss durability claim.
 
 **Retention:** raw private reports retain original reds, fixture/EACCES/invocation/restoration failures and defect witnesses
@@ -55,12 +58,14 @@ W04a's mislabeled mutant is not green; its reviewed identity-verified pristine r
 W06a's extra pristine run never started because of an unnecessary process scan; original green/red remain valid.
 Later normal 83/106 regressions use **new inputs**, not relabeled old restoration evidence. No process-inventory gate or unchanged-check repetition is required.
 
-**Dirty checkpoint:** HEAD `cc3bbf20`, existing `design/skills-extensions-mockup`; all feature work remains uncommitted.
+**Progress checkpoint:** `08eada71` on existing `design/skills-extensions-mockup` preserves
+the inherited dirty handoff plus reviewed import correction; source before that commit was
+based on `cc3bbf20`. The scoped HTTP connection is the next checkpoint, not full acceptance.
 Preserve existing dirty UI/i18n/test-lane/plan changes, expected user handoff and new docs/modules.
 The owner additionally authorized periodic progress commits; they are unfinished checkpoints,
 not integration or acceptance. No live import, deployment, remote action or cleanup is authorized.
-**Active next connection:** connect first-use import and the scoped API, then runtime idle
-application and the hierarchy view for the first connected flow below. Do not start more detached foundations
+**Active next connection:** consume the committed scoped selection in actual runtime
+filtering/idle application, then connect the hierarchy view for the first connected flow below. Do not start more detached foundations
 merely because they can proceed independently. The previous implementing/reviewing agents are
 stopped; the resumed coordinator owns new assignments. Preserve the worktree and Git boundaries.
 
