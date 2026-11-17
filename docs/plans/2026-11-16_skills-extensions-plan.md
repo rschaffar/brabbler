@@ -39,7 +39,8 @@ Project overrides require registered checkout roots; disabled-skill inspection r
 | Scoped HTTP / first-use connection | Actual GET/PATCH → canonical context/catalog/import/store connected; static + 8/8, 52.951s. Independent review accepted within supported pilot. Desired inventory; explicit selected application is connected below, no automatic notification. | resumed scoped-api/, scoped-api-review/ |
 | Saved selection → real startup/reopen | Actual host/SDK requests and explicit skill expansion honor saved choices; native-Off resources restored in memory. Initial static + 48/48; two loader review findings then closed with real regressions, static + 10/10, 45.178s. Required factories/native prompt handling retained; child evidence remains bounded. | resumed runtime-loader/, runtime-loader-review/, runtime-loader-fix/, runtime-loader-fix-review/ |
 | Explicit Apply backend | Automatic machinery removed; Save leaves live runtimes/input unchanged. Busy Apply refuses now; explicit admitted Apply reconstructs only selected runtime and establishes actual receipt. 122/122 affected-owner checks, final 5/5 actual-host cases + static; independently reviewed, no material findings. | resumed explicit-apply/, explicit-apply-review/ |
-| Hierarchy Save/Apply UI | Real GET/PATCH and actual-state UI connected; static + 92/92 across mounted/navigation/reader/i18n owners. One mobile Back focus finding closed with source-qualified 22/22 + static and rereview. Installed browser bridge still pending. | resumed hierarchy-ui/, hierarchy-ui-review/, hierarchy-ui-fix/ |
+| Hierarchy Save/Apply UI | Real GET/PATCH and actual-state UI connected; static + 92/92 across mounted/navigation/reader/i18n owners. One mobile Back focus finding closed with source-qualified 22/22 + static and rereview. | resumed hierarchy-ui/, hierarchy-ui-review/, hierarchy-ui-fix/ |
+| Installed browser milestone | Actual UI save → saved-not-applied request → explicit Apply → next actual SDK exclusion and literal disabled-skill invocation passed in extension-dialogs. Markdown reader/security bridges passed; contracts 100/100 + static. Independent bridge review found no material issues. | resumed browser-flow/, browser-flow-review/ |
 | Canonical Project trust | Approved standard SDK read locks; real trusted/denied/revoked Project admission, import and save. 23/23 + static; independent review accepted. Native data unchanged. | resumed project-trust-connection/, project-trust-fix/, project-trust-review/ |
 
 Latest verified inputs: W05b `4f4ffb0c6beb8547859d175b819ff56758830605e2cfa7301aaa03798d420aca`;
@@ -91,11 +92,28 @@ The later uncommitted automatic-application candidate is being simplified under 
 Preserve existing dirty UI/i18n/test-lane/plan changes, expected user handoff and new docs/modules.
 The owner additionally authorized periodic progress commits; they are unfinished checkpoints,
 not integration or acceptance. No live import, deployment, remote action or cleanup is authorized.
-**Active next connection:** actual installed browser UI → save → explicit Apply → advertising
-and explicit skill exclusion. Backend, hierarchy UI and canonical Project trust reviews are closed
-within their recorded scopes. Then close own-Session copying, full disabled-skill inspection,
-package actions/navigation/documentation and composed acceptance; these are not silently dropped.
-The actual browser milestone remains incomplete until its installed fixture passes. Do not start more detached foundations
+**Active next connection:** finish own-Session copy verification, then independently admitted
+native-excluded skill inspection, package-mutation endpoint retirement, Built-in features naming
+and maintained documentation. The first installed-browser flow is VERIFIED within its synthetic
+local-package scope. Backend/UI/trust/bridge reviews are closed within recorded scopes.
+
+**Availability-only scope decision:** the owner explicitly removed package install/search/update/
+remove control rehoming from this change; Pi/Nix owns contents and registration. Retire obsolete
+mutation endpoints and show ownership guidance, not a source-mutation coordinator or new remote
+package support. See [ADR 0046](../adr/0046-agent-resource-availability-only.md).
+
+**Current correctness blockers:** own-Session copy successful paths pass actual child/fork
+receiving 5/5, preferences+BTW 68/68 and child integration 30/30. Independent review found two
+retained-creation failure guards still needed (failed BTW rediscovery and incomplete child cold
+reopen); see resumed session-copy-review/. The prior RPC stall was traced to missing route-fixture
+capabilities plus an unbounded entered wait; corrected owner now passes 88/88. Historical
+interrupted runs remain unproven, not relabeled green.
+
+Disabled/native-excluded inspection and obsolete management-endpoint retirement are implemented.
+Focused mounted/handler checks passed 59/59; two inspection review findings were corrected with
+15/15 API plus 13/13 retained content/native-reader checks. Independent correction rereview and
+remaining creation guards precede final documentation/composed acceptance. Evidence: resumed
+availability-finish-final/, availability-finish-review/, inspection-fix/. Do not start more detached foundations
 merely because they can proceed independently. The previous implementing/reviewing agents are
 stopped; the resumed coordinator owns new assignments. Preserve the worktree and Git boundaries.
 
@@ -332,7 +350,7 @@ completion. Source contracts may be used before their implementation is wired.
 | W10 | Explicit application, actual status and bounded failure handling | W07, W08, W09 |
 | W11 | New hierarchy/detail UI | W00, W03; can be unwired and use controlled test props |
 | W12 | Scope editing/recovery UI wiring | W05, W11; W06/W10 outcomes wired as they arrive |
-| W13 | Restore package operations and finish Settings wiring | W02, W04, W05, W06, W10, W12 for final completion |
+| W13 | Retire package mutation, ownership guidance and final Settings wiring | ADR 0046; W02, W04, W05, W06, W10, W12 |
 | W14 | Composed review, full acceptance, integration handoff | All final obligations W00–W13 |
 
 Each unit below states its **editing result** and its **verification obligation**.
@@ -497,22 +515,22 @@ behind a temporary feature flag or demanding the whole app pass now.
 retry and keyboard behavior; native owners prove durable writes and runtime application.
 Checks depending on W06/W10 remain explicitly pending until connected, not fake-green.
 
-### W13 — Restore package operations and finish integration wiring
+### W13 — Availability-only retirement and final integration wiring
 
-- [ ] Rehome install/update/remove/search/version actions inventoried in W02, preserve
-  mixed-package prompt/theme handling without expanding availability semantics, and
-  finish navigation/static demo/built-in settings links with no duplicate controls.
-- [ ] Own catalog invalidation, source-generation checks and desired/applied refresh
-  around update/remove, coordinated with W10. Defer source mutation or pin supported
-  contents while affected work runs; preserve source ownership and selection choices.
-- [ ] Retire remaining obsolete frontmatter-toggle paths/tests with exact replacement
-  assertion dispositions. Finish W06's writer/reader cutover only after its protocol
-  and companion configuration ordering pass on synthetic fixtures.
+- [x] Package-action rehoming/source-mutation coordination is superseded by the explicit
+  owner decision in ADR 0046. Do not restore install/search/update/remove controls or
+  build additional remote-source admission for this change.
+- [x] Retire Brabbler's obsolete package/skill mutation endpoints before native writer
+  admission; preserve Pi/Nix contents, registration and authored metadata. Ownership
+  guidance and Built-in features naming are connected; focused actual-handler/mounted
+  checks pass. Full acceptance and final documentation remain W14.
+- [ ] Retire obsolete availability/package-action success assertions with exact current
+  refusal/read-only replacements, preserving unrelated security/native helper obligations.
+  Finish navigation/static demo/docs and W06's supported synthetic cutover/recovery proof.
 
-**Verify:** existing skill/package/native/mounted owners plus held-turn update/remove
-and partial-failure tests. Next admission uses an approved coherent source/selection
-snapshot or reports failure. No implicit Home Manager declaration removal, guessed
-replacement identity or change to built-in operation permissions.
+**Verify:** actual retired handlers cannot install/update/remove or write native state;
+existing availability, content-security and built-in permission owners remain meaningful.
+No implicit Home Manager declaration removal, source-management shim or permission change.
 
 ### W14 — Finish, review and verify the composed feature
 

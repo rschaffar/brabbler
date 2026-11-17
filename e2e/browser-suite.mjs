@@ -29,7 +29,7 @@ import { checkNotesNativeJourney, checkNotesTouchGeometry } from "./scratchpad.m
 import { checkMessageTimestamps } from "./message-timestamps.mjs";
 import { checkUpstreamComposer, checkOverflowTabs } from "./upstream-easy-wins.mjs";
 import { checkRequestHeaderBoundary, seedExternalReferenceFixtures, checkExternalReferenceBoundary } from "./security-boundaries.mjs";
-import { seedFollowupSettings, checkSkillInstructions, checkModelOverrides, checkPreferenceWiring } from "./upstream-followups.mjs";
+import { seedFollowupSettings, checkSkillInstructions, checkModelOverrides, checkPreferenceWiring, seedResourceApplyFixture, checkResourceApply } from "./upstream-followups.mjs";
 import { checkManagedModelContextLayout } from "./managed-model-context.mjs";
 import { checkModelSpeedNativeJourney, checkModelSpeedNativeFreshJourney } from "./model-speed.mjs";
 import { seedNativeToolsFixtures, checkSelectedNativeRuntime } from "./native-tools.mjs";
@@ -145,7 +145,8 @@ let nativeToolsFixture;
     { agentDir, env: fixtureEnv, writeSession, message, timestamp }, stage);
   mkdirSync(join(agentDir, "extensions"));
   writeFileSync(join(agentDir, "extensions", "e2e-dialog.js"), extensionSource);
-  writeFileSync(join(agentDir, "extensions", "e2e-session-launch.js"), sessionLaunchFixtureSource(root));
+  const resourceApplyFixture = group === "extension-dialogs" ? seedResourceApplyFixture({ agentDir, artifacts }) : null;
+  writeFileSync(join(agentDir, "extensions", "e2e-session-launch.js"), sessionLaunchFixtureSource(root, resourceApplyFixture?.capturePath));
   if (group === "native-tools") nativeToolsFixture = seedNativeToolsFixtures({ root, agentDir, project, env: fixtureEnv, writeSession, message, timestamp });
   if (group === "activity") {
     writeFileSync(join(agentDir, "extensions", "e2e-subagent-lifecycle.js"), subagentLifecycleFixtureSource(root));
@@ -749,7 +750,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "markdown") {
-      await coverage.run(`markdown/${inputId === "legacy-desktop" ? "render-files-native-v8" : "render-touch-wiring-v7"}@${inputId}`, async () => {
+      await coverage.run(`markdown/${inputId === "legacy-desktop" ? "render-files-native-v9" : "render-touch-wiring-v8"}@${inputId}`, async () => {
       const finishMarkdownStage = stage.start(`markdown/${inputId}/chain`);
       // This added chunk-interception fixture needs no service worker. Existing
       // Markdown scenarios below retain their original, independent context.
@@ -1528,10 +1529,11 @@ let nativeToolsFixture;
     continue;
     }
     if (group === "extension-dialogs") {
-      await coverage.run(`extension-dialogs/${inputId === "legacy-desktop" ? "wrap-native-publication-v2" : "compact-wrap-native-v2"}@${inputId}`, async () => {
+      await coverage.run(`extension-dialogs/${inputId === "legacy-desktop" ? "wrap-resource-apply-v3" : "compact-wrap-native-v2"}@${inputId}`, async () => {
         await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
         await page.locator(".markdown-code-block pre").waitFor();
         await checkExtensionDialogs(page, artifacts, viewport.width);
+        if (inputId === "legacy-desktop") await checkResourceApply(page, { post, project, sessionId: RICH, fixture: resourceApplyFixture });
         assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
         await harness.closeContext(context); context = undefined; page = undefined;
       });
