@@ -34,23 +34,28 @@ Project overrides require registered checkout roots; disabled-skill inspection r
 | W06b actual native-import library | **UNCONNECTED**; both alias/hierarchy findings closed by conservative pre-commit refusal. New actual-SDK/resolver/no-receipt regressions: static + 48/48, 44.232s; independent correction review accepted. Prior 106/106 remains bounded evidence, not end-to-end proof. | w06b/, w06b-review/; resumed import-fix/, import-review/ |
 | W06c old availability writers | Package enable/disable and skills PATCH return 410; static + 4/4, 44.407s. Original-handler defect witness retained; independent review accepted, no material findings. | w06c/report.md; resumed legacy-review/ |
 | W09a reusable state controller | Static + 13/13, 42.518s; independently reviewed. Not a host idle detector. | w09a/report.md, w09a-review/report.md |
-| Scoped HTTP / first-use connection | Actual GET/PATCH → canonical context/catalog/import/store connected; static + 8/8, 52.951s. Independent review accepted within supported pilot. Desired state only; runtime notification/application disconnected. | resumed scoped-api/, scoped-api-review/ |
+| Scoped HTTP / first-use connection | Actual GET/PATCH → canonical context/catalog/import/store connected; static + 8/8, 52.951s. Independent review accepted within supported pilot. Desired state only; live notification/application disconnected. | resumed scoped-api/, scoped-api-review/ |
+| Saved selection → real startup/reopen | Actual host/SDK requests and explicit skill expansion honor saved choices; native-Off resources restored in memory. Initial static + 48/48; two loader review findings then closed with real regressions, static + 10/10, 45.178s. Required factories/native prompt handling retained; child evidence remains bounded. | resumed runtime-loader/, runtime-loader-review/, runtime-loader-fix/, runtime-loader-fix-review/ |
 
 Latest verified inputs: W05b `4f4ffb0c6beb8547859d175b819ff56758830605e2cfa7301aaa03798d420aca`;
 W06b `56c10c06db2c4b5f6e8c330ccd6da308cb7ea9a2fa88eadbea302b15b1c3d568`.
 W06b private stale-evidence run: 43/45, two intended failures, 46.023s; not a green run.
 Resumed correction input: `a74584486ad76a49773a5e1addd17d030098928f16960a1de5724323407269c3`;
 new regressions first exposed three intended failures (45/48), then passed 48/48.
+Resumed loader-fix input: `241755feb544d33e0ec41592688545ca934bbbdd7bb38cb3d08a7748929126f3`.
 Resumed evidence labels refer to the new coordinator's private task root, not the prior evidence tree.
 
 **Limits/blockers:** these are bounded unit/reader/catalog/store/controller results, not full-feature or full-acceptance evidence.
 Actual-SDK ordinary-record suppression is accepted; retained sends/bus/providers and initialization remain possible.
 This supersedes pre-import exclusion as a requirement; no SDK patch/monkeypatch or non-circumventable guard is approved.
-W09b host admission/settlement, W07/W08/W10 runtime application and replacement UI remain pending.
+W09b host admission/settlement, W10 live idle application and replacement UI remain pending.
+W07/W08 now reach real startup/reopen, but full lifecycle coverage and child own-Session
+choice copying remain open; cold-child ceiling checks are not a fresh-child model-request proof.
 Project-local source admission currently refuses before import: the SDK trust-status reader
 creates native lock files. Managed-global Project overrides work; read-only canonical
 Project-local trust admission remains a concrete final-support blocker.
-Native-enabled host replacement, durable reopen, detailed recovery/lifecycle boundaries and composed acceptance remain unproven; no power-loss durability claim.
+Ordinary persisted reopen is proved within the loader fixture. Native-enabled host replacement,
+detailed recovery/lifecycle boundaries and composed acceptance remain unproven; no power-loss durability claim.
 
 **Retention:** raw private reports retain original reds, fixture/EACCES/invocation/restoration failures and defect witnesses
 (W03 six, W04a two, W05a four, W09a two, W06a one, W05b eighteen intended failures).
@@ -60,12 +65,14 @@ Later normal 83/106 regressions use **new inputs**, not relabeled old restoratio
 
 **Progress checkpoint:** `08eada71` on existing `design/skills-extensions-mockup` preserves
 the inherited dirty handoff plus reviewed import correction; source before that commit was
-based on `cc3bbf20`. The scoped HTTP connection is the next checkpoint, not full acceptance.
+based on `cc3bbf20`. `20e45e03` checkpoints the reviewed scoped HTTP connection.
+The reviewed runtime-loader connection is the next checkpoint, not full acceptance.
 Preserve existing dirty UI/i18n/test-lane/plan changes, expected user handoff and new docs/modules.
 The owner additionally authorized periodic progress commits; they are unfinished checkpoints,
 not integration or acceptance. No live import, deployment, remote action or cleanup is authorized.
-**Active next connection:** consume the committed scoped selection in actual runtime
-filtering/idle application, then connect the hierarchy view for the first connected flow below. Do not start more detached foundations
+**Active next connection:** publish committed saves to actual live owners, reuse the idle-change
+controller and host admission/replacement lane, then connect the hierarchy view. The first
+UI → idle application → advertising milestone remains incomplete. Do not start more detached foundations
 merely because they can proceed independently. The previous implementing/reviewing agents are
 stopped; the resumed coordinator owns new assignments. Preserve the worktree and Git boundaries.
 

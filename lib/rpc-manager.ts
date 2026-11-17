@@ -1,6 +1,7 @@
 import type { Agent, AgentMessage as SdkAgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { withStreamingCacheWarmingDefault } from "./sdk-settings";
+import { prepareResourceRuntime } from "./agent-resources/runtime";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { BTW_CONTEXT_TYPE, BTW_SYSTEM_GUIDANCE, btwRelation, btwSnapshotMessage, readBtwMetadata, type BtwSnapshot } from "./btw";
@@ -3227,6 +3228,11 @@ async function startRpcSessionInternal(
     // Some extensions access the SDK's global theme even outside the terminal UI.
     if (!chatOnly) initTheme();
     const agentDir = getAgentDir();
+    // Header/manager identity is already verified above. Expose that exact saved
+    // path to canonical own-Session admission without a catalogue scan.
+    if (sessionFile) cacheSessionPath(sessionManager.getSessionId(), sessionFile);
+    const resourceRuntime = await prepareResourceRuntime({ cwd: sessionCwd,
+      ...(sessionFile ? { sessionId: sessionManager.getSessionId() } : {}) });
     const nativeSelection = effectiveNativeResourceSelection(requestedNativeResources, {
       chatOnly, projectTrusted: getProjectTrustStatus(sessionCwd, agentDir).trusted,
     });
@@ -3280,7 +3286,7 @@ async function startRpcSessionInternal(
       ...(accountRuntime ? { modelRuntime: accountRuntime } : {}),
       agentDir,
       settingsManager,
-      resourceLoaderOptions: subagentResources
+      resourceLoaderOptions: resourceRuntime.compose(subagentResources
         ? {
             noExtensions: !subagentResources.loadExtensions,
             noSkills: !subagentResources.loadSkills,
@@ -3327,7 +3333,7 @@ async function startRpcSessionInternal(
               ...promptObserver,
             ],
             extensionsOverride: (base) => preferUserBashExtension(preferBrabblerAskUserExtension(preferBrabblerSubagentExtension(base))),
-          },
+          }),
       ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
     });
     const speedAgent: { current?: Agent } = {};

@@ -12,7 +12,7 @@ import { ensureScopedNativeImport, NativeImportError } from "./native-import";
 import { readScopedPreferences, saveScopedPreference, PreferencesError, type PreferenceSnapshot, type PreferenceTarget } from "./preferences";
 import { selectionKey, type SelectionScope, type ScopedChoices, type SelectionIdentity } from "./selection";
 
-/** Desired-state HTTP owner. No runtime/session/loader or instruction-read authority.
+/** Desired-state facade and trusted internal selection snapshot. No session/loader or instruction-read authority.
  * Pilot: POSIX, installed local sources, global producer v1, canonical Project roots.
  * External physical sources must already pass the shared file-access boundary;
  * neither native declarations nor metadata register arbitrary browsing roots. */
@@ -205,7 +205,7 @@ async function prepare(input: ContextInput) {
     const choice = snapshot.choices.find(row => selectionKey(row.identity) === selectionKey(identity));
     return choice ? [[scope, choice.value]] : [];
   }));
-  const inventory = async () => {
+  const selectionSnapshot = async () => {
     // Read the desired OWN scopes together after all applicable import work (and
     // after a save). No await between these reads: cooperating in-process writers
     // cannot interleave them. This is not a cross-process filesystem transaction.
@@ -215,7 +215,13 @@ async function prepare(input: ContextInput) {
       if (destination) snapshots.set(scope, readScopedPreferences(context.selection, destination));
     }
     context.assertAdmissionCurrent();
+    const revisions = Object.freeze([...snapshots].map(([scope, snapshot]) => Object.freeze({ scope, revision: snapshot.revision })));
     const catalog = await buildResourceCatalog({ ...catalogInput, choices }); await guard();
+    return Object.freeze({ context: context.selection, cwd: context.cwd, catalog,
+      revision: hash([token, revisions]), revisions, assertCurrent: guard });
+  };
+  const inventory = async () => {
+    const { catalog } = await selectionSnapshot();
     return { version: 1, state: "desired", contextToken: token,
       context: { cwd: context.cwd, sessionId: input.sessionId ?? null, scopes: { global: true, project: Boolean(target(context, "project")), session: Boolean(sessionTarget) } },
       scopes: Object.fromEntries((["global", "project", "session"] as const).map(scope => {
@@ -229,7 +235,13 @@ async function prepare(input: ContextInput) {
           selectionKey: identity ? selectionKey(identity) : null, parentKey: parent ? selectionKey(parent) : null, desired: selection ?? null,
           ...(skill ? { skill: { name: skill.name, description: skill.description, disableModelInvocation: skill.disableModelInvocation } } : {}) })) } };
   };
-  return { context, token, guard, inventory, first };
+  return { context, token, guard, inventory, first, selectionSnapshot };
+}
+/** Trusted startup consumer only: the same admitted catalog/import/store as HTTP,
+ * including committed own-scope choices. A fixed construction snapshot, NOT a live
+ * application receipt. Native/context fences do not silently recopy later saves. */
+export async function readCommittedResourceSelection(input: ContextInput) {
+  return (await prepare(input)).selectionSnapshot();
 }
 export async function getResourceInventory(input: ContextInput = {}) { return (await prepare(input)).inventory(); }
 export async function patchResourceChoice(value: unknown) {

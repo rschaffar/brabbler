@@ -54,6 +54,7 @@ import { randomUUID } from "node:crypto";
 import { getSessionPause, removeSessionPause } from "./session-pause";
 import { acquireModelRuntimeUse, withModelRuntimeAccess } from "./session-model-refresh";
 import { withStreamingCacheWarmingDefault } from "./sdk-settings";
+import { prepareResourceRuntime } from "./agent-resources/runtime";
 
 interface HostSession {
   readonly inner: AgentSessionLike;
@@ -355,6 +356,9 @@ export function createSubagentController(
       }
       const turnLimit = maxTurns && maxTurns > 0 ? Math.floor(maxTurns) : undefined;
       const agentDir = getAgentDir();
+      // Fix the committed Global/Project resource snapshot before factories, not
+      // when a constructed child later leaves the existing execution queue.
+      const resourceRuntime = await prepareResourceRuntime({ cwd: childCwd });
       const settingsManager = withStreamingCacheWarmingDefault(SettingsManager.create(childCwd, agentDir));
       const inheritedParentContext = inheritContext
         ? `The following is the active conversation context from the parent session. Use it only as background for the delegated task:\n${parentContextText(parent)}`
@@ -375,7 +379,7 @@ export function createSubagentController(
         agentDir,
         modelRuntime: parentModelRuntime,
         settingsManager,
-        resourceLoaderOptions: {
+        resourceLoaderOptions: resourceRuntime.compose({
           noExtensions: !profile.loadExtensions,
           noSkills: !profile.loadSkills,
           noPromptTemplates: true,
@@ -396,7 +400,7 @@ export function createSubagentController(
             ...(profile.loadExtensions ? [createAskUserExtension(), createNotebookAuthoringExtension(), acceptancePlugin.extension(childCwd)] : []),
           ],
           extensionsOverride: (base) => preferUserBashExtension(profile.loadExtensions ? preferBrabblerAskUserExtension(base) : base),
-        },
+        }),
         ...((profile.loadExtensions || profile.loadSkills)
           ? { resourceLoaderReloadOptions: projectTrustReloadOptions(childCwd, agentDir) }
           : {}),
