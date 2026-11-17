@@ -11,7 +11,9 @@ below. Reinspection confirmed the existing branch, HEAD and intentional dirty ha
 Keep the existing shared worktree, scoped implementers and independent reviewers. The visual
 direction, compact enabled-status row and incomplete intermediate checkpoints remain
 accepted. Live migration, deployment, publication and cleanup are not authorized.
-Foundations are implemented, but no end-to-end UI-to-runtime flow is connected.
+Foundations and real startup/reopen filtering are connected; the hierarchy UI remains missing.
+The owner has now replaced automatic idle application with explicit **Apply saved changes**;
+[ADR 0045](../adr/0045-explicit-resource-application.md) owns this simplification.
 
 ## Current handoff
 
@@ -31,11 +33,14 @@ Project overrides require registered checkout roots; disabled-skill inspection r
 | W05a isolated preferences store | Static + 26/26; independently reviewed; no live wiring. | w05a-verification/, w05a-review/ |
 | W06a isolated import receipt transaction | Static + 38/38, 40.461s; reviewed; admitted choices + completion/provenance include empty imports. | w06a/, w06a-review/, w06a-qualification/ |
 | W05b context/store/import receipt guards | Static + 83/83, 44.056s; final guard rereview **CLOSED both findings**. No endpoint/live writer connected. | w05b-guard-repair/, w05b-context-review/ |
-| W06b actual native-import library | **UNCONNECTED**; both alias/hierarchy findings closed by conservative pre-commit refusal. New actual-SDK/resolver/no-receipt regressions: static + 48/48, 44.232s; independent correction review accepted. Prior 106/106 remains bounded evidence, not end-to-end proof. | w06b/, w06b-review/; resumed import-fix/, import-review/ |
+| W06b actual native-import library | Connected through the scoped facade below; both alias/hierarchy findings closed by conservative pre-commit refusal. New actual-SDK/resolver/no-receipt regressions: static + 48/48, 44.232s; independent correction review accepted. Prior 106/106 remains bounded evidence, not end-to-end proof. | w06b/, w06b-review/; resumed import-fix/, import-review/ |
 | W06c old availability writers | Package enable/disable and skills PATCH return 410; static + 4/4, 44.407s. Original-handler defect witness retained; independent review accepted, no material findings. | w06c/report.md; resumed legacy-review/ |
-| W09a reusable state controller | Static + 13/13, 42.518s; independently reviewed. Not a host idle detector. | w09a/report.md, w09a-review/report.md |
-| Scoped HTTP / first-use connection | Actual GET/PATCH → canonical context/catalog/import/store connected; static + 8/8, 52.951s. Independent review accepted within supported pilot. Desired state only; live notification/application disconnected. | resumed scoped-api/, scoped-api-review/ |
+| Superseded W09a state controller | Historical static + 13/13, 42.518s; reviewed. Removed with automatic idle application under ADR 0045; no replacement scheduler. | w09a/report.md, w09a-review/report.md; resumed explicit-apply/ |
+| Scoped HTTP / first-use connection | Actual GET/PATCH → canonical context/catalog/import/store connected; static + 8/8, 52.951s. Independent review accepted within supported pilot. Desired inventory; explicit selected application is connected below, no automatic notification. | resumed scoped-api/, scoped-api-review/ |
 | Saved selection → real startup/reopen | Actual host/SDK requests and explicit skill expansion honor saved choices; native-Off resources restored in memory. Initial static + 48/48; two loader review findings then closed with real regressions, static + 10/10, 45.178s. Required factories/native prompt handling retained; child evidence remains bounded. | resumed runtime-loader/, runtime-loader-review/, runtime-loader-fix/, runtime-loader-fix-review/ |
+| Explicit Apply backend | Automatic machinery removed; Save leaves live runtimes/input unchanged. Busy Apply refuses now; explicit admitted Apply reconstructs only selected runtime and establishes actual receipt. 122/122 affected-owner checks, final 5/5 actual-host cases + static; independently reviewed, no material findings. | resumed explicit-apply/, explicit-apply-review/ |
+| Hierarchy Save/Apply UI | Real GET/PATCH and actual-state UI connected; static + 92/92 across mounted/navigation/reader/i18n owners. One mobile Back focus finding closed with source-qualified 22/22 + static and rereview. Installed browser bridge still pending. | resumed hierarchy-ui/, hierarchy-ui-review/, hierarchy-ui-fix/ |
+| Canonical Project trust | Approved standard SDK read locks; real trusted/denied/revoked Project admission, import and save. 23/23 + static; independent review accepted. Native data unchanged. | resumed project-trust-connection/, project-trust-fix/, project-trust-review/ |
 
 Latest verified inputs: W05b `4f4ffb0c6beb8547859d175b819ff56758830605e2cfa7301aaa03798d420aca`;
 W06b `56c10c06db2c4b5f6e8c330ccd6da308cb7ea9a2fa88eadbea302b15b1c3d568`.
@@ -45,15 +50,30 @@ new regressions first exposed three intended failures (45/48), then passed 48/48
 Resumed loader-fix input: `241755feb544d33e0ec41592688545ca934bbbdd7bb38cb3d08a7748929126f3`.
 Resumed evidence labels refer to the new coordinator's private task root, not the prior evidence tree.
 
+**Timing simplification — active owner decision:** save immediately; existing runtimes keep
+using their current selection until the user explicitly clicks Apply saved changes. Apply
+reconstructs the selected runtime now or refuses immediately if busy/unsafe; no waiting,
+automatic retry, save-triggered input fence or automatic sibling restart. Ordinary input and
+public deferred-message behavior stay available after saves. New runtimes use saved choices.
+Remove the unfinished automatic application machinery rather than polishing it. Preserve
+accepted work and authoritative disposal barriers. This supersedes earlier idle-application
+requirements throughout this plan; original bounded evidence stays historical, not acceptance
+of the new behavior. See ADR 0045.
+
 **Limits/blockers:** these are bounded unit/reader/catalog/store/controller results, not full-feature or full-acceptance evidence.
 Actual-SDK ordinary-record suppression is accepted; retained sends/bus/providers and initialization remain possible.
 This supersedes pre-import exclusion as a requirement; no SDK patch/monkeypatch or non-circumventable guard is approved.
-W09b host admission/settlement, W10 live idle application and replacement UI remain pending.
+Explicit safe application and hierarchy UI are connected within focused source/mounted/host scopes;
+installed browser composition, remaining feature obligations and full acceptance remain pending. The automatic idle candidate
+was implemented/focused-tested but is superseded before integration; do not continue its
+notification/waiting machinery. Its findings/evidence remain under resumed live-idle/,
+live-idle-review/ and live-idle-fix/ (171/171 earlier scope; 79/79 correction scope, no final review).
 W07/W08 now reach real startup/reopen, but full lifecycle coverage and child own-Session
 choice copying remain open; cold-child ceiling checks are not a fresh-child model-request proof.
-Project-local source admission currently refuses before import: the SDK trust-status reader
-creates native lock files. Managed-global Project overrides work; read-only canonical
-Project-local trust admission remains a concrete final-support blocker.
+Project-local source admission currently refuses before import. Investigation corrected the
+original blocker: the canonical SDK reader changes only ordinary trust-lock metadata, not
+trust/settings/content data. The owner explicitly approved those standard read locks;
+the existing trust owner is now connected and reviewed, retaining explicit denial and native data preservation.
 Ordinary persisted reopen is proved within the loader fixture. Native-enabled host replacement,
 detailed recovery/lifecycle boundaries and composed acceptance remain unproven; no power-loss durability claim.
 
@@ -66,13 +86,16 @@ Later normal 83/106 regressions use **new inputs**, not relabeled old restoratio
 **Progress checkpoint:** `08eada71` on existing `design/skills-extensions-mockup` preserves
 the inherited dirty handoff plus reviewed import correction; source before that commit was
 based on `cc3bbf20`. `20e45e03` checkpoints the reviewed scoped HTTP connection.
-The reviewed runtime-loader connection is the next checkpoint, not full acceptance.
+`f0df20b8` checkpoints the reviewed runtime-loader connection, not full acceptance.
+The later uncommitted automatic-application candidate is being simplified under ADR 0045.
 Preserve existing dirty UI/i18n/test-lane/plan changes, expected user handoff and new docs/modules.
 The owner additionally authorized periodic progress commits; they are unfinished checkpoints,
 not integration or acceptance. No live import, deployment, remote action or cleanup is authorized.
-**Active next connection:** publish committed saves to actual live owners, reuse the idle-change
-controller and host admission/replacement lane, then connect the hierarchy view. The first
-UI → idle application → advertising milestone remains incomplete. Do not start more detached foundations
+**Active next connection:** actual installed browser UI → save → explicit Apply → advertising
+and explicit skill exclusion. Backend, hierarchy UI and canonical Project trust reviews are closed
+within their recorded scopes. Then close own-Session copying, full disabled-skill inspection,
+package actions/navigation/documentation and composed acceptance; these are not silently dropped.
+The actual browser milestone remains incomplete until its installed fixture passes. Do not start more detached foundations
 merely because they can proceed independently. The previous implementing/reviewing agents are
 stopped; the resumed coordinator owns new assignments. Preserve the worktree and Git boundaries.
 
@@ -83,12 +106,12 @@ orchestration delayed integration. These rules change execution priority, not th
 agreed feature behavior or final acceptance requirements.
 
 1. **First integrated milestone:** change one supported managed package/resource choice
-   in the new view, save it at a valid scope, apply it when the actual runtime is idle,
+   in the new view, save it at a valid scope, explicitly Apply it at an admitted safe boundary,
    and verify the resulting advertised resources. Include explicit skill invocation
    exclusion where the selected resource is a skill. Unit counts alone do not satisfy
    this milestone; it is an unfinished-feature checkpoint, not a release or merge gate.
 2. **Order the next connections:** finish the bounded import corrections/review, connect
-   first-use import and scoped APIs, connect actual runtime filtering/idle application,
+   first-use import and scoped APIs, connect actual runtime filtering/explicit safe application,
    and connect the hierarchy view. Then finish remaining scopes/lifecycle cases, recovery,
    package actions and documentation before composed review and full acceptance.
 3. **Every task must close a named connection or a concrete correctness/safety blocker.**
@@ -161,11 +184,12 @@ already delivers them:
   non-execution. Initialization and retained SDK capabilities/effects may remain;
   remove ordinary advertised tools/commands/instructions/handlers. No SDK patch solely
   for zero-import or non-bypassable availability. Keep source/trust/profile hard ceilings.
-- Save choices immediately; apply by idle replacement after admitted work and accepted
-  queues settle. Refuse fresh input visibly before hooks while pending; no hidden
-  retries or mid-run/per-model-turn switching. Already-consumed instructions remain.
-  Resource construction may admit a fixed old snapshot before a child is scheduled;
-  no scheduler-time recopy/reconstruction is required. See ADR 0044.
+- Save choices immediately without blocking ordinary input. Apply saved changes is an
+  explicit action for the selected conversation: reconstruct now at the existing safe
+  lifecycle boundary, or refuse immediately while busy/unsafe. No automatic idle wait,
+  queued application, automatic retry or sibling restart. Preserve accepted work and
+  history; fence fresh input only during an admitted application. Newly constructed
+  runtimes use saved choices. See ADR 0045.
 - Enabled status: **✓ Included in next-turn selection**, compact and without a
   subtitle/operation-permission warning. Disabled states explain useful reasons.
 - Distinguish skill advertising/full instructions from extension tool descriptions
@@ -281,7 +305,7 @@ The handoff approves neither a concrete interchange schema nor runtime feasibili
 | Legacy/authored state | Accepted: separate state per `agentDir`, not provider account; one-time proven import, unambiguous whole-package Off becomes package gate Off including new members. Ambiguity errors. Exact evidence, authored metadata handling and writer cutover pending. |
 | Defaults | Accepted: eligible objects inherit an Enabled baseline; parent gates, trust, authored invocation rules and profile ceilings remain independent. |
 | Built-ins/package operations | Accepted: existing scoped Git Workflow/Session Launch/Acceptance controls under Built-in features; new gates affect only skills/extensions, preserving native prompt/theme handling. Nix owns managed contents/registration; runtime must not mutate them. Unmanaged source mutation timing pending. |
-| Admission/dependencies | Accepted simplified idle application: save immediately, drain admitted work, refuse fresh input visibly while pending. New IDs copy current own Session choices once at creation, not permissions/effective inherited values. Child construction may admit a fixed pre-import snapshot; no scheduler-time recopy. Executable settlement/host-loader proof remains open. |
+| Admission/dependencies | ADR 0045: save immediately, keep existing runtimes unchanged, explicitly Apply now or refuse busy. No save-triggered input fence/automatic waiting. New IDs copy current own Session choices once, not permissions/effective inherited values; admitted child snapshots stay fixed. Safe application proof remains open. |
 
 Record durable accepted decisions in an ADR. UI source removal can precede migration
 implementation, but **activating a new durable writer/source of truth cannot** precede
@@ -304,8 +328,8 @@ completion. Source contracts may be used before their implementation is wired.
 | W06 | Reconciliation and legacy migration | W04, W05, approved state semantics |
 | W07 | Skill selection in real sessions | W01, W03, W05; migration must pass before live use |
 | W08 | Extension selection on create/reopen | W01, W03, W05; migration must pass before live use |
-| W09 | Serialized admission/settlement boundary | W01; coordinates existing runtime ingress |
-| W10 | Next-turn application and recovery | W07, W08, W09 |
+| W09 | Immediate explicit-Apply admission using existing lifecycle ownership | W01; no automatic waiting/scheduler |
+| W10 | Explicit application, actual status and bounded failure handling | W07, W08, W09 |
 | W11 | New hierarchy/detail UI | W00, W03; can be unwired and use controlled test props |
 | W12 | Scope editing/recovery UI wiring | W05, W11; W06/W10 outcomes wired as they arrive |
 | W13 | Restore package operations and finish Settings wiring | W02, W04, W05, W06, W10, W12 for final completion |
@@ -425,31 +449,28 @@ be absent or incomplete; no need for a temporary view or fake selection endpoint
 while enabled/required ones work. Do not assert zero imports/factories or complete
 execution isolation. Live-wrapper switching remains W09/W10.
 
-### W09 — Admission/settlement boundary
+### W09 — Simplify to immediate explicit-Apply admission
 
-- [ ] Extend existing host admission/replacement ownership across HTTP, direct SDK
-  and extension ingress before hooks/skill expansion; visibly refuse fresh input
-  while desired selection waits for idle replacement. No parallel mutex/polling system.
-- [ ] Preserve accepted queued text/images and active effects. Count fixed pre-import
-  child resource construction, held preflight and queued children as ownership even
-  when not streaming. Existing admitted children may start under their old snapshot;
-  no scheduler-time factory deferral, recopy or mid-run model-turn switching.
+- [ ] Remove automatic idle nudges, waiting/coalescing, save-triggered input fencing
+  and automatic cross-session replacement from the unfinished candidate.
+- [ ] Admit explicit Apply through existing host lifecycle ownership only if safe now;
+  otherwise return an actionable busy/error response immediately without scheduling.
+  Preserve accepted input, deferred messages, effects, cards, children and cleanup.
 
-**Verify:** held work/async input, steering/follow-up, child construction/scheduling
-and Stop/Pause cannot bypass or deadlock ownership. Save does not wait for settlement;
-application does. No streaming/event flag alone proves idle. W10 supplies actual
-replacement; an unwired guard is not a working switch.
+**Verify:** saves do not block input or replace live runtimes; held work makes Apply
+refuse without cancellation/retry. Ordinary public deferred messages remain supported;
+uncertain consumption makes Apply refuse, not lose input. No parallel lock/polling system.
 
-### W10 — Apply selection at the safe next-turn boundary
+### W10 — Apply saved changes explicitly
 
-- [ ] Connect W07/W08 selection to W09, observing global/project/session revisions
-  without a connected browser. Coordinate model/native replacement rather than race it.
-- [ ] Track desired versus actually applied state, join retirement/replacement and
-  handle failure/reopen/repeated changes without replaying started effects.
+- [ ] Reconstruct only the explicitly selected runtime with its admitted committed
+  resource selection, preserving same-ID history/native intent and disposal barriers.
+- [ ] Return saved-versus-actual status and honest applying/error results; normal
+  reconstruction must establish its own actual receipt, even at the same revision.
 
-**Verify:** held old work settles unchanged; next eligible work uses the new coherent
-selection. Model-request and handler evidence proves actual exclusion. Failed application
-is an honest error/admission block, never a fake applied version or silent rollback.
+**Verify:** actual next model request and explicit skill handling honor the applied
+selection. Other live runtimes remain unchanged; busy/error application never becomes
+fake success, automatic retry, message replay or silent rollback.
 
 ### W11 — Build the new hierarchy/detail view early if useful
 

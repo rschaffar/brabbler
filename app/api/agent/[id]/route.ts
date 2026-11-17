@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { resolveSessionPath } from "@/lib/session-reader";
-import { startRpcSession, getRpcSession, setRpcSessionTools, setRpcSessionNativeResources, waitForSessionAccountSwitch } from "@/lib/rpc-manager";
+import { startRpcSession, getRpcSession, setRpcSessionTools, setRpcSessionNativeResources, waitForSessionAccountSwitch, assertRpcResourceFreshAdmission, getRpcSessionResourceStatus } from "@/lib/rpc-manager";
 import { readNativeResourceSelection } from "@/lib/session-native-resources";
 
 // POST /api/agent/[id] - Send a command to an existing session
@@ -24,8 +24,14 @@ export async function POST(
     }
     const toolNames = requestedToolNames as string[] | undefined;
 
+    // Only an admitted explicit Apply fences fresh turns. Saves never do.
+    const freshInput = ["prompt", "steer", "follow_up", "reload"].includes(body.type);
+    if (freshInput) assertRpcResourceFreshAdmission(id);
     // A prompt arriving during an account change must not reach the old runtime.
-    await waitForSessionAccountSwitch(id);
+    const resourceStatus = getRpcSessionResourceStatus(id);
+    const control = ["get_state", "get_tools", "get_commands", "abort", "abort_compaction", "abort_bash", "extension_ui_response", "extension_ui_input"].includes(body.type);
+    if (!control || !resourceStatus?.applying) await waitForSessionAccountSwitch(id);
+    if (freshInput) assertRpcResourceFreshAdmission(id);
     // Fast path: already-running session
     const existing = getRpcSession(id);
     if (body.type === "set_native_resources" || body.type === "reload" && existing?.hasNativeSessionTools()) {

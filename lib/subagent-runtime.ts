@@ -54,7 +54,7 @@ import { randomUUID } from "node:crypto";
 import { getSessionPause, removeSessionPause } from "./session-pause";
 import { acquireModelRuntimeUse, withModelRuntimeAccess } from "./session-model-refresh";
 import { withStreamingCacheWarmingDefault } from "./sdk-settings";
-import { prepareResourceRuntime } from "./agent-resources/runtime";
+import { prepareResourceRuntime, type ResourceRuntimeSelection } from "./agent-resources/runtime";
 
 interface HostSession {
   readonly inner: AgentSessionLike;
@@ -76,7 +76,7 @@ export interface SubagentRuntimeDependencies {
   getSession(sessionId: string): HostSession | undefined;
   registerSession(
     inner: AgentSessionLike,
-    options?: { exactSystemPrompt?: string; chatOnly?: boolean },
+    options?: { exactSystemPrompt?: string; chatOnly?: boolean; resourceSelection?: ResourceRuntimeSelection },
   ): void;
   reopenSession(sessionId: string, sessionFile: string): Promise<HostSession>;
   resolveSessionPath(sessionId: string): Promise<string | null>;
@@ -97,6 +97,7 @@ type StoredSubagentExecution = {
   abortRequested: boolean;
   turnLimitReached?: boolean;
   cancelQueued?: () => boolean;
+  settlementError?: string;
 };
 
 declare global {
@@ -129,6 +130,15 @@ function getSubagentRuns(): Map<string, StoredSubagentExecution> {
 export function hasUnsettledSubagentExecution(sessionId: string): boolean {
   const stored = getSubagentRuns().get(sessionId);
   return Boolean(stored && stored.run.status !== "queued");
+}
+
+/** Explicit resource Apply refuses admitted queued children and queue-slot release,
+ * including descendants owned by a parent whose foreground turn already ended. */
+export function hasOwnedSubagentExecution(sessionId: string): boolean {
+  return [...getSubagentRuns().values()].some(stored => stored.run.sessionId === sessionId || stored.run.parentSessionId === sessionId);
+}
+export function subagentResourceSettlementError(sessionId: string): string | undefined {
+  return [...getSubagentRuns().values()].find(stored => (stored.run.sessionId === sessionId || stored.run.parentSessionId === sessionId) && stored.settlementError)?.settlementError;
 }
 
 /** A stale queue snapshot must never turn cooperative Pause into running Stop. */
@@ -241,12 +251,11 @@ export function createSubagentController(
         stored.run = recordSubagentResult(manager, result);
         // Never release live ownership before the terminal record is durable.
         if (paused) wrapper.finishPause?.(true);
-        getSubagentRuns().delete(initialRun.sessionId);
-        try { wrapper.onSubagentSettled?.(); }
-        catch (error) { console.error("[brabbler] child settlement listener failed:", error); }
+        if (cleanupError) stored.settlementError = cleanupError;
       } catch (error) {
         // Retain the failed live record for inspection; do not claim durable success.
         stored.run = { ...result, status: "failed", error: `${result.error ? `${result.error}. ` : ""}Could not persist subagent result: ${error instanceof Error ? error.message : String(error)}` };
+        stored.settlementError = stored.run.error;
         if (wrapper.isPauseRequested?.()) wrapper.pauseFailed?.(error);
       }
       update();
@@ -267,10 +276,10 @@ export function createSubagentController(
         stored.run = { ...initialRun, status: "running" };
         update();
         limiter = installSubagentTurnLimit(wrapper.inner, initialRun.turnLimit, () => { stored.turnLimitReached = true; });
+        await wrapper.waitUntilReady();
         const releaseAdmission = wrapper.beginCheckoutPromptAdmission();
-        try {
-          await wrapper.inner.prompt(task, { source: "rpc", preflightResult: () => releaseAdmission() });
-        } finally { releaseAdmission(); }
+        try { await wrapper.inner.prompt(task, { source: "rpc", preflightResult: () => releaseAdmission() }); }
+        finally { releaseAdmission(); }
         const text = wrapper.inner.getLastAssistantText()?.trim();
         const stop = stored.abortRequested ? undefined : lastAssistantStop(manager);
         const aborted = stored.abortRequested || stop?.aborted === true;
@@ -304,15 +313,18 @@ export function createSubagentController(
       observedQueueFailure = { error };
       return finish({ ...initialRun, status: "failed", completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) });
     });
-    // Keep result publication timing unchanged. Observers can separately join the
-    // queue's actual slot-release and the complete failure/persistence handler.
-    return { run: stored.run, completion, get settled() {
-      return Promise.allSettled([queued.settled, recovered]).then(results => {
-        const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
-        if (observedQueueFailure && !failures.includes(observedQueueFailure.error)) failures.push(observedQueueFailure.error);
-        if (failures.length) throw new AggregateError(failures, "Subagent queue/recovery settlement failed");
-      });
-    } };
+    // Result publication precedes slot release. Keep live ownership through BOTH.
+    const fullySettled = Promise.allSettled([queued.settled, recovered]).then(results => {
+      const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
+      if (observedQueueFailure && !failures.includes(observedQueueFailure.error)) failures.push(observedQueueFailure.error);
+      if (failures.length) stored.settlementError = String(failures[0]);
+      if (!stored.settlementError) getSubagentRuns().delete(initialRun.sessionId);
+      wrapper.onSubagentSettled?.();
+      dependencies.getSession(initialRun.parentSessionId)?.onSubagentSettled?.();
+      if (failures.length) throw new AggregateError(failures, "Subagent queue/recovery settlement failed");
+    });
+    void fullySettled.catch(error => console.error("[brabbler] subagent settlement failed:", error));
+    return { run: stored.run, completion, settled: fullySettled };
   }
 
   async function start(request: StartSubagentRequest): Promise<SubagentExecution> {
@@ -323,6 +335,7 @@ export function createSubagentController(
     if (!parent?.isAlive()) throw new Error("Parent session is no longer available");
     if (parent.isPauseRequested?.()) throw new Error("Parent session is paused or pausing");
     if (!parent.sessionFile) throw new Error("Parent session must be persisted before starting a subagent");
+    const releaseConstruction = parent.beginCheckoutPromptAdmission();
 
     let isolatedWorktree: { path: string; branch: string } | undefined;
     let unregisteredInner: AgentSessionLike | undefined;
@@ -358,6 +371,9 @@ export function createSubagentController(
       const agentDir = getAgentDir();
       // Fix the committed Global/Project resource snapshot before factories, not
       // when a constructed child later leaves the existing execution queue.
+      const sessionManager = isolatedWorktree
+        ? SessionManager.create(childCwd, undefined, { parentSession: parent.sessionFile })
+        : SessionManager.create(parent.cwd, undefined, { parentSession: parent.sessionFile });
       const resourceRuntime = await prepareResourceRuntime({ cwd: childCwd });
       const settingsManager = withStreamingCacheWarmingDefault(SettingsManager.create(childCwd, agentDir));
       const inheritedParentContext = inheritContext
@@ -426,9 +442,6 @@ export function createSubagentController(
       const thinking = request.thinking ?? callModel?.thinkingLevel ?? profile.thinking
         ?? profileModel?.thinkingLevel ?? parent.inner.agent.state?.thinkingLevel;
       if (thinking && !SUBAGENT_THINKING_LEVELS.has(thinking as ThinkingLevel)) throw new Error(`Invalid subagent thinking level: ${thinking}`);
-      const sessionManager = isolatedWorktree
-        ? SessionManager.create(childCwd, undefined, { parentSession: parent.sessionFile })
-        : SessionManager.create(parent.cwd, undefined, { parentSession: parent.sessionFile });
       const createdAt = new Date().toISOString();
       const metadata: SubagentMetadata = {
         version: 1,
@@ -476,6 +489,7 @@ export function createSubagentController(
           ? { exactSystemPrompt: promptPlan.exactSystemPrompt }
           : {}),
         chatOnly,
+        resourceSelection: resourceRuntime.selection,
       });
       unregisteredInner = undefined;
       const wrapper = dependencies.getSession(inner.sessionId);
@@ -505,7 +519,7 @@ export function createSubagentController(
         try { await removeWorktree(parent.cwd, isolatedWorktree.path); } catch { /* preserve setup failure and avoid force deletion */ }
       }
       throw error;
-    } finally { releaseRuntime(); }
+    } finally { releaseRuntime(); releaseConstruction(); }
   }
 
   async function resume(request: ResumeSubagentRequest): Promise<SubagentExecution> {

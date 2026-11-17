@@ -2,15 +2,17 @@ import { createHash } from "node:crypto";
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync, statSync, type BigIntStats } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, normalize } from "node:path";
-import { SettingsManager, hasTrustRequiringProjectResources } from "@earendil-works/pi-coding-agent";
+import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getKnownAllowedFileRoots } from "../file-access";
 import { physicalDirectoryPath, isPathWithinRoots } from "../path-security";
+import { getProjectTrustStatus } from "../project-trust";
 import { buildResourceCatalog, type CatalogInput, type CatalogResult } from "./catalog";
 import { readCatalogMetadata, CatalogMetadataError } from "./catalog-metadata";
 import { resolveResourceContext, ResourceContextError } from "./context";
 import { ensureScopedNativeImport, NativeImportError } from "./native-import";
 import { readScopedPreferences, saveScopedPreference, PreferencesError, type PreferenceSnapshot, type PreferenceTarget } from "./preferences";
 import { selectionKey, type SelectionScope, type ScopedChoices, type SelectionIdentity } from "./selection";
+import { resourceApplication, resourceStatus, ResourceApplyError } from "./live";
 
 /** Desired-state facade and trusted internal selection snapshot. No session/loader or instruction-read authority.
  * Pilot: POSIX, installed local sources, global producer v1, canonical Project roots.
@@ -121,13 +123,11 @@ const membership = (catalog: CatalogResult) => hash([catalog.ok, catalog.rows.ma
 async function prepare(input: ContextInput) {
   if (process.platform === "win32") refuse(422, "platform", "The managed-local resource pilot requires POSIX installed paths");
   const context = await resolveResourceContext(input), agentDir = context.selection.agentDir;
-  // The canonical SDK trust getter creates native trust.json.lock even on GET.
-  // Until it has a read-only admission owner, refuse trust-requiring Project
-  // sources rather than writing Pi files or copying its trust parser. The global
-  // managed pilot still supports real Project overrides and empty native import.
-  const projectAdmitted = () => Boolean(context.selection.projectBinding && context.cwd && !hasTrustRequiringProjectResources(context.cwd));
+  // Canonical trust reads use the approved SDK read-lock metadata only; they
+  // never grant trust or rewrite native decisions/settings/resource contents.
+  const projectAdmitted = () => Boolean(context.selection.projectBinding && context.cwd && getProjectTrustStatus(context.cwd, agentDir).trusted);
   const projectTrusted = projectAdmitted();
-  if (context.selection.projectBinding && !projectTrusted) refuse(422, "project-trust-readonly", "Project-local native resources require canonical trust admission, whose current SDK reader writes native lock files. Use the managed-global pilot without project-local native resources; read-only Project trust admission must be connected before this arrangement is supported");
+  if (context.selection.projectBinding && !projectTrusted) refuse(403, "project-trust", "Project resources are not trusted; review the existing Project trust controls before importing or saving resource choices");
   const roots = () => new Set([agentDir, join(homedir(), ".agents"), ...getKnownAllowedFileRoots()]);
   const allow = (path: string) => {
     const admitted = roots();
@@ -221,8 +221,8 @@ async function prepare(input: ContextInput) {
       revision: hash([token, revisions]), revisions, assertCurrent: guard });
   };
   const inventory = async () => {
-    const { catalog } = await selectionSnapshot();
-    return { version: 1, state: "desired", contextToken: token,
+    const { catalog, revision } = await selectionSnapshot();
+    return { version: 1, state: "desired", runtime: typeof input.sessionId === "string" ? resourceStatus(agentDir, input.sessionId, revision) : null, contextToken: token,
       context: { cwd: context.cwd, sessionId: input.sessionId ?? null, scopes: { global: true, project: Boolean(target(context, "project")), session: Boolean(sessionTarget) } },
       scopes: Object.fromEntries((["global", "project", "session"] as const).map(scope => {
         const snapshot = snapshots.get(scope);
@@ -245,7 +245,17 @@ export async function readCommittedResourceSelection(input: ContextInput) {
 }
 export async function getResourceInventory(input: ContextInput = {}) { return (await prepare(input)).inventory(); }
 export async function patchResourceChoice(value: unknown) {
-  const body = object(value, ["cwd", "sessionId", "scope", "revision", "contextToken", "selectionKey", "choice"]);
+  const body = object(value, ["cwd", "sessionId", "scope", "revision", "contextToken", "selectionKey", "choice", "action"]);
+  if (body.action !== undefined) {
+    if (body.action !== "apply" || typeof body.sessionId !== "string" || Object.keys(body).some(key => !["cwd", "sessionId", "action"].includes(key))) refuse(400, "request", "Apply requires only cwd, own sessionId and action:apply");
+    const input = { cwd: body.cwd, sessionId: body.sessionId };
+    const context = await resolveResourceContext(input);
+    context.assertAdmissionCurrent();
+    const actual = resourceApplication(context.selection.agentDir, body.sessionId);
+    if (!actual?.available?.() || !actual.apply) refuse(409, "runtime", "No live runtime to Apply. This conversation uses saved choices when opened; failed disposal still prevents unsafe reopen");
+    await actual.apply();
+    return getResourceInventory(input);
+  }
   if (typeof body.scope !== "string" || !["global", "project", "session"].includes(body.scope)
     || typeof body.choice !== "string" || !["enabled", "disabled", "inherit"].includes(body.choice)
     || typeof body.selectionKey !== "string" || body.selectionKey.length > 49_152
@@ -263,7 +273,9 @@ export async function patchResourceChoice(value: unknown) {
   return prepared.inventory();
 }
 export function resourceApiFailure(error: unknown): { status: number; code: string; error: string } {
+  if (error instanceof ResourceApplyError) return { status: error.status, code: "resource-apply", error: error.message };
   if (error instanceof ResourceApiError) return { status: error.status, code: error.code, error: error.message };
+  if (error instanceof ResourceApplyError) return { status: error.status, code: "resource-apply", error: error.message };
   if (error instanceof ResourceContextError) return { status: error.code === "invalid" ? 400 : error.code === "generation" ? 409 : error.code === "unavailable" ? 503 : 403,
     code: `context-${error.code}`, error: `Resource context ${error.code}; select an admitted existing folder and its own saved session, then refresh` };
   if (error instanceof PreferencesError) return { status: ["generation", "conflict", "locked"].includes(error.code) ? 409 : error.code === "scope" ? 400 : 503,

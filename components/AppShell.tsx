@@ -609,7 +609,7 @@ export function AppShell() {
       <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
         {([
           ["models", translate("common.models")],
-          ["skills", translate("common.skills")],
+          ["skills", translate("resources.title")],
         ] as const).map(([section, label]) => {
           const disabled = historyOnly || (section !== "models" && !projectTrustCwd);
           return (

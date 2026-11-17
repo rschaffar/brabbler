@@ -1,7 +1,9 @@
 import type { Agent, AgentMessage as SdkAgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { withStreamingCacheWarmingDefault } from "./sdk-settings";
-import { prepareResourceRuntime } from "./agent-resources/runtime";
+import { prepareResourceRuntime, type ResourceRuntimeSelection } from "./agent-resources/runtime";
+import { readCommittedResourceSelection } from "./agent-resources/api";
+import { createResourceApplication, resourceApplication, resourceStatus, ResourceApplyError, type ResourceApplication } from "./agent-resources/live";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { BTW_CONTEXT_TYPE, BTW_SYSTEM_GUIDANCE, btwRelation, btwSnapshotMessage, readBtwMetadata, type BtwSnapshot } from "./btw";
@@ -13,7 +15,7 @@ import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { getProjectAccounts, validateAccountSelection, type AccountSelection } from "./provider-accounts";
 import { createAccountModelRuntime } from "./account-model-runtime";
-import { abortModelRuntimeRefresh, acquireModelRuntimeUse, applySessionModelDefinition, assertModelRuntimeSessionReady, modelRuntimeRefreshState, pendingModelRuntimeRefresh, registerModelRuntimeSession, withModelRuntimeAccess } from "./session-model-refresh";
+import { abortModelRuntimeRefresh, acquireModelRuntimeUse, applySessionModelDefinition, assertModelRuntimeSessionReady, modelRuntimeRefreshState, modelRuntimeSessionHasEffects, pendingModelRuntimeRefresh, registerModelRuntimeSession, withModelRuntimeAccess } from "./session-model-refresh";
 import { appendSessionAccounts, readSessionAccounts } from "./session-accounts";
 import { isModelSpeed, supportsModelSpeed, type ModelSpeed } from "./model-speed";
 import { appendSessionModelSpeed, readSessionModelSpeed } from "./session-model-speed";
@@ -64,7 +66,7 @@ import {
   SUBAGENT_CONTROL_TOOL_NAMES,
   SUBAGENT_META_TYPE,
 } from "./subagents";
-import { createSubagentController, hasUnsettledSubagentExecution } from "./subagent-runtime";
+import { createSubagentController, hasUnsettledSubagentExecution, hasOwnedSubagentExecution, subagentResourceSettlementError } from "./subagent-runtime";
 import { isBuiltInSubagentsEnabled } from "./subagent-settings";
 import { getSessionPause, readSessionPauses, requestSessionPause, changeSessionPause, type SessionPause } from "./session-pause";
 import { installSessionPauseBoundary } from "./session-pause-boundary";
@@ -171,6 +173,8 @@ type ExtensionCommandContextActionsLike = {
 };
 
 type AgentSessionWrapperOptions = {
+  resourceApplication?: ResourceApplication;
+  resourceSelection?: ResourceRuntimeSelection;
   initialPromptOwner?: symbol;
   exactSystemPrompt?: () => string;
   chatOnly?: boolean;
@@ -314,6 +318,7 @@ export class AgentSessionWrapper {
   private agentRunNeedsCompletion = false;
   private pendingCheckoutAdmissions = 0;
   private promptAdmissionTail: Promise<void> = Promise.resolve();
+  private promptAdmissions = 0;
   private extensionsBound = false;
   private extensionBindingPromise: Promise<void> | null = null;
   private extensionBindingError: unknown = null;
@@ -352,6 +357,10 @@ export class AgentSessionWrapper {
   // SDK appends update memory before disk. A failed write/barrier poisons this
   // wrapper's publication channel, even if the entry remains visible in memory.
   private operationSaveFailed = false;
+  private readonly resourceApplication?: ResourceApplication;
+  private resourceLifecycleError?: string;
+  private deferredCustomAccepted = 0;
+  private deferredCustomConsumed = 0;
 
   constructor(
     public readonly inner: AgentSessionLike,
@@ -362,6 +371,12 @@ export class AgentSessionWrapper {
       const refusal = new Promise<never>((_resolve, fail) => { reject = fail; });
       void refusal.catch(() => {});
       this.initialPrompt = { owner: options.initialPromptOwner, state: "pending", submitted: false, refusal, reject };
+    }
+    this.resourceApplication = options.resourceApplication ?? (options.resourceSelection
+      ? createResourceApplication(getAgentDir(), inner.sessionId, options.resourceSelection.revision) : undefined);
+    if (this.resourceApplication) {
+      this.resourceApplication.available = () => this._alive && !this.shutdownPromise;
+      this.resourceApplication.apply = () => this.applySavedResources();
     }
     this.pause = getSessionPause(inner.sessionId);
     this.exactSystemPrompt = options.exactSystemPrompt;
@@ -398,7 +413,11 @@ export class AgentSessionWrapper {
       () => this._alive && !this.shutdownPromise, () => this.persistSessionWithoutAssistant(), () => {
         try { this.finishPause(); }
         catch (error) { this.pauseFailed(error); }
+      }, (name, args) => {
+        if (name === "sendCustomMessage" && (args[1] as { deliverAs?: string } | undefined)?.deliverAs === "nextTurn") return; // outer public ingress owns deferred admission
+        if (this.resourceApplication?.applying || ["sendUserMessage", "steer", "followUp", "reload"].includes(name)) this.assertResourceFreshAdmission();
       });
+    if (this.resourceApplication) queueMicrotask(() => { void this.waitUntilReady().catch(() => {}); });
   }
 
   get sessionId(): string {
@@ -431,6 +450,65 @@ export class AgentSessionWrapper {
   }
 
   onSubagentSettled(): void { this.notifyAgentRunCompleteIfIdle(); }
+
+  assertResourceFreshAdmission(): void {
+    if (this.resourceApplication?.applying) throw new ResourceApplyError(409, "Resource Apply is in progress; fresh input refused");
+    if (this.resourceApplication && !this.resourceApplication.ready) throw new ResourceApplyError(409, "Resource construction is not ready; inspect status or reopen after fixing the error");
+  }
+
+  /** One user action, never a queued idle job. Busy refusal precedes any await. */
+  private async applySavedResources(): Promise<void> {
+    const actual = this.resourceApplication!;
+    const locks = globalThis.__piAccountSwitchLocks ??= new Map<string, Promise<void>>();
+    const failure = this.resourceLifecycleError ?? subagentResourceSettlementError(this.sessionId)
+      ?? (isSessionSaveQuarantined(this.inner.sessionManager) ? "Session persistence is quarantined" : undefined);
+    if (failure) throw new ResourceApplyError(409, `${failure}; repair/reopen before Apply`);
+    if (actual.applying || locks.has(this.sessionId) || getLocks().has(this.sessionId) || this.promptAdmissions
+      || getRpcSession(this.sessionId) !== this || !this._alive || this.shutdownPromise || !actual.ready
+      || this.isRunning() || this.activeMutatingCommands || modelRuntimeSessionHasEffects(this.inner)
+      || this.pendingUiResponses.size || this.activeCustomUis.size || this.parkedQueueSave || this.hasQueuedPauseInput()
+      || hasOwnedSubagentExecution(this.sessionId) || this.deferredCustomAccepted !== this.deferredCustomConsumed) {
+      throw new ResourceApplyError(409, "Cannot Apply saved resources while work, cards, child cleanup or deferred nextTurn input is unsettled. Let it finish or send the next ordinary turn, then click Apply again");
+    }
+    if (!this.sessionFile || !this.inner.sessionManager.isPersisted()) throw new ResourceApplyError(409, "Apply requires a saved conversation");
+    let releaseLane!: () => void;
+    const lane = new Promise<void>(resolve => { releaseLane = resolve; });
+    const releaseRuntime = this.inner.modelRuntime ? acquireModelRuntimeUse(this.inner.modelRuntime) : () => {};
+    locks.set(this.sessionId, lane);
+    actual.applying = true; actual.applyingRevision = undefined; actual.error = undefined;
+    const releaseAdmission = await this.acquirePromptAdmission();
+    let retired = false;
+    try {
+      const target = await readCommittedResourceSelection({ cwd: this.cwd, sessionId: this.sessionId });
+      // Inert snapshot preparation may await. Recheck actual effect owners, not
+      // a stale isStreaming observation, before publishing retirement.
+      if (this.isRunning() || this.activeMutatingCommands || modelRuntimeSessionHasEffects(this.inner)
+        || this.pendingUiResponses.size || this.activeCustomUis.size || this.hasQueuedPauseInput()
+        || hasOwnedSubagentExecution(this.sessionId) || this.deferredCustomAccepted !== this.deferredCustomConsumed) {
+        throw new ResourceApplyError(409, "Work arrived during Apply preparation; let it settle and click Apply again");
+      }
+      actual.revision = target.revision; actual.applyingRevision = target.revision;
+      releaseAdmission();
+      retired = true;
+      await this.shutdown();
+      const started = await startRpcSessionInternal(this.sessionId, this.sessionFile, undefined, {}, undefined, undefined, target, actual);
+      await started.session.waitUntilReady();
+      actual.appliedRevision = target.revision; actual.ready = true;
+    } catch (error) {
+      const replacement = getRpcSession(this.sessionId);
+      let cleanup: unknown;
+      if (retired && replacement && replacement !== this) {
+        try { await replacement.shutdown(); } catch (failure) { cleanup = failure; }
+      }
+      actual.error = cleanup ? `${String(error)}; cleanup: ${String(cleanup)}` : String(error);
+      if (retired) { actual.ready = false; actual.appliedRevision = undefined; }
+      if (!retired && error instanceof ResourceApplyError) throw error;
+      throw new ResourceApplyError(503, actual.error);
+    } finally {
+      releaseAdmission(); releaseRuntime(); actual.applying = false;
+      releaseLane(); if (locks.get(this.sessionId) === lane) locks.delete(this.sessionId);
+    }
+  }
 
   getPauseError(): string | undefined { return this.pauseFailure; }
 
@@ -808,6 +886,16 @@ export class AgentSessionWrapper {
     if (!this.inner.agent) return;
     this.disposePauseIngress = installSessionPauseIngress(this.inner, {
       blocked: () => Boolean(this.pause),
+      assertFresh: () => this.assertResourceFreshAdmission(),
+      assertDeferredAdmission: () => {
+        if (this.resourceApplication?.applying && (this.resourceApplication.ready || this.shutdownPromise)) throw new ResourceApplyError(409, "Resource Apply is in progress; deferred input refused before acceptance");
+      },
+      deferredCustomAccepted: () => { this.deferredCustomAccepted++; },
+      capturePromptStart: () => {
+        const accepted = this.deferredCustomAccepted;
+        // Public SDK 'started' follows consumption of pending nextTurn context.
+        return () => { this.deferredCustomConsumed = accepted; };
+      },
       takeResumePermit: (text) => {
         if (!this.resumePermit || text !== this.pendingResume?.message) return false;
         this.resumePermit = false; return true;
@@ -967,7 +1055,16 @@ export class AgentSessionWrapper {
   }
 
   async waitUntilReady(): Promise<void> {
-    await this.waitForExtensionsBound();
+    try {
+      await this.waitForExtensionsBound();
+      if (this.resourceApplication && this._alive && !this.shutdownPromise) {
+        this.resourceApplication.ready = true;
+        this.resourceApplication.appliedRevision ??= this.resourceApplication.revision;
+      }
+    } catch (error) {
+      if (this.resourceApplication) { this.resourceApplication.ready = false; this.resourceApplication.appliedRevision = undefined; this.resourceApplication.error = String(error); }
+      throw error;
+    }
   }
 
   private ensureExtensionsBound(): Promise<void> {
@@ -1000,19 +1097,19 @@ export class AgentSessionWrapper {
             notifyType: "warning",
             message: "Extension requested shutdown, but shutdown is not supported in Brabbler.",
           } as ExtensionUiRequest as AgentEvent),
-          onError: (error) => this.emit({
-            type: "extension_error",
-            extensionPath: error.extensionPath,
-            event: error.event,
-            error: error.error,
-          }),
+          onError: (error) => {
+            if (["session_start", "session_shutdown"].includes(error.event)) this.resourceLifecycleError = `${error.event}: ${error.error}`;
+            this.emit({ type: "extension_error", extensionPath: error.extensionPath, event: error.event, error: error.error });
+          },
         });
       } else {
         this.inner.extensionRunner.setUIContext?.(uiContext, "rpc");
       }
+      if (this.resourceApplication && this.resourceLifecycleError) throw new Error(this.resourceLifecycleError);
       this.extensionsBound = true;
       console.log(`[brabbler] session_start dispatched to extensions for session ${this.inner.sessionId}`);
     })().catch((err) => {
+      this.resourceLifecycleError = String(err);
       this.extensionBindingError = err;
       throw err;
     }).finally(releaseRuntime);
@@ -1038,7 +1135,7 @@ export class AgentSessionWrapper {
       || type === "steer"
       || type === "follow_up"
       || type === "get_commands"
-      || type === "get_state";
+      || type === "get_state" && !this.resourceApplication?.applying && !this.resourceApplication?.error;
   }
 
   private async withFinalIdleReset<T>(operation: () => Promise<T>): Promise<T> {
@@ -1070,12 +1167,14 @@ export class AgentSessionWrapper {
 
   private async acquirePromptAdmission(): Promise<() => void> {
     const previous = this.promptAdmissionTail;
+    this.promptAdmissions++;
     let release!: () => void;
     this.promptAdmissionTail = new Promise<void>((resolve) => {
       release = resolve;
     });
     await previous;
-    return release;
+    let released = false;
+    return () => { if (!released) { released = true; this.promptAdmissions--; release(); } };
   }
 
   private resetIdleTimer(): void {
@@ -1085,7 +1184,7 @@ export class AgentSessionWrapper {
     if (SESSION_IDLE_TIMEOUT_MS === 0) return;
     if (!this.isRunning()) this.forceShutdownOnIdle = false;
     this.idleTimer = setTimeout(() => {
-      if (!this.forceShutdownOnIdle && (this.isRunning() || hasActiveSessionLivenessProvider({
+      if (!this.forceShutdownOnIdle && (this.resourceApplication?.applying || this.isRunning() || (this.resourceApplication && this.deferredCustomAccepted !== this.deferredCustomConsumed) || hasActiveSessionLivenessProvider({
         sessionId: this.sessionId,
         sessionFile: this.sessionFile || undefined,
       }))) {
@@ -1159,6 +1258,7 @@ export class AgentSessionWrapper {
 
   async send(command: Record<string, unknown>, promptGuard?: { validate: (disposition?: string) => void; literal?: boolean; owner?: symbol; pauseId?: string }): Promise<unknown> {
     const type = command.type as string;
+    if (["prompt", "steer", "follow_up", "reload"].includes(type)) this.assertResourceFreshAdmission();
     if (type === "navigate_tree" && (this.pendingResume || this.pause && this.isRunning())) throw new Error("Cannot change branches during Resume or Pause settlement");
     if (["prompt", "steer", "follow_up"].includes(type) && this.pause && promptGuard?.pauseId !== this.pause.id) {
       throw new Error("Session is paused or pausing; use Resume on the main session");
@@ -1182,6 +1282,7 @@ export class AgentSessionWrapper {
     }
 
     const tracksMutation = !allowedDuringReplacement;
+    if (tracksMutation && this.resourceApplication?.applying && !["abort", "abort_compaction", "abort_bash"].includes(type)) this.assertResourceFreshAdmission();
     if (tracksMutation && !["set_model", "abort", "abort_compaction", "abort_bash"].includes(type)) assertModelRuntimeSessionReady(this.inner);
     if (tracksMutation) this.activeMutatingCommands += 1;
 
@@ -1423,6 +1524,7 @@ export class AgentSessionWrapper {
           thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
           modelSpeed: readSessionModelSpeed(this.inner.sessionManager.getEntries() as unknown as SessionEntry[]),
           modelDefinitionRefresh: this.inner.modelRuntime ? modelRuntimeRefreshState(this.inner.modelRuntime, this.inner) : undefined,
+          resourceRuntime: this.resourceApplication ? resourceStatus(getAgentDir(), this.sessionId) : null,
           extensionStatuses: this.getExtensionStatuses(),
           extensionWidgets: this.getExtensionWidgets(),
           nativeResources: readNativeResourceSelection(this.inner.sessionManager.getEntries()),
@@ -1802,7 +1904,9 @@ export class AgentSessionWrapper {
         catch (error) { console.error("[brabbler] extension binding failed before session shutdown:", error); }
       }
       try {
-        return await this.inner.extensionRunner?.emit?.({ type: "session_shutdown", reason: "quit" });
+        const result = await this.inner.extensionRunner?.emit?.({ type: "session_shutdown", reason: "quit" });
+        if (this.resourceApplication && this.resourceLifecycleError) throw new Error(this.resourceLifecycleError);
+        return result;
       } finally {
         // Retirement already aborted the owner. Drain admitted native results
         // before disposal invalidates their contexts or releases the same-ID barrier.
@@ -1813,6 +1917,10 @@ export class AgentSessionWrapper {
 
   private destroyInternal(ownedRefusal: boolean): void {
     if (!this._alive) return;
+    if (this.resourceApplication) {
+      this.resourceApplication.ready = false; this.resourceApplication.appliedRevision = undefined;
+      this.resourceApplication.available = undefined; this.resourceApplication.apply = undefined;
+    }
     const nativeRetirement = !ownedRefusal && (this.nativeSessionTools?.enabled || this.shutdownPromise !== null);
     if (nativeRetirement) this.publishResourceRetirement();
     this.nativeSessionTools?.retire();
@@ -1902,6 +2010,7 @@ export class AgentSessionWrapper {
     if (this.ownedRetirement) return this.ownedRetirement.completion;
     if (this.shutdownPromise) return this.shutdownPromise;
     if (!this._alive) return;
+    if (this.resourceApplication) { this.resourceApplication.ready = false; this.resourceApplication.appliedRevision = undefined; }
     this.nativeSessionTools?.retire();
 
     this.shutdownPromise = (async () => {
@@ -2176,8 +2285,8 @@ export class AgentSessionWrapper {
     this.pendingUiStartedAt.delete(id);
     try {
       custom.component.dispose?.();
-    } catch {
-      // Ignore dispose errors from extension UI components.
+    } catch (error) {
+      this.resourceLifecycleError ??= `Custom UI cleanup failed: ${String(error)}`;
     }
     this.emit({
       type: "extension_ui_request",
@@ -2244,14 +2353,15 @@ export class AgentSessionWrapper {
       const onStop = () => done(undefined as T);
       stopSignal.addEventListener("abort", onStop, { once: true });
 
+      this.activeMutatingCommands++;
       Promise.resolve()
         .then(() => completed ? undefined : factory(tui, PLAIN_TEXT_THEME, CUSTOM_UI_KEYBINDINGS, done))
         .then((component) => {
           if (completed) {
             try {
               (component as CustomUiComponent | undefined)?.dispose?.();
-            } catch {
-              // Ignore dispose errors from a component completed before mounting.
+            } catch (error) {
+              this.resourceLifecycleError ??= `Custom UI cleanup failed: ${String(error)}`;
             }
             return;
           }
@@ -2277,7 +2387,7 @@ export class AgentSessionWrapper {
             error: error instanceof Error ? error.message : String(error),
           });
           finish(undefined as T);
-        });
+        }).finally(() => { this.activeMutatingCommands--; });
     });
   }
 
@@ -2677,13 +2787,14 @@ export function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
 
 export function registerSubagentSession(
   inner: AgentSessionLike,
-  options?: { exactSystemPrompt?: string; chatOnly?: boolean },
+  options?: { exactSystemPrompt?: string; chatOnly?: boolean; resourceSelection?: ResourceRuntimeSelection },
 ): void {
   const wrapper = new AgentSessionWrapper(inner, {
     ...(options?.exactSystemPrompt !== undefined
       ? { exactSystemPrompt: () => options.exactSystemPrompt! }
       : {}),
     chatOnly: options?.chatOnly,
+    resourceSelection: options?.resourceSelection,
     suppressCompletionNotifications: true,
   });
   registerRpcWrapper(wrapper);
@@ -2770,6 +2881,7 @@ export async function setRpcSessionTools(
   sessionFile: string | undefined,
   requestedToolNames: unknown,
 ): Promise<SetRpcSessionToolsResult> {
+  assertRpcResourceFreshAdmission(sessionId);
   const toolNames = requestedToolNames === undefined
     ? undefined
     : validateSessionToolSelection(requestedToolNames);
@@ -2839,6 +2951,7 @@ export async function setRpcSessionTools(
  * other wrapper's activity is awaited and no SDK session_start callback prepares
  * resources. Preflight is inert; shutdown precedes new connection ownership. */
 export async function setRpcSessionNativeResources(sessionId: string, sessionFile: string | undefined, requested: unknown): Promise<SetRpcSessionToolsResult> {
+  assertRpcResourceFreshAdmission(sessionId);
   const nativeResources = validateNativeResourceSelection(requested);
   const locks = (globalThis.__piAccountSwitchLocks ??= new Map<string, Promise<void>>());
   const previous = locks.get(sessionId);
@@ -2847,6 +2960,7 @@ export async function setRpcSessionNativeResources(sessionId: string, sessionFil
   locks.set(sessionId, finished);
   try {
     if (previous) await previous;
+    assertRpcResourceFreshAdmission(sessionId);
     // A persisted session may be restoring before registry publication. Wait
     // for this ID's startup, then replace that actual owner rather than adopting it.
     const starting = getLocks().get(sessionId);
@@ -2879,11 +2993,23 @@ export async function setRpcSessionNativeResources(sessionId: string, sessionFil
   } finally { release(); if (locks.get(sessionId) === finished) locks.delete(sessionId); }
 }
 
+/** HTTP must refuse before waiting on the shared replacement lane, even while
+ * the old wrapper has retired and the replacement is not yet registered. */
+export function getRpcSessionResourceStatus(sessionId: string) {
+  return resourceApplication(getAgentDir(), sessionId);
+}
+
+export function assertRpcResourceFreshAdmission(sessionId: string): void {
+  const actual = resourceApplication(getAgentDir(), sessionId);
+  if (actual?.applying) throw new ResourceApplyError(409, "Resource Apply is in progress; fresh input refused");
+}
+
 export function waitForSessionAccountSwitch(sessionId: string): Promise<void> | undefined {
   return globalThis.__piAccountSwitchLocks?.get(sessionId);
 }
 
 export async function setRpcSessionAccount(sessionId: string, sessionFile: string | undefined, provider: string, accountId: string | null): Promise<string> {
+  assertRpcResourceFreshAdmission(sessionId);
   const locks = (globalThis.__piAccountSwitchLocks ??= new Map<string, Promise<void>>());
   const previous = locks.get(sessionId);
   let release!: () => void;
@@ -2891,6 +3017,7 @@ export async function setRpcSessionAccount(sessionId: string, sessionFile: strin
   locks.set(sessionId, finished);
   try {
     if (previous) await previous;
+    assertRpcResourceFreshAdmission(sessionId);
     const existing = getRpcSession(sessionId);
     if (existing?.isRunning()) throw new Error("Cannot switch accounts while the session is running");
     if (existing?.isAlive()) assertModelRuntimeSessionReady(existing.inner);
@@ -3103,7 +3230,7 @@ export async function startRpcSession(
 /** Recreation state is internal only, never a caller-controlled startup grant. */
 async function startRpcSessionInternal(
   sessionId: string, sessionFile: string, cwd: string | undefined, options: RpcSessionStartOptions,
-  expectedSessionId?: string, missingRelocationPaths?: ReadonlySet<string>,
+  expectedSessionId?: string, missingRelocationPaths?: ReadonlySet<string>, resourceTarget?: ResourceRuntimeSelection, applicationTarget?: ResourceApplication,
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const { initialModel, allowInitialModelFallback, thinkingLevel, modelSpeed } = options;
   if (options.initialPromptOwner !== undefined && sessionFile) throw new Error("Initial prompt ownership requires a fresh session");
@@ -3135,7 +3262,7 @@ async function startRpcSessionInternal(
         const currentFile = await resolveSessionPath(knownId);
         if (!currentFile || samePath(currentFile, sessionFile)) throw error;
         return startRpcSessionInternal(sessionId, currentFile, cwd, options, knownId,
-          new Set([...(missingRelocationPaths ?? []), key]));
+          new Set([...(missingRelocationPaths ?? []), key]), resourceTarget, applicationTarget);
       }
     }
   }
@@ -3149,7 +3276,7 @@ async function startRpcSessionInternal(
     if (failure) throw failure.error;
     const currentFile = await resolveSessionPath(relocation.id);
     if (!currentFile) throw new Error("Cannot resolve relocated session");
-    return startRpcSessionInternal(sessionId, currentFile, cwd, options, relocation.id, missingRelocationPaths);
+    return startRpcSessionInternal(sessionId, currentFile, cwd, options, relocation.id, missingRelocationPaths, resourceTarget, applicationTarget);
   }
   if (expectedSessionId && startupSessionId !== expectedSessionId) throw new Error("Cannot resolve relocated session");
   if (!startupSessionId) throw new Error("Cannot prove persisted SDK session ID");
@@ -3171,6 +3298,7 @@ async function startRpcSessionInternal(
   // Check and publish startup before any await (including account lookup), so
   // reservations cannot slip between admission and resource construction.
   const finishStartingSession = trackStartingSession(expectedCwd);
+  let application: ResourceApplication | undefined;
   const starting = (async () => {
     // Old public dispose cleans SDK resources by session ID. Do not construct
     // replacement resources until it succeeds, even if its wrapper is dead.
@@ -3232,7 +3360,8 @@ async function startRpcSessionInternal(
     // path to canonical own-Session admission without a catalogue scan.
     if (sessionFile) cacheSessionPath(sessionManager.getSessionId(), sessionFile);
     const resourceRuntime = await prepareResourceRuntime({ cwd: sessionCwd,
-      ...(sessionFile ? { sessionId: sessionManager.getSessionId() } : {}) });
+      ...(sessionFile ? { sessionId: sessionManager.getSessionId() } : {}) }, resourceTarget);
+    application = resourceRuntime.selection ? applicationTarget ?? createResourceApplication(agentDir, sessionManager.getSessionId(), resourceRuntime.selection.revision) : undefined;
     const nativeSelection = effectiveNativeResourceSelection(requestedNativeResources, {
       chatOnly, projectTrusted: getProjectTrustStatus(sessionCwd, agentDir).trusted,
     });
@@ -3406,6 +3535,7 @@ async function startRpcSessionInternal(
         : undefined;
     exactSystemPromptRef.current = exactSystemPrompt;
     const wrapper = new AgentSessionWrapper(inner, {
+      resourceApplication: application,
       exactSystemPrompt,
       chatOnly,
       initialPromptOwner: options.initialPromptOwner,
@@ -3422,7 +3552,10 @@ async function startRpcSessionInternal(
     registerRpcWrapper(wrapper);
 
     return { session: wrapper, realSessionId };
-  })().finally(() => {
+  })().catch(error => {
+    if (application) { application.ready = false; application.appliedRevision = undefined; application.error = String(error); }
+    throw error;
+  }).finally(() => {
     if (locks.get(startupSessionId) === starting) locks.delete(startupSessionId);
     finishStartingSession();
   });

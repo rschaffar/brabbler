@@ -51,13 +51,15 @@ function refused(detail: string): never {
  * applied status or loader discovery here. Unconfigured native installations keep
  * their existing loader unchanged. A missing configured catalog is not an empty
  * selection when retained preferences already exist. */
-export async function prepareResourceRuntime(input: { cwd: string; sessionId?: string }) {
+export async function prepareResourceRuntime(input: { cwd: string; sessionId?: string }, captured?: ResourceRuntimeSelection) {
   const agentDir = getAgentDir();
+  if (captured) await captured.assertCurrent();
   if (!present(join(agentDir, "resource-catalog.json"))) {
     if (present(join(agentDir, "brabbler/resource-preferences.json"))) refused("retained preferences require resource-catalog.json");
     return Object.freeze({ selection: undefined, compose: (options: LoaderOptions) => options });
   }
-  const selection = await readCommittedResourceSelection(input);
+  const selection = captured ?? await readCommittedResourceSelection(input);
+  if (selection.context.agentDir !== agentDir || selection.cwd !== realpathSync(input.cwd)) refused("construction snapshot context changed");
   const bindings = new Map<string, { key: string; enabled: boolean; path: string; kind: Kind }>();
   const entries: { key: string; enabled: boolean; path: string; kind: Kind }[] = [];
   for (const row of selection.catalog.rows) {

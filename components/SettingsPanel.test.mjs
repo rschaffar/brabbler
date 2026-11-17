@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { createElement as h, act } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { generalFixture } from './general-settings.fixture.mjs';
+import { resourceInventory, resourceKeys } from './skills-lifetime.fixture.mjs';
 
 test('General exposes an off-by-default remote-image preference shared across chats in this browser', async t => {
   const { f, graph: c, props } = await generalFixture(t);
@@ -52,7 +53,7 @@ test('actual Settings navigation keeps real visited General/Models mounted, reme
   await f.mount(h(c.SettingsPanel, props));
   const general = f.node('.settings-general');
   assert.equal(f.node('.settings-section-tab[aria-current="page"]').textContent, 'General');
-  assert.deepEqual([...f.view.container.querySelectorAll('.settings-section-tab')].map(n => n.textContent), ['General', 'Models', 'MCP servers', 'Skills', 'Sub-agents', 'Plugins']);
+  assert.deepEqual([...f.view.container.querySelectorAll('.settings-section-tab')].map(n => n.textContent), ['General', 'Models', 'MCP servers', 'Skills & extensions', 'Sub-agents', 'Plugins']);
   await f.click(f.button('Models', f.node('.settings-section-tabs')));
   assert.equal(general.closest('.settings-section-host').hidden, true, 'actual ancestor hides retained general');
   assert.equal(c.getLastSettingsSection('/project'), 'models');
@@ -81,9 +82,13 @@ test('actual Settings navigation keeps real visited General/Models mounted, reme
 test('actual project-less panel disables project sections and uses one backdrop dismissal owner', async t => {
   const { f, graph: c, props } = await generalFixture(t, { cwd: null }); let closed = 0;
   await f.mount(h(c.SettingsPanel, { ...props, onClose() { closed++; } }));
+  f.route('GET', '/api/agent-resources', { reply: { data: resourceInventory({ cwd: null, sessionId: null }) } });
   const picker = f.node('.settings-mobile-section-picker');
-  assert.deepEqual([...picker.options].filter(n => n.disabled).map(n => n.value), ['skills', 'agents', 'plugins']);
-  assert.equal(f.view.container.querySelectorAll('.settings-section-tab:disabled').length, 3);
+  assert.deepEqual([...picker.options].filter(n => n.disabled).map(n => n.value), ['agents', 'plugins']);
+  assert.equal(f.view.container.querySelectorAll('.settings-section-tab:disabled').length, 2);
+  await f.click(f.button('Skills & extensions', f.node('.settings-section-tabs')));
+  assert.equal(f.node('.resource-context').textContent.includes('Global resources'), true);
+  assert.equal(f.requests.filter(request => request.path === '/api/agent-resources').every(request => request.query.length === 0), true, 'no fabricated cwd/session scope');
   await f.click('.settings-dialog-surface'); assert.equal(closed, 0);
   await f.click('.settings-dialog-backdrop'); assert.equal(closed, 1);
 });
@@ -292,67 +297,45 @@ test('actual General A/B/A catalog generations ignore delivered obsolete success
 });
 
 
-test('actual remembered Skills loaded adapter and maintenance own content/body/catch/finally', async t => {
+// Old skill check/update/install obligations move to W13, not a no-op action.
+// This composition owns actual scoped load/save/error and retained visited detail.
+test('actual remembered resource key loads, saves by scope and retains its hidden visited Settings host', async t => {
   const { f, graph: c, props } = await generalFixture(t);
-  const makeSkill = name => ({ name, description: `${name} description`, filePath: `/project/skills/${name}/SKILL.md`, baseDir: `/project/skills/${name}`, disableModelInvocation: false, sourceInfo: { source: 'project', scope: 'project' }, install: { package: `owner/${name}`, scope: 'project', source: `owner/${name}`, versionHash: 'one', canCheckForUpdates: true } });
-  const skills = [makeSkill('first'), makeSkill('remembered')];
-  const contentEntered = f.gate('remembered skill content admitted'), body = f.gate('skill maintenance body');
-  f.route('GET', '/api/skills', { query: { cwd: '/project' }, reply: { data: { skills, diagnostics: [], projectResourcesLoaded: true } } });
-  f.route('GET', '/api/skills/content', { query: { cwd: '/project', filePath: skills[1].filePath }, reply: () => { contentEntered.release(); return { data: { content: '' } }; } });
-  let status = 503;
-  f.route('POST', '/api/skills/check', { body: { cwd: '/project' }, reply: () => ({ gate: body, status, data: status === 503 ? { error: 'skill maintenance refused' } : { updates: [] } }) });
+  const data = resourceInventory({ cwd: '/project', state: 'saved' });
+  const body = f.gate('scoped save body'); let status = 503;
+  f.route('GET', '/api/agent-resources', { query: { cwd: '/project', sessionId: 'session-A' }, reply: { data } });
+  f.route('PATCH', '/api/agent-resources', { body: { cwd: '/project', sessionId: 'session-A', selectionKey: resourceKeys.extension, scope: 'project', choice: 'disabled', revision: 'project-revision', contextToken: 'context-token' }, reply: () => ({ gate: body, status, data: status === 503 ? { error: 'scoped save refused' } : data }) });
   await f.mount(h(c.SettingsPanel, { ...props, initialSection: 'skills' }), { setup(window) {
-    window.localStorage.setItem('brabbler:settings-navigation', JSON.stringify({ selections: { '["skills","/project"]': skills[1].filePath } }));
+    window.localStorage.setItem('brabbler:settings-navigation', JSON.stringify({ selections: { '["skills","/project"]': resourceKeys.extension } }));
   } });
-  await contentEntered.promise;
-  await f.commit(undefined, 'skills.instructions');
-  assert.equal(f.node('.config-sidebar-item[aria-current="page"]').textContent.trim(), 'remembered');
-  assert.equal(f.node('[role="region"][aria-label="Instructions"]').textContent.includes('No instructions in this skill.'), true);
-  assert.equal(f.works.some(work => work.label === 'skills.instructions' && work.settled), true, 'real selected instructions operation joined');
-  const label = c.enLocale.messages['i18n.checkUpdates'];
-  await f.click(f.button(label), { settle: false });
-  assert.equal(f.works.findLast(work => work.label === 'skills.checkForUpdates').settled, false);
-  await f.deliver(body, 'skills.checkForUpdates');
-  assert.equal(f.text().includes('skill maintenance refused'), true);
-  assert.equal(f.button(label).disabled, false);
-  status = 200; await f.click(f.button(label));
-  assert.equal(f.text().includes('skill maintenance refused'), false);
-  assert.equal(c.getLastSettingsSelection('skills', '/project'), skills[1].filePath);
-  const host = f.node('[role="region"][aria-label="Instructions"]');
+  assert.equal(f.node('.config-sidebar-item[aria-current="page"] .config-sidebar-text').textContent, 'extension');
+  const project = [...f.view.container.querySelectorAll('fieldset')].find(field => field.querySelector('legend').textContent === 'Project');
+  await f.click(project.querySelector('input[value="disabled"]'), { settle: false });
+  assert.equal(f.works.findLast(work => work.label === 'resources.save').settled, false);
+  await f.deliver(body, 'resources.save');
+  assert.equal(f.text().includes('scoped save refused'), true);
+  assert.equal(project.disabled, false);
+  status = 200; await f.click(project.querySelector('input[value="disabled"]'));
+  assert.equal(f.text().includes('scoped save refused'), false);
+  assert.equal(c.getLastSettingsSelection('skills', '/project'), resourceKeys.extension);
+  assert.equal(f.requests.filter(request => request.method === 'PATCH').length, 2, 'no automatic Apply');
+  const host = f.node('.resource-settings');
   await f.click(f.button('General', f.node('.settings-section-tabs')));
   assert.equal(host.closest('.settings-section-host').hidden, true);
-  await f.click(f.button('Skills', f.node('.settings-section-tabs')));
-  assert.equal(f.node('[role="region"][aria-label="Instructions"]') === host, true);
+  await f.click(f.button('Skills & extensions', f.node('.settings-section-tabs')));
+  assert.equal(f.node('.resource-settings') === host, true);
 });
 
-test('actual remembered Plugins loaded adapter preserves compact metadata and joins maintenance/refresh', async t => {
+// External package metadata/check/refresh assertions formerly here are W13's
+// concrete rehoming gap. Preserve actual bundled-only composition, not fake APIs.
+test('actual Plugins composition ignores old external selection and preserves the bundled-only boundary', async t => {
   const { f, graph: c, props } = await generalFixture(t);
-  const counts = { extensions: 1, skills: 0, prompts: 0, themes: 0 };
-  const pkg = source => ({ source, scope: 'project', canCheckForUpdates: true, filtered: false, disabled: false, counts, resources: [], status: 'loaded', version: '9.9', configuredVersion: '^9', description: 'detail-only description' });
-  const packages = [pkg('npm:first'), pkg('npm:remembered')];
-  const listing = { packages, standaloneExtensions: [], totals: counts, diagnostics: [], projectResourcesLoaded: true };
-  const checkBody = f.gate('plugin check JSON'), reloadBody = f.gate('plugin reload JSON'); let refreshing = false, status = 503;
-  f.route('GET', '/api/plugins', { query: { cwd: '/project' }, reply: () => ({ ...(refreshing ? { gate: reloadBody } : {}), data: listing }) });
   f.route('GET', '/api/plugins/bundled', { query: { cwd: '/project', sessionId: 'session-A' }, reply: { data: { plugins: [] } } });
-  f.route('POST', '/api/plugins/check', { body: { cwd: '/project' }, reply: () => ({ gate: checkBody, status, data: status === 503 ? { error: 'plugin maintenance refused' } : { updates: [] } }) });
   await f.mount(h(c.SettingsPanel, { ...props, initialSection: 'plugins' }), { setup(window) {
     window.localStorage.setItem('brabbler:settings-navigation', JSON.stringify({ selections: { '["plugins","/project"]': 'project\u0000npm:remembered' } }));
   } });
-  assert.equal(f.node('.config-sidebar-item[aria-current="page"]').textContent.trim(), 'npm:remembered');
-  const sidebar = f.node('.config-sidebar-list');
-  assert.equal(sidebar.textContent.includes('9.9'), false);
-  assert.equal(sidebar.textContent.includes('detail-only description'), false);
-  assert.equal(f.node('.config-detail').textContent.includes('npm:remembered'), true);
-  assert.equal(f.works.some(work => work.label === 'plugins.bundledSidebar' && work.settled), true, 'actual bundled sidebar GET body and callback joined');
-  const label = c.enLocale.messages['i18n.checkUpdates'];
-  await f.click(f.button(label, f.node('.config-footer')), { settle: false });
-  await f.deliver(checkBody, 'plugins.checkForUpdates');
-  assert.equal(f.text().includes('plugin maintenance refused'), true);
-  status = 200; await f.click(f.button(label, f.node('.config-footer')));
-  assert.equal(f.text().includes('plugin maintenance refused'), false);
-  refreshing = true;
-  await f.click(f.button(c.enLocale.messages['i18n.refresh'], f.node('.config-footer')), { settle: false });
-  assert.equal(f.works.findLast(work => work.label === 'plugins.loadPlugins').settled, false);
-  await f.deliver(reloadBody, 'plugins.loadPlugins');
-  assert.equal(c.getLastSettingsSelection('plugins', '/project'), 'project\u0000npm:remembered');
+  assert.equal(f.view.container.querySelector('.config-sidebar-item[aria-current="page"]') === null, true);
+  assert.equal(f.text().includes('npm:remembered'), false);
+  assert.equal(f.works.some(work => work.label === 'plugins.bundledSidebar' && work.settled), true);
+  assert.equal(f.requests.every(request => request.path === '/api/plugins/bundled'), true);
 });

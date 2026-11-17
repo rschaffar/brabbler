@@ -82,6 +82,8 @@ test('settings stylesheet owns fixed sizing, typography, interaction presentatio
     /\.config-footer-actions \.config-button-default \{[\s\S]*?min-width: 96px/, /\.config-button \{[\s\S]*?font-family: inherit/, /\.config-button-default \{[\s\S]*?height: 32px/,
   ]) assert.match(css, expression);
   assert.doesNotMatch(css, /\.config-detail-stack \{[\s\S]*?max-width: 720px/);
+  assert.match(css, /\.resource-settings \[hidden\] \{ display: none !important/);
+  assert.match(css, /@media \(max-width: 640px\) \{\s*\.resource-list-pane, \.resource-detail-pane[\s\S]*?\.resource-scopes \{ grid-template-columns: minmax\(0, 1fr\)/);
 });
 
 // Retained exact shared-component adoption/stylesheet contracts. Their scope is structural;
@@ -109,19 +111,16 @@ test("all subpanel sidebars share one typography scale", () => {
   const sources = Object.fromEntries(configSources);
   assert.match(cssSource, /\.config-sidebar-text \{[\s\S]*?font-family: inherit[\s\S]*?font-size: 12px/);
   assert.match(cssSource, /\.config-sidebar-group-label \{[\s\S]*?font-family: inherit[\s\S]*?font-size: 10px/);
-  for (const source of Object.values(sources)) {
-    assert.match(source, /<ConfigSidebarText/);
-  }
-  for (const name of ["SkillsConfig", "AgentsConfig", "PluginsConfig"]) {
-    assert.match(sources[name], /<ConfigSidebarGroupLabel/);
-  }
+  for (const name of ["ModelsConfig", "SkillsConfig", "AgentsConfig"]) assert.match(sources[name], /<ConfigSidebarText/);
+  for (const name of ["SkillsConfig", "AgentsConfig"]) assert.match(sources[name], /<ConfigSidebarGroupLabel/);
+  // External package metadata/actions moved to W13; Plugins now delegates its
+  // built-in-only rows to the real BundledPluginSidebar (mounted below).
+  assert.match(sources.PluginsConfig, /<BundledPluginSidebar/);
 });
 
 test("skills and sub-agents share interactive sidebar rows", () => {
   const sources = Object.fromEntries(configSources);
-  for (const name of ["SkillsConfig", "AgentsConfig", "PluginsConfig"]) {
-    assert.match(sources[name], /<ConfigSidebarItem/);
-  }
+  for (const name of ["SkillsConfig", "AgentsConfig"]) assert.match(sources[name], /<ConfigSidebarItem/);
   assert.match(templateSource, /export function ConfigSidebarItem[\s\S]*?className=\{\["config-sidebar-item"/);
   assert.match(cssSource, /\.config-sidebar-item:not\(:disabled\):hover,[\s\S]*?background: var\(--bg-hover\)/);
   assert.match(cssSource, /\.config-sidebar-item:focus-visible \{[\s\S]*?outline: 2px solid var\(--accent\)/);
@@ -129,20 +128,15 @@ test("skills and sub-agents share interactive sidebar rows", () => {
   assert.doesNotMatch(sources.SkillsConfig, /onMouseEnter[\s\S]*?var\(--bg-hover\)/);
 });
 
-test("plugin sidebar rows omit detail metadata", () => {
+test("external package metadata is no longer owned by the built-in Plugins surface (W13 rehoming)", () => {
   const pluginSource = Object.fromEntries(configSources).PluginsConfig;
-  const sidebarSource = pluginSource.match(/<ConfigSidebarList>[\s\S]*?<\/ConfigSidebarList>/)?.[0] ?? "";
-  assert.match(sidebarSource, /<ConfigSidebarItem/);
-  assert.match(sidebarSource, /<ConfigSidebarText[\s\S]*?\{pkg\.source\}/);
-  assert.doesNotMatch(sidebarSource, /resourceSummary\(pkg|versionSummary\(pkg/);
+  assert.match(pluginSource, /<BundledPluginSidebar/);
+  assert.doesNotMatch(pluginSource, /resourceSummary\(pkg|versionSummary\(pkg|\/api\/plugins\/check/);
 });
 
-test("skill scope group labels are localized", () => {
-  const skillsSource = Object.fromEntries(configSources).SkillsConfig;
-  for (const scope of ["global", "project", "path"]) {
-    assert.match(skillsSource, new RegExp(`t\\("skills\\.scope\\.${scope}"\\)`));
-    assert.match(enSource, new RegExp(`"skills\\.scope\\.${scope}":`));
-  }
+test("resource hierarchy, supported scopes and authored metadata have English copy", () => {
+  for (const scope of ["global", "project", "session"]) assert.match(enSource, new RegExp(`"resources\\.scope\\.${scope}":`));
+  for (const key of ["resources.title", "resources.savedChoices", "resources.manualOnly"]) assert.equal(enSource.includes(`"${key}":`), true);
 });
 
 test("all subpanel detail panes share one content hierarchy", () => {
@@ -160,10 +154,10 @@ test("all subpanel detail panes share one content hierarchy", () => {
 test("detail header actions keep buttons and switches aligned to the right", () => {
   const sources = Object.fromEntries(configSources);
   assert.match(cssSource, /\.config-detail-actions \{[\s\S]*?justify-content: flex-end[\s\S]*?margin-left: auto/);
-  for (const name of ["SkillsConfig", "AgentsConfig", "PluginsConfig"]) {
-    assert.match(sources[name], /<ConfigDetailActions>/);
-  }
-  assert.match(sources.PluginsConfig, /<ConfigDetailActions>[\s\S]*?<ConfigSwitch[\s\S]*?<\/ConfigDetailActions>/);
+  assert.match(sources.AgentsConfig, /<ConfigDetailActions>/);
+  // Resources use stacked scope controls, built-ins retain their separate
+  // settings editor. Their actual controls are exercised by mounts, not regex.
+  assert.match(cssSource, /\.resource-scopes \{[\s\S]*?grid-template-columns/);
 });
 
 test("keeps shared static presentation in the stylesheet", () => {
@@ -198,16 +192,17 @@ test("subpanel footers share sizing while maintenance actions stay secondary", (
   assert.match(cssSource, /\.config-button-default \{[\s\S]*?height: 32px/);
   assert.match(sources.ModelsConfig, /<ConfigButton\s+variant="primary"[\s\S]*?onClick=\{handleSave\}/);
   assert.match(sources.AgentsConfig, /<ConfigButton\s+variant="primary"[\s\S]*?onClick=\{\(\) => void save\(\)\}/);
-  assert.match(sources.SkillsConfig, /<ConfigButton variant="secondary" onClick=\{\(\) => void checkForUpdates\(\)\}/);
-  assert.match(sources.PluginsConfig, /<ConfigButton variant="secondary" onClick=\{\(\) => void loadPlugins\(\)\}/);
+  // Old skill/plugin maintenance actions belong to W13. Do not certify a
+  // replacement no-op. The connected resource footer's actions are mounted.
+  assert.match(cssSource, /\.resource-settings \.config-footer-actions/);
 });
 
-test("skills, agents, and plugins share enabled and disabled controls", () => {
+test("agent switches stay independent of resource scoped choices and built-in settings", () => {
   const sources = Object.fromEntries(configSources);
-  for (const name of ["SkillsConfig", "AgentsConfig", "PluginsConfig"]) {
-    assert.match(sources[name], /<ConfigSwitch/);
-    assert.match(sources[name], /<ConfigStatusDot/);
-  }
+  assert.match(sources.AgentsConfig, /<ConfigSwitch/);
+  assert.match(sources.AgentsConfig, /<ConfigStatusDot/);
+  assert.doesNotMatch(sources.SkillsConfig, /<ConfigSwitch/);
+  assert.match(sources.PluginsConfig, /<BundledPluginSettings/);
 });
 
 

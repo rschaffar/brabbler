@@ -1,6 +1,6 @@
 # ADR 0044: Scoped skill and extension selection
 
-- Status: Accepted decisions; implementation and runtime feasibility remain incomplete
+- Status: Accepted decisions; automatic idle-application and pending-input policy superseded by [ADR 0045](0045-explicit-resource-application.md). Other contracts remain accepted; implementation and runtime feasibility remain incomplete.
 - Plan: [Scoped skills and extensions](../plans/2026-11-16_skills-extensions-plan.md)
 - Configuration input: [Owner handoff](../plans/2026-11-16_pi-resource-configuration-handoff.md)
 
@@ -135,5 +135,10 @@ approving this bounded implementation does not certify runtime support.
 
 The detailed migration protocol and executable admission/settlement ownership remain
 open implementation/proof obligations, not additional timing-policy decisions. The global metadata agreement does not approve a project metadata producer.
+Canonical Project trust reads may use the SDK's ordinary trust-lock directory
+metadata operations, including normal acquisition/release. This does not authorize
+changing trust decisions, native settings, package declarations or resource contents;
+reuse the existing trust authority rather than a separate parser or SDK patch.
+
 No live migration, configuration activation, publication or resource cleanup is
 implied by these decisions.
