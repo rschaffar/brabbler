@@ -250,6 +250,12 @@ export async function checkModelOverrides(page, base, sessionId, cwd) {
     const response = await fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     assert.equal(response.status, 200); return response.json();
   };
+  // This transcript/cwd is seeded directly, not selected through the normal
+  // workspace owner. Settings remembers Skills and mounts its real inventory
+  // before we select Models; do not borrow the five-second catalogue root cache.
+  const admitted = await post("/api/cwd/validate", { cwd });
+  assert.equal(admitted.success, true);
+  assert.equal(admitted.cwd, cwd, "model bridge selects its own canonical fixture workspace");
   const installed = await checkInstalledModelContext(page, { base, api, post, sessionId, project: cwd });
   if (page.viewportSize().width < 768) {
     console.log(`PASS: ${page.viewportSize().width}px installed model field/active chooser/current title wiring`);
