@@ -55,6 +55,10 @@ import { getSessionPause, removeSessionPause } from "./session-pause";
 import { acquireModelRuntimeUse, withModelRuntimeAccess } from "./session-model-refresh";
 import { withStreamingCacheWarmingDefault } from "./sdk-settings";
 import { prepareResourceRuntime, type ResourceRuntimeSelection } from "./agent-resources/runtime";
+import { resolveResourceContext } from "./agent-resources/context";
+import { initializeOwnSessionChoices } from "./agent-resources/preferences";
+import { cacheSessionPath } from "./session-reader";
+import { sessionSaveBarrier } from "./session-save";
 
 interface HostSession {
   readonly inner: AgentSessionLike;
@@ -339,6 +343,7 @@ export function createSubagentController(
 
     let isolatedWorktree: { path: string; branch: string } | undefined;
     let unregisteredInner: AgentSessionLike | undefined;
+    let savedChildFile: string | undefined;
     const releaseRuntime = parent.inner.modelRuntime ? acquireModelRuntimeUse(parent.inner.modelRuntime) : () => {};
     try {
       const profile = resolveSubagentProfile(parent.cwd, request.profile);
@@ -369,13 +374,6 @@ export function createSubagentController(
       }
       const turnLimit = maxTurns && maxTurns > 0 ? Math.floor(maxTurns) : undefined;
       const agentDir = getAgentDir();
-      // Fix the committed Global/Project resource snapshot before factories, not
-      // when a constructed child later leaves the existing execution queue.
-      const sessionManager = isolatedWorktree
-        ? SessionManager.create(childCwd, undefined, { parentSession: parent.sessionFile })
-        : SessionManager.create(parent.cwd, undefined, { parentSession: parent.sessionFile });
-      const resourceRuntime = await prepareResourceRuntime({ cwd: childCwd });
-      const settingsManager = withStreamingCacheWarmingDefault(SettingsManager.create(childCwd, agentDir));
       const inheritedParentContext = inheritContext
         ? `The following is the active conversation context from the parent session. Use it only as background for the delegated task:\n${parentContextText(parent)}`
         : undefined;
@@ -389,6 +387,46 @@ export function createSubagentController(
         inheritedParentContext,
       });
       const { chatOnly, appendSystemPrompt, delegatedTask } = promptPlan;
+      // Copy current own choices before factories, never at scheduler dequeue.
+      const sessionManager = isolatedWorktree
+        ? SessionManager.create(childCwd, undefined, { parentSession: parent.sessionFile })
+        : SessionManager.create(parent.cwd, undefined, { parentSession: parent.sessionFile });
+      const createdAt = new Date().toISOString();
+      const metadata: SubagentMetadata = {
+        version: 1,
+        parentSessionId,
+        parentSessionPath: parent.sessionFile,
+        parentToolCallId: request.parentToolCallId,
+        profile: profile.name,
+        description: request.description.trim() || profile.displayName,
+        task: request.task,
+        runInBackground,
+        createdAt,
+        turnLimit: turnLimit ?? 0,
+        resourceSnapshotPending: true,
+        resourceSnapshot: {
+          version: 1,
+          appendSystemPrompt: [...appendSystemPrompt],
+          tools: [...profile.tools],
+          loadSkills: profile.loadSkills,
+          loadExtensions: profile.loadExtensions,
+          ...(promptPlan.exactSystemPrompt !== undefined ? { exactSystemPrompt: promptPlan.exactSystemPrompt } : {}),
+        },
+        ...(isolatedWorktree ? { worktreePath: isolatedWorktree.path, worktreeBranch: isolatedWorktree.branch } : {}),
+      };
+      // The first reopenable header already declares a child, not an ordinary
+      // session. Pending setup refuses cold startup until copy and actual tool
+      // resolution have produced the matching finalized profile snapshot.
+      sessionManager.appendCustomEntry(SUBAGENT_META_TYPE, metadata);
+      savedChildFile = sessionManager.getSessionFile()!;
+      persistChildSession(sessionManager);
+      sessionSaveBarrier(sessionManager);
+      cacheSessionPath(sessionManager.getSessionId(), savedChildFile);
+      await initializeOwnSessionChoices(
+        await resolveResourceContext({ cwd: parent.cwd, sessionId: parentSessionId }),
+        await resolveResourceContext({ cwd: childCwd, sessionId: sessionManager.getSessionId() }));
+      const resourceRuntime = await prepareResourceRuntime({ cwd: childCwd, sessionId: sessionManager.getSessionId() });
+      const settingsManager = withStreamingCacheWarmingDefault(SettingsManager.create(childCwd, agentDir));
       if (!chatOnly) initTheme();
       const services = await createAgentSessionServices({
         cwd: childCwd,
@@ -442,29 +480,8 @@ export function createSubagentController(
       const thinking = request.thinking ?? callModel?.thinkingLevel ?? profile.thinking
         ?? profileModel?.thinkingLevel ?? parent.inner.agent.state?.thinkingLevel;
       if (thinking && !SUBAGENT_THINKING_LEVELS.has(thinking as ThinkingLevel)) throw new Error(`Invalid subagent thinking level: ${thinking}`);
-      const createdAt = new Date().toISOString();
-      const metadata: SubagentMetadata = {
-        version: 1,
-        parentSessionId,
-        parentSessionPath: parent.sessionFile,
-        parentToolCallId: request.parentToolCallId,
-        profile: profile.name,
-        description: request.description.trim() || profile.displayName,
-        task: request.task,
-        runInBackground,
-        createdAt,
-        turnLimit: turnLimit ?? 0,
-        resourceSnapshot: {
-          version: 1,
-          appendSystemPrompt: [...appendSystemPrompt],
-          tools: [...activeTools],
-          loadSkills: profile.loadSkills,
-        loadExtensions: profile.loadExtensions,
-        ...(promptPlan.exactSystemPrompt !== undefined ? { exactSystemPrompt: promptPlan.exactSystemPrompt } : {}),
-        },
-        ...(isolatedWorktree ? { worktreePath: isolatedWorktree.path, worktreeBranch: isolatedWorktree.branch } : {}),
-      };
-      sessionManager.appendCustomEntry(SUBAGENT_META_TYPE, metadata);
+      sessionManager.appendCustomEntry(SUBAGENT_META_TYPE, { ...metadata, resourceSnapshotPending: false,
+        resourceSnapshot: { ...metadata.resourceSnapshot, tools: [...activeTools] } });
       const inheritedAccounts = readSessionAccounts(parent.inner.sessionManager.getEntries() as SessionEntry[]);
       if (inheritedAccounts) appendSessionAccounts(sessionManager, inheritedAccounts);
       appendSessionModelSpeed(sessionManager, readSessionModelSpeed(parent.inner.sessionManager.getEntries() as SessionEntry[]));
@@ -482,7 +499,7 @@ export function createSubagentController(
         excludeTools: [...SUBAGENT_CONTROL_TOOL_NAMES],
       });
       unregisteredInner = inner;
-      persistChildSession(sessionManager);
+      sessionSaveBarrier(sessionManager);
       speedAgent.current = inner.agent;
       dependencies.registerSession(inner, {
         ...(promptPlan.exactSystemPrompt !== undefined
@@ -515,9 +532,10 @@ export function createSubagentController(
         () => cleanupWorktree(parent.cwd, isolatedWorktree));
     } catch (error) {
       try { unregisteredInner?.dispose(); } catch { /* Preserve the setup error. */ }
-      if (isolatedWorktree) {
+      if (isolatedWorktree && !savedChildFile) {
         try { await removeWorktree(parent.cwd, isolatedWorktree.path); } catch { /* preserve setup failure and avoid force deletion */ }
       }
+      if (savedChildFile) throw new Error(`Subagent creation failed: ${error instanceof Error ? error.message : String(error)}; saved session retained at ${savedChildFile}. Inspect before reopening; no automatic replay`, { cause: error });
       throw error;
     } finally { releaseRuntime(); releaseConstruction(); }
   }

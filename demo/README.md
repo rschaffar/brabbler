@@ -20,7 +20,11 @@ settings without installing anything.
 - **Interaction**: sending a message streams a canned reply (with a real `read`
   or `ls` tool call when it fits), and `!command`, the terminal panel, forks,
   branches, renames and titles all work in memory. Anything that needs a real
-  server (sign-in, installs, uploads) explains that this is a demo.
+  server (sign-in, uploads) explains that this is a demo.
+- **Resources**: Skills & extensions and Built-in features show explanatory notices,
+  not simulated availability saves, Apply, permission or package-management controls.
+  The application owns scoped availability only; Pi/Nix owns package contents and
+  registration. Old copied Skills/Plugins management modules are not mounted.
 
 ## How it works
 
@@ -42,6 +46,7 @@ differ from their originals:
 | --- | --- |
 | `app/layout.tsx`, `app/page.tsx`, `app/DemoRoot.tsx` | Load the mock, no service worker or manifest |
 | `components/AppShell.tsx` | Open the README preview by default, base-path-safe `router.replace`, in-browser "Full history" |
+| `components/SettingsPanel.tsx`, `lib/i18n/messages/en.ts` | Resource/Built-in features notices and current labels instead of obsolete Skills/Plugins controls |
 | `components/ChatWindow.tsx`, `FileIcons.tsx`, `ProviderIcon.tsx` | Prefix static assets with the Pages base path |
 | `components/FileViewer.tsx`, `FileExplorer.tsx`, `MarkdownBody.tsx` | Load images, media and downloads from the static snapshot |
 | `lib/subagent-extension.ts`, `lib/terminal-manager.ts` | Types only; the originals are server code |

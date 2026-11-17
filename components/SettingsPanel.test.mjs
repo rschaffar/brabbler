@@ -53,7 +53,7 @@ test('actual Settings navigation keeps real visited General/Models mounted, reme
   await f.mount(h(c.SettingsPanel, props));
   const general = f.node('.settings-general');
   assert.equal(f.node('.settings-section-tab[aria-current="page"]').textContent, 'General');
-  assert.deepEqual([...f.view.container.querySelectorAll('.settings-section-tab')].map(n => n.textContent), ['General', 'Models', 'MCP servers', 'Skills & extensions', 'Sub-agents', 'Plugins']);
+  assert.deepEqual([...f.view.container.querySelectorAll('.settings-section-tab')].map(n => n.textContent), ['General', 'Models', 'MCP servers', 'Skills & extensions', 'Sub-agents', 'Built-in features']);
   await f.click(f.button('Models', f.node('.settings-section-tabs')));
   assert.equal(general.closest('.settings-section-host').hidden, true, 'actual ancestor hides retained general');
   assert.equal(c.getLastSettingsSection('/project'), 'models');

@@ -34,8 +34,10 @@ and its coordinator plan are not edited by the companion session.
   Brabbler must not update/delete Nix-owned contents or imply that runtime Remove edits
   the declaration. Unmanaged packages retain their normal management boundary.
 - Pi and Brabbler share installed files but have **independent availability state**.
-  Plain Pi retains native per-account settings. No ongoing bidirectional synchronization
-  is requested. Preserve profile boundaries; do not copy selections between accounts.
+  Plain Pi retains native settings. No ongoing bidirectional synchronization is
+  requested. Brabbler preferences belong to the native settings context (`agentDir`):
+  accounts sharing that context share preferences; distinct contexts stay independent.
+  Preserve profile boundaries, without cross-context copying.
 - For the new Brabbler store, **import proven existing choices once, error on ambiguity**.
   Restrict continuity to unchanged paths/scopes; do not guess mappings. Prove old native
   filters are not left as a competing hidden gate. The owner may reconsider import UX
@@ -163,12 +165,19 @@ loads the new code. W01 must not assume new-loader construction alone refreshes 
 Native skill collisions are diagnostic warnings/first-wins; the proposed stricter
 consumer error policy is not supplied by Nix or a patched SDK.
 
-W01 and the consumer's admission/lifecycle units still own actual exclusion and
-next-turn application. Packaging does not prove safe unloading or remove instructions
-already consumed. Runtime UI, package operations and the durable-writer cutover remain
-this feature's responsibility; no implementation is supplied by this handoff.
+The consumer owns actual selection and runtime application; packaging does not
+prove safe unloading or remove instructions already consumed. Subsequent accepted
+decisions use practical whole-record SDK suppression and explicit selected-session
+Apply, not automatic next-turn switching. Saving neither blocks input nor applies
+live; Apply succeeds now at a safe boundary or refuses busy, without waiting/retry
+or sibling changes. Pi/Nix owns package contents and registration; Brabbler's obsolete
+package mutation controls are retired, not rehomed. See [ADR 0045](../adr/0045-explicit-resource-application.md)
+and [ADR 0046](../adr/0046-agent-resource-availability-only.md).
 
-**Known gaps:** live selection inventory, consumer reader acceptance, legacy import
-and retained-session extension lifecycle remain open with their respective owners.
+**Consumer handoff:** inventory, separate first-use import, runtime composition,
+independent disabled-skill inspection and explicit Apply are now connected in the
+consumer. Current mechanisms/limits belong to the [feature guide](../feature-internals.md#resource-api-and-skill-inspection)
+and [session guide](../session-internals.md#explicit-resource-application), not this
+producer evidence record. Full composed acceptance remains separately coordinated.
 Producer preparation/tests/builds are not activation. No Brabbler feature source,
 user settings, deployed resources, publication or cleanup was changed by this handoff.

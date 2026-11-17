@@ -28,24 +28,29 @@ function fixture() {
 }
 const request = (body) => new Request("http://localhost/api/plugins", { method: "POST", body: JSON.stringify({ cwd: "/synthetic-project", ...body }) });
 
-test("each successful package action invalidates around effects", async () => {
+// ADR 0046 retires action-success/invalidation assertions at f6b91f64:31–53.
+// The route must not enter the independent provider-cache mutation lane at all.
+test("retired package actions never invalidate or enter native effects", async () => {
   for (const action of ["install", "remove", "update", "disable", "enable"]) {
     const f = fixture();
-    assert.equal((await f.route.POST(request({ action, source: "local-fixture" }))).status, 200);
-    assert.deepEqual(f.calls, ["begin", "effect", "finish:true", "models"]);
+    const response = await f.route.POST(request({ action, source: "local-fixture" }));
+    assert.equal(response.status, 410); assert.match((await response.json()).error, /Pi or Nix/);
+    assert.deepEqual(f.calls, []);
   }
 });
 
-test("failed or partially applied updates invalidate and mark uncertainty, including project-labelled updates", async () => {
+test("project and bulk updates refuse before even a failing native mutation lane", async () => {
   const f = fixture(); f.controls.fail = true;
-  assert.equal((await f.route.POST(request({ action: "update", scope: "project" }))).status, 500);
-  assert.deepEqual(f.calls, ["begin", "effect", "finish:false", "models"]);
+  const response = await f.route.POST(request({ action: "update", scope: "project" }));
+  assert.equal(response.status, 410); await response.json();
+  assert.deepEqual(f.calls, []);
 });
 
 test("invalid requests never start a mutation or disable cache retention", async () => {
   for (const body of [{}, { action: "unknown" }, { action: "install" }, { action: "disable" }]) {
     const f = fixture();
-    assert.equal((await f.route.POST(request(body))).status, 400);
+    const response = await f.route.POST(request(body));
+    assert.equal(response.status, 410); await response.json();
     assert.deepEqual(f.calls, []);
   }
 });

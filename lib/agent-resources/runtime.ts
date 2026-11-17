@@ -3,6 +3,7 @@ import { isAbsolute, join, normalize } from "node:path";
 import { getAgentDir, type DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import { readCommittedResourceSelection } from "./api";
 import { selectionKey } from "./selection";
+import { requiresResourceCatalog } from "./preferences";
 
 type LoaderOptions = Omit<ConstructorParameters<typeof DefaultResourceLoader>[0], "cwd" | "agentDir">;
 type Kind = "skill" | "extension";
@@ -55,7 +56,7 @@ export async function prepareResourceRuntime(input: { cwd: string; sessionId?: s
   const agentDir = getAgentDir();
   if (captured) await captured.assertCurrent();
   if (!present(join(agentDir, "resource-catalog.json"))) {
-    if (present(join(agentDir, "brabbler/resource-preferences.json"))) refused("retained preferences require resource-catalog.json");
+    if (present(join(agentDir, "brabbler/resource-preferences.json")) && requiresResourceCatalog(agentDir)) refused("retained preferences require resource-catalog.json");
     return Object.freeze({ selection: undefined, compose: (options: LoaderOptions) => options });
   }
   const selection = captured ?? await readCommittedResourceSelection(input);

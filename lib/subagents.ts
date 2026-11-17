@@ -55,6 +55,9 @@ export interface SubagentMetadata {
   runInBackground: boolean;
   createdAt: string;
   resourceSnapshot: SubagentResourceSnapshot;
+  /** Early saved identity is not runnable until its actual profile/tool snapshot
+   * is finalized after own-choice initialization and services construction. */
+  resourceSnapshotPending?: boolean;
   /** Resolved spawn budget; 0 is explicitly unlimited. Absent on legacy children. */
   turnLimit?: number;
   worktreePath?: string;
@@ -543,8 +546,23 @@ function subagentMetadataData(entries: readonly SessionEntry[]): ValidSubagentMe
 export function readSubagentSessionResources(
   entries: readonly SessionEntry[],
 ): SubagentSessionResources | null {
-  const data = subagentMetadataData(entries);
+  let data = subagentMetadataData(entries);
   if (!data) return null;
+  const declared = data;
+  const pending = declared.resourceSnapshotPending === true;
+  if (pending) {
+    // Only this creation's matching finalized declaration can release the early
+    // guard. Ordinary reopen never copies choices or invents a profile ceiling.
+    const finalized = entries.findLast(entry => entry.type === "custom" && entry.customType === SUBAGENT_META_TYPE
+      && isRecord(entry.data) && entry.data.version === 1 && entry.data.resourceSnapshotPending === false
+      && entry.data.parentSessionId === declared.parentSessionId && entry.data.parentSessionPath === declared.parentSessionPath
+      && typeof declared.profile === "string" && entry.data.profile === declared.profile
+      && typeof declared.createdAt === "string" && entry.data.createdAt === declared.createdAt);
+    if (!finalized || finalized.type !== "custom" || !isRecord(finalized.data)) {
+      throw new Error("Subagent resource setup is incomplete; inspect the retained session before reopening. No automatic replay.");
+    }
+    data = finalized.data as ValidSubagentMetadataData;
+  }
   const snapshot = data.resourceSnapshot;
   const loadSkills = isRecord(snapshot) && snapshot.loadSkills === true;
   const loadExtensions = isRecord(snapshot) && snapshot.loadExtensions === true;
@@ -569,6 +587,7 @@ export function readSubagentSessionResources(
       ...(typeof snapshot.exactSystemPrompt === "string" ? { exactSystemPrompt: snapshot.exactSystemPrompt } : {}),
     };
   }
+  if (pending) throw new Error("Subagent resource setup is incomplete; inspect the retained session before reopening. No automatic replay.");
   return null;
 }
 

@@ -3,6 +3,7 @@ import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSy
 import { join, posix } from "node:path";
 import { performance } from "node:perf_hooks";
 import { createSelectionIdentity, selectionKey, type SelectionChoice, type SelectionContext, type SelectionIdentity } from "./selection";
+import type { ResourceContext } from "./context";
 
 /** Isolated W05a/W06a store. No live imports/callers; activation remains gated.
  * Contexts are ALREADY ADMITTED by the caller. These opaque comparisons do NOT
@@ -255,6 +256,13 @@ export function readScopedPreferences(admittedContext: SelectionContext, request
   return snapshot(readStore(layout(context.agentDir, false)), context.agentDir, target);
 }
 
+/** Empty creation-only Session generations do not configure resource selection.
+ * Still use the strict private store reader; any other retained state needs its catalog. */
+export function requiresResourceCatalog(agentDir: string): boolean {
+  return Boolean(readStore(layout(path(agentDir), false)).store?.targets.some(entry =>
+    entry.target.scope !== "session" || entry.choices.length > 0 || entry.importReceipt !== null));
+}
+
 /** Optional trusted context/catalog/membership fence, NOT store authorization.
  * Throws/rejects to refuse publication. Both calls settle under the same lock;
  * the caller must bound its work. The five-second publication budget is checked
@@ -294,8 +302,22 @@ export async function commitScopedImport(admittedContext: SelectionContext, requ
   return writeTarget(context, target, desiredRevision, { admittedImport, recheckEvidence }, assertAdmissionCurrent);
 }
 
+/** Creation only: canonical saved contexts, current OWN source read under the
+ * existing store lock. An existing destination generation (even empty) wins. */
+export async function initializeOwnSessionChoices(source: ResourceContext, destination: ResourceContext): Promise<PreferenceSnapshot> {
+  const from = contextCopy(source.selection), to = contextCopy(destination.selection);
+  need(from.agentDir === to.agentDir && from.sessionBinding !== null && to.sessionBinding !== null
+    && from.sessionBinding !== to.sessionBinding, "scope");
+  const sourceTarget = admitTarget(from, { scope: "session", binding: from.sessionBinding });
+  const target = admitTarget(to, { scope: "session", binding: to.sessionBinding });
+  return writeTarget(to, target, "", { sourceTarget }, () => {
+    source.assertAdmissionCurrent(); destination.assertAdmissionCurrent();
+  });
+}
+
 type TargetWrite = { identity: SelectionIdentity; choice: SelectionChoice }
-  | { admittedImport: ImportReceipt; recheckEvidence: () => string };
+  | { admittedImport: ImportReceipt; recheckEvidence: () => string }
+  | { sourceTarget: PreferenceTarget };
 async function writeTarget(context: SelectionContext, target: PreferenceTarget, desiredRevision: string, operation: TargetWrite,
   assertAdmissionCurrent?: PreferencePublicationGuard): Promise<PreferenceSnapshot> {
   const paths = layout(context.agentDir, true), lock = `${paths.file}.lock`;
@@ -311,9 +333,18 @@ async function writeTarget(context: SelectionContext, target: PreferenceTarget, 
   try {
     checkLock(); const state = readStore(paths);
     const currentSnapshot = snapshot(state, context.agentDir, target);
-    if ("admittedImport" in operation && currentSnapshot.importReceipt) return currentSnapshot;
-    need(typeof desiredRevision === "string" && /^[a-f0-9]{64}$/.test(desiredRevision)
-      && currentSnapshot.revision === desiredRevision, "conflict");
+    if ("sourceTarget" in operation) {
+      // Canonical Session guards are synchronous. Do not yield while holding
+      // this lock: parallel fresh children in this process must not collide
+      // with an initializer that is merely waiting for its own microtask.
+      assertAdmissionCurrent?.(); checkLock();
+      need(readStore(paths).generation === state.generation, "generation");
+      if (state.store?.targets.some(item => targetKey(item.target) === targetKey(target))) return currentSnapshot;
+    } else {
+      if ("admittedImport" in operation && currentSnapshot.importReceipt) return currentSnapshot;
+      need(typeof desiredRevision === "string" && /^[a-f0-9]{64}$/.test(desiredRevision)
+        && currentSnapshot.revision === desiredRevision, "conflict");
+    }
     const receipt = "admittedImport" in operation ? receiptCopy(operation.admittedImport, context.agentDir, target) : currentSnapshot.importReceipt;
     const checkEvidence = () => {
       if ("admittedImport" in operation) {
@@ -321,12 +352,16 @@ async function writeTarget(context: SelectionContext, target: PreferenceTarget, 
         need(operation.recheckEvidence() === receipt!.evidenceDigest, "generation");
       }
     };
-    await assertAdmissionCurrent?.(); checkLock();
-    checkEvidence();
+    if ("sourceTarget" in operation) assertAdmissionCurrent?.();
+    else await assertAdmissionCurrent?.();
+    checkLock(); checkEvidence();
     const store = { version: 1 as const, id: state.store?.id ?? randomUUID(), targets: [...(state.store?.targets ?? [])] };
     const previous = store.targets.findIndex(item => targetKey(item.target) === targetKey(target));
     let choices = [...currentSnapshot.choices];
-    if ("identity" in operation) {
+    if ("sourceTarget" in operation) {
+      const source = snapshot(state, context.agentDir, operation.sourceTarget);
+      choices = [...copyOwnSessionChoices({ target: source.target, choices: source.choices }, context.agentDir, target.binding!).choices];
+    } else if ("identity" in operation) {
       choices = choices.filter(item => selectionKey(item.identity) !== selectionKey(operation.identity));
       if (operation.choice !== "inherit") choices.push({ identity: operation.identity, value: operation.choice });
     } else {
@@ -357,8 +392,9 @@ async function writeTarget(context: SelectionContext, target: PreferenceTarget, 
       // Callback effects can invalidate the observations above: fence them again
       // before the one choices+receipt rename. This is bounded detection, not an
       // atomic snapshot/lock across noncooperating external files.
-      await assertAdmissionCurrent(); checkLock();
-      checkEvidence();
+      if ("sourceTarget" in operation) assertAdmissionCurrent();
+      else await assertAdmissionCurrent();
+      checkLock(); checkEvidence();
       need(readStore(paths).generation === state.generation, "generation");
     }
     checkLock(); renameSync(temp, paths.file);
@@ -374,7 +410,7 @@ async function writeTarget(context: SelectionContext, target: PreferenceTarget, 
 /** Pure creation-time COPY INPUT, not session creation/reopen behavior. The caller
  * supplies a current own-session snapshot and a separately admitted NEW binding.
  * Never accepts effective values/parents/permissions. Persisting once vs reopening
- * the same ID is the future lifecycle owner's responsibility. */
+ * the same ID is the initializer/lifecycle owner's responsibility. */
 export function copyOwnSessionChoices(input: Readonly<{ target: PreferenceTarget; choices: readonly PreferenceChoice[] }>,
   admittedAgentDir: string, admittedNewBinding: string): Readonly<{ target: PreferenceTarget; choices: readonly PreferenceChoice[] }> {
   const value = record(input, ["target", "choices"]), source = targetCopy(value.target);

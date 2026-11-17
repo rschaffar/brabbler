@@ -3,6 +3,8 @@ import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir
 import { withStreamingCacheWarmingDefault } from "./sdk-settings";
 import { prepareResourceRuntime, type ResourceRuntimeSelection } from "./agent-resources/runtime";
 import { readCommittedResourceSelection } from "./agent-resources/api";
+import { resolveResourceContext } from "./agent-resources/context";
+import { initializeOwnSessionChoices } from "./agent-resources/preferences";
 import { createResourceApplication, resourceApplication, resourceStatus, ResourceApplyError, type ResourceApplication } from "./agent-resources/live";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
@@ -1587,7 +1589,16 @@ export class AgentSessionWrapper {
         appendSessionModelSpeed(destination, readSessionModelSpeed(sourceEntries));
         appendNativeResourceSelection(destination, readNativeResourceSelection(sourceEntries));
         const newSessionId = forkedManager.getSessionId();
+        sessionSaveBarrier(destination);
         cacheSessionPath(newSessionId, newSessionFile);
+        try {
+          await initializeOwnSessionChoices(
+            await resolveResourceContext({ cwd: sessionManager.getCwd(), sessionId: this.sessionId }),
+            await resolveResourceContext({ cwd: destination.getCwd(), sessionId: newSessionId }));
+        } catch (error) {
+          invalidateSessionListCache();
+          throw new Error(`Fork resource initialization failed; saved session retained at ${newSessionFile}. Inspect before reopening; no automatic replay`, { cause: error });
+        }
         invalidateSessionListCache();
         return { cancelled: false, newSessionId };
       }
@@ -1616,7 +1627,16 @@ export class AgentSessionWrapper {
         appendSessionModelSpeed(forkedManager, readSessionModelSpeed(sourceEntries));
         appendNativeResourceSelection(forkedManager, readNativeResourceSelection(sourceEntries));
         const newSessionId = forkedManager.getSessionId();
+        sessionSaveBarrier(forkedManager);
         cacheSessionPath(newSessionId, forkedPath);
+        try {
+          await initializeOwnSessionChoices(
+            await resolveResourceContext({ cwd: sessionManager.getCwd(), sessionId: this.sessionId }),
+            await resolveResourceContext({ cwd: forkedManager.getCwd(), sessionId: newSessionId }));
+        } catch (error) {
+          invalidateSessionListCache();
+          throw new Error(`Fork resource initialization failed; saved session retained at ${forkedPath}. Inspect before reopening; no automatic replay`, { cause: error });
+        }
         invalidateSessionListCache();
         return { cancelled: false, newSessionId };
       }

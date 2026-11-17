@@ -2,7 +2,13 @@ import { createHash } from "node:crypto";
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync, statSync, type BigIntStats } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, normalize } from "node:path";
-import { SettingsManager } from "@earendil-works/pi-coding-agent";
+import { SettingsManager, parseSessionEntries } from "@earendil-works/pi-coding-agent";
+import { resolveSessionPath } from "../session-reader";
+import { readRegularFileText } from "../regular-file";
+import { readSubagentSessionResources, SUBAGENT_META_TYPE } from "../subagents";
+import { readSessionToolSelection } from "../session-tool-selection";
+import { PRESET_DEFAULT } from "../tool-presets";
+import type { SessionEntry } from "../types";
 import { getKnownAllowedFileRoots } from "../file-access";
 import { physicalDirectoryPath, isPathWithinRoots } from "../path-security";
 import { getProjectTrustStatus } from "../project-trust";
@@ -120,7 +126,7 @@ function localSettings(text: { global: string | undefined; project: string | und
 // The catalog contains desired resolutions; fence native membership, not choices.
 const membership = (catalog: CatalogResult) => hash([catalog.ok, catalog.rows.map(({ selection: _selection, ...row }) => { void _selection; return row; }), catalog.native, catalog.diagnostics]);
 
-async function prepare(input: ContextInput) {
+async function prepare(input: ContextInput, importNative = true) {
   if (process.platform === "win32") refuse(422, "platform", "The managed-local resource pilot requires POSIX installed paths");
   const context = await resolveResourceContext(input), agentDir = context.selection.agentDir;
   // Canonical trust reads use the approved SDK read-lock metadata only; they
@@ -194,7 +200,7 @@ async function prepare(input: ContextInput) {
     const destination = target(context, scope); if (!destination) continue;
     // First-use importer runs for each applicable native scope, before ordinary
     // store reads/writes. No historical Session import and no callback facade.
-    snapshots.set(scope, await ensureScopedNativeImport({ context, scope,
+    if (importNative) snapshots.set(scope, await ensureScopedNativeImport({ context, scope,
       catalog: { discoveryAdmitted: true, metadata, managedMetadataTrusted: true, eligibility },
       admittedEvidencePaths: [...paths], assertNativeReadAllowed: allow, assertPublicationCurrent: guard }));
   }
@@ -235,13 +241,70 @@ async function prepare(input: ContextInput) {
           selectionKey: identity ? selectionKey(identity) : null, parentKey: parent ? selectionKey(parent) : null, desired: selection ?? null,
           ...(skill ? { skill: { name: skill.name, description: skill.description, disableModelInvocation: skill.disableModelInvocation } } : {}) })) } };
   };
-  return { context, token, guard, inventory, first, selectionSnapshot };
+  return { context, token, guard, inventory, first, selectionSnapshot, allow };
 }
 /** Trusted startup consumer only: the same admitted catalog/import/store as HTTP,
  * including committed own-scope choices. A fixed construction snapshot, NOT a live
  * application receipt. Native/context fences do not silently recopy later saves. */
 export async function readCommittedResourceSelection(input: ContextInput) {
   return (await prepare(input)).selectionSnapshot();
+}
+/** Inspection uses the inert native catalog, never first-use import, a loader or
+ * management profile:true as Session read authority. No new filesystem roots. */
+export async function prepareSkillInspection(input: ContextInput, key: string) {
+  const prepared = await prepare(input, false);
+  const row = prepared.first.rows.find(row => row.identity && selectionKey(row.identity) === key);
+  if (row?.kind !== "skill" || row.membership !== "confirmed" || !row.skill
+    || row.selection?.disabledReasons.some(reason => ["source-ineligible", "trust-ineligible", "profile-ineligible"].includes(reason.code))) {
+    refuse(404, "inspection-member", "Skill is not a current admitted catalog member; refresh Skills & extensions and reconcile its source/trust");
+  }
+  let profileCurrent = () => {};
+  if (typeof input.sessionId === "string") {
+    const path = await resolveSessionPath(input.sessionId, { allowCatalogueScan: false });
+    if (!path) refuse(403, "inspection-profile", "Saved Session profile is unavailable; reopen its own saved conversation or inspect without a Session");
+    const profile = () => {
+      prepared.context.assertAdmissionCurrent();
+      const before = stamp(statSync(path, { bigint: true }));
+      const text = readRegularFileText(path, 256 * 1024 * 1024);
+      if (!text || before !== stamp(statSync(path, { bigint: true }))) refuse(409, "inspection-profile", "Saved Session changed; refresh before inspecting instructions");
+      // Reuse the SDK JSONL parser and the actual saved child/tool ceiling owners.
+      // Parsing loss is not evidence that restricted metadata was absent.
+      const parsed = parseSessionEntries(text);
+      if (parsed.length !== text.split("\n").filter(line => line.trim()).length
+        || parsed[0]?.type !== "session" || parsed[0].id !== input.sessionId) {
+        refuse(403, "inspection-profile", "Saved Session profile cannot be proved; repair the saved session or inspect without a Session");
+      }
+      const entries = parsed.slice(1) as unknown as SessionEntry[];
+      const child = readSubagentSessionResources(entries);
+      const hasChild = entries.some(entry => entry.type === "custom" && entry.customType === SUBAGENT_META_TYPE);
+      let tools = hasChild ? child?.tools : readSessionToolSelection(entries);
+      let defaultsEvidence: unknown;
+      if (!hasChild && tools === undefined) {
+        // Undefined (including a cleared pin) follows native defaults. Native
+        // settings trust is independent of registered Project-edit support.
+        const { cwd, selection: { agentDir } } = prepared.context;
+        const projectTrusted = Boolean(cwd && getProjectTrustStatus(cwd, agentDir).trusted);
+        const defaults = { global: nativeSettings(join(agentDir, "settings.json"), prepared.allow),
+          project: projectTrusted ? nativeSettings(join(cwd!, ".pi/settings.json"), prepared.allow) : undefined };
+        const manager = SettingsManager.fromStorage({ withLock(scope, fn) {
+          if (fn(defaults[scope]) !== undefined) refuse(503, "native-write", "Native resource storage is read-only");
+        } }, { projectTrusted });
+        if (manager.drainErrors().length) refuse(422, "inspection-profile", "Repair native settings before inspecting with this Session's configured defaults");
+        tools = manager.getDefaultTools() ?? PRESET_DEFAULT;
+        defaultsEvidence = [projectTrusted, defaults];
+      }
+      if (hasChild && !child?.loadSkills || !tools?.includes("read")) {
+        refuse(403, "inspection-profile", "This saved Session's profile or configured tools do not allow skill and Read access; review its existing tool settings. Child profile ceilings cannot be overridden here");
+      }
+      prepared.context.assertAdmissionCurrent();
+      return hash([hasChild, child, tools, defaultsEvidence]);
+    };
+    const admitted = profile();
+    profileCurrent = () => { if (profile() !== admitted) refuse(409, "inspection-profile", "Saved Session profile changed; refresh before inspecting instructions"); };
+  }
+  const assertCurrent = async () => { await prepared.guard(); profileCurrent(); };
+  await assertCurrent();
+  return { skill: row.skill, assertCurrent };
 }
 export async function getResourceInventory(input: ContextInput = {}) { return (await prepare(input)).inventory(); }
 export async function patchResourceChoice(value: unknown) {

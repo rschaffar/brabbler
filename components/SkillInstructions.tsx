@@ -10,7 +10,9 @@ import { useI18n } from "@/hooks/useI18n";
 import { MarkdownBody } from "./MarkdownBody";
 import { ConfigButton, ConfigDetailHeader, ConfigDetailHeaderInfo, ConfigField } from "./SettingsUi";
 
-export function SkillInstructions({ skill, cwd }: { skill: SkillInfo; cwd: string }) {
+export function SkillInstructions({ skill, cwd, selectionKey, sessionId }: {
+  skill: Pick<SkillInfo, "filePath" | "baseDir">; cwd?: string | null; selectionKey?: string; sessionId?: string | null;
+}) {
   const observe = useSettingsWork();
   const { t } = useI18n();
   const rootDocument = skill.filePath.split(/[\\/]/).pop()!;
@@ -50,7 +52,7 @@ export function SkillInstructions({ skill, cwd }: { skill: SkillInfo; cwd: strin
     setError(null);
     void observe("skills.instructions", (async () => {
       try {
-        const params = new URLSearchParams({ cwd, filePath: skill.filePath });
+        const params = new URLSearchParams({ ...(cwd ? { cwd } : {}), ...(selectionKey ? { selectionKey } : { filePath: skill.filePath }), ...(selectionKey && sessionId ? { sessionId } : {}) });
         if (documentPath !== rootDocument) params.set("document", documentPath);
         const response = await fetch(`/api/skills/content?${params}`, { signal: controller.signal });
         const data = await response.json() as { content?: unknown; error?: string };
@@ -61,7 +63,7 @@ export function SkillInstructions({ skill, cwd }: { skill: SkillInfo; cwd: strin
       }
     })());
     return () => controller.abort();
-  }, [cwd, skill.filePath, documentPath, rootDocument, observe]);
+  }, [cwd, sessionId, selectionKey, skill.filePath, documentPath, rootDocument, observe]);
   return <div ref={root} role="region" aria-label={t("skills.instructions")} style={{ minWidth: 0 }}><ConfigField label={t("skills.instructions")}>
     {documents.length > 0 && <ConfigDetailHeader><ConfigDetailHeaderInfo>
       <ConfigButton size="small" onClick={() => { pendingAnchor.current = ""; setDocuments(stack => stack.slice(0, -1)); }}>{t("skills.documentBack")}</ConfigButton>

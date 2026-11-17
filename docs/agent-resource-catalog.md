@@ -1,10 +1,15 @@
 # Agent resource catalog: global managed pilot v1
 
-This is the approved producer v1 interchange for the global pilot. The inert
-consumer parser/reader is unconnected; native binding and runtime application are
-not established by parsing. See
-[ADR 0044](adr/0044-scoped-agent-resources.md) and the
-[implementation plan](plans/2026-11-16_skills-extensions-plan.md).
+This is the approved producer v1 interchange for the global managed-local pilot.
+The consumer connects inert metadata to admitted native inventory, separate scoped
+preferences and runtime loader composition. Parsing alone is neither admission nor
+an applied runtime receipt. Supported installed local sources use public SDK
+inventory; unsupported/ambiguous arrangements refuse actionably, without extra
+npm/git discovery or a resource SDK patch. See [feature contracts](feature-internals.md#resource-api-and-skill-inspection),
+[session application](session-internals.md#explicit-resource-application) and
+[ADR 0044](adr/0044-scoped-agent-resources.md), as revised by
+[ADR 0045](adr/0045-explicit-resource-application.md) and
+[ADR 0046](adr/0046-agent-resource-availability-only.md).
 
 ## Location and ownership
 
@@ -91,9 +96,10 @@ is ungrouped, not implicitly assigned to a Core group.
   Do not use labels/content to infer a repair.
 
 The pilot describes managed local installed sources, not npm/git transport syntax.
-Unmanaged native sources keep their provenance and normal management boundary;
-omission does not claim them Nix-owned or silently disable them. No second native
-registration or enumeration language is introduced.
+Unmanaged native sources keep their provenance and external Pi management boundary;
+omission does not claim them Nix-owned or silently disable them. Brabbler controls
+availability only, not package installation, searching, updating, removal or
+registration. No second native registration or enumeration language is introduced.
 
 The consumer accepts only this producer v1 wire format, not the former draft
 shape. It normalizes flat resources into its immutable internal package/member and
@@ -119,7 +125,11 @@ The inert reader bounds bytes, JSON depth/nodes, declarations, text and paths,
 rejects decoded duplicate keys, and fences the admitted metadata file's generation.
 It supports admitted read-only Nix-like symlinks separately from the no-follow
 mutable preference-store policy. Native-source generation coherence and binding
-remain separate obligations; the reader does not resolve or read resource sources.
+belong to the catalog/API admission owners; the metadata reader itself does not
+resolve or read resource sources. Those owners fence current native declarations,
+physical observations, canonical trust and metadata before publishing inventory or
+preferences. These checks detect changes, not an atomic lock against external
+filesystem writers.
 
 ## Producer/consumer ordering
 
@@ -129,9 +139,24 @@ automatic-extension link during a separately authorized migration. It never writ
 Brabbler preferences or guesses package-off conversion. Unmanaged copies are not
 automatically deleted. Metadata may initially be unused by a consumer.
 
-The consumer owns its separate scoped store, one-time proven legacy import,
-ambiguity refusal and recovery. It must prove that imported native availability
-filters no longer act as a second hidden Brabbler gate while plain Pi retains its
-native on-disk state. No in-memory loader adaptation is claimed supported until
-executed fixtures prove it. Durable-writer cutover and live use remain blocked on
-the approved migration protocol and runtime lifecycle evidence.
+The consumer owns `<agentDir>/brabbler/resource-preferences.json`: proven legacy
+Global/Project choices and their one-time completion/provenance commit atomically,
+with ambiguity and stale generations refused. Preserve the store across rollback
+and re-upgrade; native Pi/Nix files are never rewritten or restored by this import.
+No historical Session import or ongoing bidirectional synchronization occurs.
+
+Runtime composition supplies enabled native-excluded candidates in memory and
+filters skills plus whole optional extension records through public SDK overrides;
+plain Pi retains its native filters on disk. Extension imports/factories can already
+have run: this is practical suppression, not code isolation or guaranteed unloading.
+Independent source/trust/profile/tool/file boundaries remain required. Disabled
+skills leave both advertising and explicit invocation, but independently admitted
+Markdown inspection can remain available without enabling them or granting roots.
+
+Saving choices does not change or block live conversations. Normal startup/reopen
+uses current saved choices; an existing conversation changes only through its own
+explicit Apply at a safe boundary, or receives immediate busy/error refusal. No
+automatic waiting/retry or sibling changes are implied. Actual startup/Apply binding
+receipts distinguish saved and applied revisions. Focused native/runtime and installed
+browser fixtures exercise this connection; full composed acceptance and any live
+configuration activation remain separate, not consequences of this contract.

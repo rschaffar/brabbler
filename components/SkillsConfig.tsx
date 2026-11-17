@@ -54,38 +54,13 @@ export function SkillsConfig(props: Props) {
   return <ResourceSettings key={JSON.stringify([cwd, sessionId])} {...props} cwd={cwd} sessionId={sessionId} />;
 }
 
-function Instructions({ row, cwd }: { row: ResourceRow; cwd: string | null }) {
+function Instructions({ row, cwd, sessionId }: { row: ResourceRow; cwd: string | null; sessionId: string | null }) {
   const { t } = useI18n();
-  const observe = useSettingsWork();
-  const [skill, setSkill] = useState<SkillInfo | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const supported = Boolean(cwd && row.membership === "confirmed" && row.nativeEnabled === true);
-  useEffect(() => {
-    if (!supported || !cwd) return;
-    const controller = new AbortController();
-    setLoading(true);
-    void observe("resources.inspect", (async () => {
-      try {
-        // Metadata is not content authority. Obtain the reader's actual inputs
-        // from its existing independent native membership endpoint first.
-        const response = await fetch(`/api/skills?${new URLSearchParams({ cwd })}`, { signal: controller.signal });
-        const data = await response.json() as { skills?: SkillInfo[]; error?: string };
-        if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
-        if (!controller.signal.aborted) setSkill(data.skills?.find(candidate => candidate.filePath === row.path) ?? null);
-      } catch (cause) {
-        if (!controller.signal.aborted) setError(message(cause));
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
-      }
-    })());
-    return () => controller.abort();
-  }, [cwd, row.path, supported, observe]);
-  if (skill && cwd) return <SkillInstructions key={skill.filePath} cwd={cwd} skill={skill} />;
-  return <ConfigField label={t("skills.instructions")}>
-    {loading ? <span role="status">{t("i18n.loading")}</span> : <span>{t("resources.instructionsUnavailable")}</span>}
-    {error && <span role="alert">{error}</span>}
-  </ConfigField>;
+  if (row.membership !== "confirmed" || !row.selectionKey) return <ConfigField label={t("skills.instructions")}>{t("resources.instructionsUnavailable")}</ConfigField>;
+  // Display paths are not authority. The server independently admits the current
+  // key, source, own Session profile and bounded document on every read.
+  return <SkillInstructions selectionKey={row.selectionKey} cwd={cwd} sessionId={sessionId}
+    skill={{ filePath: row.path, baseDir: row.path.replace(/[\\/][^\\/]+$/, "") }} />;
 }
 
 function ResourceSettings({ cwd = null, sessionId = null, onClose, embedded = false }: Props) {
@@ -296,8 +271,8 @@ function ResourceSettings({ cwd = null, sessionId = null, onClose, embedded = fa
               {children(selectedRow).length > 0 && <ConfigField label={t("resources.members")}><ul>{children(selectedRow).map(child => <li key={rowKey(child)}><button type="button" className="resource-member" onClick={() => select(child)}>{label(child)}</button></li>)}</ul></ConfigField>}
               <ConfigField label={t("resources.source")}><code className="resource-path">{selectedRow.path}</code><span>{t("resources.nativeObservation", { value: selectedRow.nativeEnabled === null ? t("resources.unconfirmed") : t(selectedRow.nativeEnabled ? "resources.choice.enabled" : "resources.choice.disabled") })}</span></ConfigField>
               {selectedRow.managedBy === "nix" && <ConfigField label={t("resources.ownership")}>{t("resources.nixOwned")}</ConfigField>}
-              {selectedRow.kind === "package" && <ConfigField label={t("resources.packageManagement")}>{t("resources.packageGap")}</ConfigField>}
-              {selectedRow.kind === "skill" && <Instructions key={JSON.stringify([selectedRow.path, selectedRow.nativeEnabled])} row={selectedRow} cwd={cwd} />}
+              {selectedRow.kind === "package" && <ConfigField label={t("resources.packageManagement")}>{t("resources.packageOwnership")}</ConfigField>}
+              {selectedRow.kind === "skill" && <Instructions key={selectedRow.selectionKey ?? selectedRow.path} row={selectedRow} cwd={cwd} sessionId={sessionId} />}
             </> : <ConfigEmptyState>{t("resources.select")}</ConfigEmptyState>}
           </ConfigDetailStack></ConfigDetail>
         </div>

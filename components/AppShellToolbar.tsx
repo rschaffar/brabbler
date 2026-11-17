@@ -39,7 +39,7 @@ export function SessionToolbarActions({ autoNameControl, systemInfoControls, mob
     if (!mobile && !showChat) return null;
     return (
       <div style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
-        <button type="button" aria-label="Session plugin settings" title="Session plugin settings"
+        <button type="button" aria-label={translate("plugins.sessionSettings")} title={translate("plugins.sessionSettings")}
           disabled={!selectedSession || selectedSession.transient}
           onClick={() => {
             if (!selectedSession || selectedSession.transient) return;
@@ -49,7 +49,7 @@ export function SessionToolbarActions({ autoNameControl, systemInfoControls, mob
           className="flex shrink-0 items-center justify-center gap-1 border-r border-border px-2 text-xs text-text-muted hover:bg-bg-hover disabled:opacity-40"
           style={{ width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined }}>
           <SettingsSectionIcon section="plugins" />
-          {!mobile && <span>Policy</span>}
+          {!mobile && <span>{translate("common.plugins")}</span>}
         </button>
         <button
           type="button"

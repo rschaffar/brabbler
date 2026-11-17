@@ -5,6 +5,8 @@ import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-acces
 import { isExistingPathWithinRoots } from "@/lib/path-security";
 import { readRegularFileText } from "@/lib/regular-file";
 import { loadSkillsWithInstallInfo } from "@/lib/skills-service";
+import { prepareSkillInspection, resourceApiFailure } from "@/lib/agent-resources/api";
+import { isApiRequestAllowed } from "@/lib/request-security";
 
 export const dynamic = "force-dynamic";
 
@@ -22,24 +24,37 @@ export async function GET(req: Request) {
   const cwd = searchParams.get("cwd");
   const filePath = searchParams.get("filePath");
   const document = searchParams.get("document");
-  if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
-  if (!filePath) return NextResponse.json({ error: "filePath required" }, { status: 400 });
+  const key = searchParams.get("selectionKey");
+  const sessionId = searchParams.get("sessionId");
+  const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
+  if (key !== null) {
+    if (!isApiRequestAllowed(req)) return reply({ error: "Untrusted API request" }, 403);
+    if (!key || key.length > 49_152 || filePath !== null || [...searchParams.keys()].some(name => !["selectionKey", "cwd", "sessionId", "document"].includes(name) || searchParams.getAll(name).length !== 1)) {
+      return reply({ error: "Use one current selectionKey, optional cwd/own sessionId and contained document; do not combine filePath" }, 400);
+    }
+  } else {
+    // Retained native-loader callers keep their exact membership contract.
+    if (sessionId !== null) return reply({ error: "Session inspection requires a current selectionKey" }, 400);
+    if (!cwd) return reply({ error: "cwd required" }, 400);
+    if (!filePath) return reply({ error: "filePath required" }, 400);
+  }
 
   try {
-    const allowedRoots = await getAllowedFileRoots();
-    if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-
-    const { skills } = await loadSkillsWithInstallInfo(cwd);
-    const skill = skills.find((item) => item.filePath === filePath);
+    const inspection = key !== null ? await prepareSkillInspection({ ...(cwd !== null ? { cwd } : {}), ...(sessionId !== null ? { sessionId } : {}) }, key) : null;
+    const skill = inspection?.skill ?? await (async () => {
+      const allowedRoots = await getAllowedFileRoots();
+      if (!isExistingFilePathAllowed(cwd!, allowedRoots)) return null;
+      const { skills } = await loadSkillsWithInstallInfo(cwd!);
+      return skills.find(item => item.filePath === filePath);
+    })();
     if (!skill) {
-      return NextResponse.json({ error: "Skill not found" }, { status: 404 });
+      if (cwd && !isExistingFilePathAllowed(cwd, await getAllowedFileRoots())) return reply({ error: "Access denied" }, 403);
+      return reply({ error: "Skill not found" }, 404);
     }
 
     let target = skill.filePath;
     if (document !== null) {
-      const refuse = (status: number, error: string) => NextResponse.json({ error }, { status });
+      const refuse = (status: number, error: string) => reply({ error }, status);
       // The client sends a normalized path. A `..` after a link names one file
       // to path.join() and realpath, another to the filesystem (#748).
       if (path.isAbsolute(document) || /[\\:\0]/.test(document) || document.split("/").includes("..")) {
@@ -55,14 +70,33 @@ export async function GET(req: Request) {
       if (stats.size > SKILL_CONTENT_MAX_BYTES) return refuse(413, "Skill document is larger than 1 MiB");
     }
 
-    const content = readRegularFileText(target, SKILL_CONTENT_MAX_BYTES);
+    const validateTarget = () => {
+      if (!MARKDOWN_FILE.test(target) || !MARKDOWN_FILE.test(realpathSync(target))) return reply({ error: "Only Markdown documents can be opened" }, 415);
+      if (!isExistingPathWithinRoots(target, new Set([skill.baseDir]))) return reply({ error: "Document is outside the skill folder" }, 403);
+      const stats = statSync(target, { bigint: true });
+      if (!stats.isFile()) return reply({ error: "Skill document is not a regular file" }, 400);
+      if (stats.size > BigInt(SKILL_CONTENT_MAX_BYTES)) return reply({ error: "Skill document is larger than 1 MiB" }, 413);
+      const physicalPath = realpathSync(target);
+      return { physicalPath, stats, token: JSON.stringify([realpathSync(skill.baseDir), physicalPath, String(stats.dev), String(stats.ino), String(stats.size), String(stats.mtimeNs), String(stats.ctimeNs)]) };
+    };
+    await inspection?.assertCurrent();
+    const before = validateTarget();
+    if (!("stats" in before)) return before;
+    const content = readRegularFileText(before.physicalPath, SKILL_CONTENT_MAX_BYTES, before.stats);
+    await inspection?.assertCurrent();
+    const after = validateTarget();
+    if (!("stats" in after) || after.token !== before.token) return reply({ error: "Skill document changed; refresh before reading" }, 409);
     if (content === undefined) {
-      return NextResponse.json({ error: "Skill file not found" }, { status: 404 });
+      return reply({ error: "Skill file not found" }, 404);
     }
-    return NextResponse.json({ content });
+    return reply({ content });
   } catch (error) {
+    if (key !== null) {
+      const failure = resourceApiFailure(error);
+      return reply({ error: failure.error }, failure.status);
+    }
     // Node's errors name the path; a document's answer stays without one.
-    if (document !== null) return NextResponse.json({ error: "Skill document could not be read" }, { status: 500 });
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    if (document !== null) return reply({ error: "Skill document could not be read" }, 500);
+    return reply({ error: error instanceof Error ? error.message : String(error) }, 500);
   }
 }

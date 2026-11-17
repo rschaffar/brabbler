@@ -24,6 +24,14 @@ async function selected(view, name) { await click(view, rowButton(view, name)); 
 async function fixture(t, { data = resourceInventory(), setup, settle = true, route, props = {} } = {}) {
   const lifetime = skillsLifetime(t, request => {
     const method = request.options.method ?? 'GET';
+    if (request.url.pathname === '/api/skills/content') {
+      assert.equal(method, 'GET'); exactHeaders(request);
+      const inspected = data.catalog.rows.find(row => row.selectionKey === request.url.searchParams.get('selectionKey'));
+      assert.equal(inspected?.kind, 'skill', 'content request names a current skill');
+      assert.equal(inspected.membership, 'confirmed');
+      exactQuery(request, { selectionKey: inspected.selectionKey, ...(data.context.cwd ? { cwd: data.context.cwd } : {}), ...(data.context.sessionId ? { sessionId: data.context.sessionId } : {}) });
+      return { content: '' };
+    }
     assert.equal(request.url.pathname, '/api/agent-resources');
     if (method === 'GET') {
       exactHeaders(request);
@@ -57,10 +65,13 @@ test('actual hierarchy uses exact parents, search/disclosure, diagnostics and ma
   const { view, http } = await fixture(t);
   assert.deepEqual([...view.container.querySelectorAll('.config-sidebar-text')].map(node => node.textContent), ['core', 'Tooling', 'Guide', 'extension', 'Standalone']);
   assert.equal(text(view).includes('Repair the missing declaration; preferences retained'), true);
+  await selected(view, 'Tooling');
+  assert.equal(text(view).includes('Pi or Nix manages package installation'), true);
+  assert.equal([...view.container.querySelectorAll('button')].some(button => /^(Install|Update|Remove|Search packages)$/.test(button.textContent)), false);
   await selected(view, 'Guide');
   assert.equal(view.window.document.activeElement === view.container.querySelector('h3'), true, 'desktop selection focuses actual detail');
   assert.equal(text(view).includes('Authored manual-only skill'), true);
-  assert.equal(text(view).includes('Instructions unavailable here'), true);
+  assert.equal(text(view).includes('No instructions in this skill.'), true);
   assert.equal(text(view).includes('✓ Included in next-turn selection'), false, 'manual-only is not automatic advertising');
   const collapse = view.container.querySelector('button[aria-label="Collapse Tooling"]');
   await click(view, collapse);
@@ -200,18 +211,18 @@ test('real response controls supported scopes, project-origin no Global, native 
   assert.equal(http.requests.every(request => request.jsonCalls === 1), true);
 });
 
-test('admitted native skill reuses actual SkillInstructions with independent membership and content checks', async t => {
-  const data = resourceInventory(); data.catalog.rows[2].nativeEnabled = true;
-  const admittedSkill = { ...data.catalog.rows[2].skill, filePath: '/fixture/skill', baseDir: '/fixture' };
+test('native-excluded Off skill reuses actual reader with canonical key/own Session and no native-loader prerequisite', async t => {
+  const data = resourceInventory(); data.catalog.rows[2].nativeEnabled = false;
+  data.catalog.rows[2].desired.enabled = false;
+  data.catalog.rows[2].desired.disabledReasons = [{ code: 'parent-disabled', key: keys.group }];
   const lifetime = skillsLifetime(t, request => {
     assert.equal(request.options.method ?? 'GET', 'GET'); exactHeaders(request);
     if (request.url.pathname === '/api/agent-resources') { exactQuery(request, { cwd: '/fixture', sessionId: 'session-A' }); return data; }
-    if (request.url.pathname === '/api/skills') { exactQuery(request, { cwd: '/fixture' }); return { skills: [admittedSkill] }; }
-    assert.equal(request.url.pathname, '/api/skills/content'); exactQuery(request, { cwd: '/fixture', filePath: admittedSkill.filePath });
+    assert.equal(request.url.pathname, '/api/skills/content'); exactQuery(request, { cwd: '/fixture', sessionId: 'session-A', selectionKey: keys.skill });
     return { content: '' };
   });
   const render = await production(lifetime.onWork), view = await lifetime.mount(render());
-  await selected(view, 'Guide'); await lifetime.join('resources.inspect'); await lifetime.join('skills.instructions');
+  await selected(view, 'Guide'); await lifetime.join('skills.instructions');
   const region = view.container.querySelector('[role="region"][aria-label="Instructions"]');
   assert.equal(region.textContent, 'InstructionsNo instructions in this skill.');
   assert.equal(lifetime.http.requests.some(request => request.url.pathname === '/api/skills/content' && request.jsonCalls === 1), true);
