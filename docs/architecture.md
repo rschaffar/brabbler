@@ -62,19 +62,23 @@ app/api/
   models-config/catalog/route.ts  GET models.dev pricing presets
   models-config/discover/route.ts POST fetch a configured provider's upstream model list
   models-config/test/route.ts     POST test a configured model/provider
-  plugins/route.ts                GET/POST package plugin management
-  skills/route.ts                 GET/PATCH loaded skills and disable-model-invocation
-  skills/content/route.ts         GET bounded loaded-skill instructions/contained Markdown references
-  skills/install/route.ts         POST install skills through npx skills add
-  skills/search/route.ts          GET/POST skills.sh search
+  agent-resources/route.ts        GET scoped desired inventory/actual receipt | PATCH own choice or explicit selected Apply
+  plugins/route.ts                GET native package metadata | retired POST actions: 410
+  plugins/bundled/route.ts        GET/PATCH existing Built-in features permissions/settings
+  skills/route.ts                 GET native loaded skills | retired frontmatter PATCH: 410
+  skills/content/route.ts         GET independently admitted selectionKey or legacy loaded-skill Markdown/contained references
+  skills/install/route.ts         retired POST: 410; package contents/registration belong to Pi/Nix
+  skills/search/route.ts          retired GET/POST: 410
+  skills/check/route.ts           retired POST: 410
+  skills/update/route.ts          retired POST: 410
   subagents/settings/route.ts     GET/PUT built-in subagent feature setting
   worktrees/route.ts              GET/POST/DELETE git worktrees (explicit local base/tip on creation)
   git/explorer/route.ts           GET worktree-scoped read-only history/commit/file patch and explicit endpoint comparisons
   review-notebook/route.ts        GET bounded declared folder / selected text+byte-digest or binary asset; no writes/discovery
   review-data/route.ts            retired GET/POST: 410 without body/history access
   web-auth/route.ts               GET status | POST login | DELETE logout (browser password)
-  plugins/check/route.ts          POST check plugin package updates
-  project-trust/route.ts          GET/POST project trust for package installs
+  plugins/check/route.ts          retired POST: 410
+  project-trust/route.ts          GET/POST canonical project resource trust
   sessions/search/route.ts        GET session search
   sessions/[id]/state/route.ts    GET live wrapper state when the session is running
   sessions/[id]/auto-name/route.ts POST generate a session title
@@ -128,11 +132,22 @@ lib/
   subagent-extension-selectors.ts  alias ownership/longest-match grants and conservative denials
   delimited-table.ts   client-safe CSV/TSV parsing and virtual table layout
   node-cli.ts          locate bundled npm-cli.js / npx-cli.js so npm/npx spawn without a shell (Windows npm.cmd)
-  npx.ts               npx runner used by skill install
-  plugin-updates.ts    npm view update checks for /api/plugins/check
+  npx.ts               retained npx helper; no Skills & extensions install action
+  plugin-updates.ts    retained package/version helpers; update-check endpoint retired
   pi-types.ts          local structural types for pi SDK objects
   acceptance/         verified project snapshots, private profiles, durable one-slot coordinator, owned Linux supervisor and session tools
-  rpc-manager.ts      AgentSessionWrapper + registry + startRpcSession
+  agent-resources/selection.ts  own Global/Project/Session resolution and group/package gates
+  agent-resources/context.ts    canonical native-context, registered-project and own saved-session admission
+  agent-resources/catalog-metadata.ts bounded inert producer v1 schema/reader
+  agent-resources/catalog.ts    public native inventory + metadata binding, including excluded members
+  agent-resources/preferences.ts private locked choices/import receipts and one-time current-own Session copy
+  agent-resources/native-import.ts proven first-use Global/Project import; native files remain read-only
+  agent-resources/api.ts         canonical inventory/CAS facade, saved child/tool inspection ceilings and Apply admission
+  agent-resources/runtime.ts     fixed saved snapshot + public SDK whole-record/skill filtering composition
+  agent-resources/live.ts        actual runtime receipts and explicit action seam; no scheduler/save notifications
+  rpc-manager.ts      AgentSessionWrapper + registry + startRpcSession + selected explicit resource Apply
+  btw-runtime.ts      saved BTW creation/context refresh, creation-time own resource-choice copy
+  subagent-runtime.ts child construction/profile snapshot, own choice copy and queue/cleanup/result ownership
   session-reader.ts   SessionManager wrappers + path cache + buildSessionContext adapter
   session-move.ts     staged JSONL relocation + fork/subagent path repair
   starred-sessions-server.ts  server-owned star list + serialized atomic edits
@@ -190,9 +205,9 @@ components/
   EnabledModelsSection.tsx  model switches inside ModelsConfig, backed by enabledModels
   ModelContextWindow.tsx  compact managed-model context-budget draft field
   AgentsConfig.tsx    built-in subagent toggle + agent profile editor
-  PluginsConfig.tsx   modal for installed package plugins
-  SkillsConfig.tsx    modal for loaded/search/installable skills
-  SkillInstructions.tsx  bounded read-only document reader inside the selected skill
+  PluginsConfig.tsx   bundled-only Built-in features settings (existing plugin IDs/storage)
+  SkillsConfig.tsx    Skills & extensions hierarchy, own scoped choices, saved/actual status and explicit Apply
+  SkillInstructions.tsx  independently admitted bounded read-only skill Markdown reader
   DelimitedTable.tsx  row-virtualized CSV/TSV preview in the existing file scroll pane
   TerminalPanel.tsx   retained PTY/xterm with live appearance and touch-key toolbar
   FileExplorer.tsx    file tree inside sidebar

@@ -26,9 +26,7 @@ import {
 } from "@/lib/thinking-expansion-preference";
 import { ModelsConfig } from "./ModelsConfig";
 import { setupPushSubscription } from "@/lib/push-client";
-import { SkillsConfig } from "./SkillsConfig";
 import { AgentsConfig } from "./AgentsConfig";
-import { PluginsConfig } from "./PluginsConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 
 interface Props {
@@ -423,9 +421,16 @@ export function SettingsPanel({ cwd, sessionId, initialSection, onClose, onSessi
         <main className="settings-dialog-main">
           {sectionHost("general", <GeneralSettings sessionId={sessionId} onSessionReloaded={onSessionReloaded} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} />)}
           {sectionHost("models", <ModelsConfig embedded cwd={cwd} onClose={onClose} />)}
-          {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} onClose={onClose} />)}
+          {cwd && sectionHost("skills", <section className="settings-general">
+            <h2 className="settings-general-title">Skills &amp; extensions</h2>
+            <p>The application controls availability for groups, packages and individual resources with independent Global, Project and own Session choices. Saving does not change a live conversation; Apply saved changes acts on the selected conversation now or reports busy, without automatic retries.</p>
+            <p>This static demo does not simulate resource inventory, scoped saves, instruction inspection or runtime application. Package contents and registration are managed outside Brabbler by Pi or Nix; there are no install, search, update or remove controls here.</p>
+          </section>)}
           {cwd && sectionHost("agents", <AgentsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} onClose={onClose} onReloaded={onSessionReloaded} />)}
-          {cwd && sectionHost("plugins", <PluginsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} onClose={onClose} onReloaded={onSessionReloaded} />)}
+          {cwd && sectionHost("plugins", <section className="settings-general">
+            <h2 className="settings-general-title">Built-in features</h2>
+            <p>The application keeps bundled Git Workflow, Session Launch and Acceptance permissions separate from Skills &amp; extensions. Those controls are not simulated in this static demo.</p>
+          </section>)}
         </main>
       </div>
     </div>

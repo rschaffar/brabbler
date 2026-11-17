@@ -1,5 +1,6 @@
-// One real package -> settings-listing connection. Ordering/partial-failure
-// injection and request-security matrices remain in their narrow owner tests.
+// ADR 0046 retires f6b91f64's install/disable/enable/remove success chain.
+// Keep the real warmed provider-listing connection: retired routes cannot write
+// registration, execute this source, or invalidate the independent listing lane.
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,7 +14,7 @@ const { GET: providers } = await jiti.import("../auth/providers/route.ts");
 const { allowFileRoot } = await jiti.import("../../../lib/file-access.ts");
 const { invalidateSettingsListingRuntime } = await jiti.import("../../../lib/settings-listing-runtime.ts");
 
-test("real local package install/disable/enable/remove invalidates a warmed provider listing", async () => {
+test("retired local package actions preserve native settings and a warmed provider listing", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-package-listing-"));
   const agent = join(root, "agent"), cwd = join(root, "project"), source = join(root, "local-package");
   const previous = { dir: process.env.PI_CODING_AGENT_DIR, offline: process.env.PI_OFFLINE, fetch: globalThis.fetch };
@@ -41,22 +42,16 @@ test("real local package install/disable/enable/remove invalidates a warmed prov
         method: "POST", headers: { Host: "localhost", "Content-Type": "application/json" },
         body: JSON.stringify({ cwd, source: selectedSource, action, scope: "global" }),
       }));
-      const body = await response.json(); assert.equal(response.status, 200, JSON.stringify(body));
+      const body = await response.json(); assert.equal(response.status, 410, JSON.stringify(body));
       return body;
     };
-    assert.equal(await listed(), false); // Warm the retained pre-install runtime.
-    const installed = await mutate("install");
-    const installedPackage = installed.packages.find(pkg => pkg.installedPath === source);
-    assert.ok(installedPackage, JSON.stringify(installed));
-    assert.equal(installedPackage.counts.extensions, 1);
-    const configuredSource = installedPackage.source; // SDK may persist a normalized local source.
-    assert.equal(await listed(), true, "installation must replace a warmed listing without explicit test invalidation");
-    await mutate("disable", configuredSource);
-    assert.equal(await listed(), false, "disabled package registrations cannot survive in a retained runtime");
-    const settings = JSON.parse(await readFile(join(agent, "settings.json"), "utf8"));
-    assert.deepEqual(settings.packages.find(pkg => pkg.source === configuredSource).extensions, []);
-    await mutate("enable", configuredSource); assert.equal(await listed(), true);
-    await mutate("remove", configuredSource); assert.equal(await listed(), false);
+    const before = await readFile(join(agent, "settings.json"));
+    assert.equal(await listed(), false); // Warm the real retained runtime.
+    for (const action of ["install", "disable", "enable", "update", "remove"]) {
+      await mutate(action);
+      assert.equal((await readFile(join(agent, "settings.json"))).equals(before), true, "registration/settings bytes unchanged");
+      assert.equal(await listed(), false, "retirement cannot add a provider to a warmed listing");
+    }
     assert.deepEqual(requests, []);
   } finally {
     // Every package/listing operation above is awaited before these are restored.

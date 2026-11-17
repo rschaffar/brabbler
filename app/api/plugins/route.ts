@@ -13,8 +13,6 @@ import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-acces
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { getProjectTrustStatus } from "@/lib/project-trust";
 import { isPluginSourceCheckable } from "@/lib/plugin-updates";
-import { beginSettingsListingMutation } from "@/lib/settings-listing-runtime";
-import { invalidateModelsCache } from "@/lib/models-cache";
 import type {
   PluginDiagnostic,
   PluginPackageInfo,
@@ -27,8 +25,6 @@ import type {
 } from "@/lib/api-types";
 
 export const dynamic = "force-dynamic";
-
-type PluginAction = "install" | "remove" | "update" | "disable" | "enable";
 
 function emptyCounts(): PluginResourceCounts {
   return { extensions: 0, skills: 0, prompts: 0, themes: 0 };
@@ -65,36 +61,6 @@ function getDisabledPackages(settingsManager: SettingsManager): Map<string, bool
     disabled.set(keyFor(getPackageSource(entry), "project"), isDisabledPackage(entry));
   }
   return disabled;
-}
-
-function setPackageDisabled(
-  settingsManager: SettingsManager,
-  source: string,
-  scope: PluginScope,
-  disabled: boolean,
-): boolean {
-  const current = scope === "project"
-    ? settingsManager.getProjectSettings().packages ?? []
-    : settingsManager.getGlobalSettings().packages ?? [];
-  let changed = false;
-  const next = current.map((entry): PackageSource => {
-    if (getPackageSource(entry) !== source) return entry;
-    changed = true;
-    if (disabled) {
-      return {
-        ...(typeof entry === "string" ? { source: entry } : entry),
-        extensions: [],
-        skills: [],
-        prompts: [],
-        themes: [],
-      };
-    }
-    return getPackageSource(entry);
-  });
-  if (!changed) return false;
-  if (scope === "project") settingsManager.setProjectPackages(next);
-  else settingsManager.setPackages(next);
-  return true;
 }
 
 function addCount(counts: PluginResourceCounts, kind: keyof PluginResourceCounts): void {
@@ -300,10 +266,6 @@ async function readPlugins(cwd: string): Promise<PluginsResponse> {
   };
 }
 
-function readScope(scope: unknown): PluginScope {
-  return scope === "project" ? "project" : "global";
-}
-
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const cwd = searchParams.get("cwd");
@@ -320,91 +282,14 @@ export async function GET(req: Request) {
   }
 }
 
-// POST /api/plugins body: { action, source?, scope?, cwd }
+// Pi/Nix owns contents and registration. Refuse before body, native settings,
+// package manager, listing invalidation or any other mutation admission.
 export async function POST(req: Request) {
-  if (!isApiRequestAllowed(req)) {
-    return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
-  }
-  if (!hasJsonContentType(req)) {
-    return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
-  }
-
-  let finishMutation: ((succeeded: boolean) => void) | undefined;
-  let succeeded = false;
-  try {
-    const body = await req.json() as {
-      action?: PluginAction;
-      source?: string;
-      scope?: PluginScope;
-      cwd?: string;
-    };
-    if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
-    if (!body.action) return NextResponse.json({ error: "action required" }, { status: 400 });
-    const allowedRoots = await getAllowedFileRoots();
-    if (!isExistingFilePathAllowed(body.cwd, allowedRoots)) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-
-    const agentDir = getAgentDir();
-    const projectTrust = getProjectTrustStatus(body.cwd, agentDir);
-    const settingsManager = SettingsManager.create(body.cwd, agentDir, {
-      projectTrusted: projectTrust.trusted,
-    });
-    const scope = readScope(body.scope);
-    if (scope === "project" && !projectTrust.trusted) {
-      return NextResponse.json(
-        { error: "Project resources must be trusted before modifying project plugins" },
-        { status: 403 },
-      );
-    }
-    const packageManager = new DefaultPackageManager({
-      cwd: body.cwd,
-      agentDir,
-      settingsManager,
-    });
-    const source = body.source?.trim();
-    const local = scope === "project";
-
-    if (body.action === "install") {
-      if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
-      finishMutation = beginSettingsListingMutation(agentDir);
-      await packageManager.installAndPersist(source, { local });
-    } else if (body.action === "remove") {
-      if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
-      finishMutation = beginSettingsListingMutation(agentDir);
-      await packageManager.removeAndPersist(source, { local });
-    } else if (body.action === "update") {
-      if (!source && !projectTrust.trusted && packageManager.listConfiguredPackages().some((pkg) => pkg.scope === "project")) {
-        return NextResponse.json(
-          { error: "Project resources must be trusted before updating project plugins" },
-          { status: 403 },
-        );
-      }
-      finishMutation = beginSettingsListingMutation(agentDir);
-      await packageManager.update(source);
-    } else if (body.action === "disable") {
-      if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
-      finishMutation = beginSettingsListingMutation(agentDir);
-      setPackageDisabled(settingsManager, source, scope, true);
-      await settingsManager.flush();
-    } else if (body.action === "enable") {
-      if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
-      finishMutation = beginSettingsListingMutation(agentDir);
-      setPackageDisabled(settingsManager, source, scope, false);
-      await settingsManager.flush();
-    } else {
-      return NextResponse.json({ error: `Unsupported action: ${body.action}` }, { status: 400 });
-    }
-
-    // readPlugins may fail independently of an otherwise completed mutation.
-    succeeded = true;
-    return NextResponse.json(await readPlugins(body.cwd));
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
-  } finally {
-    if (finishMutation) {
-      finishMutation(succeeded);
-      invalidateModelsCache();
-    }
-  }
+  const headers = { "Cache-Control": "no-store" };
+  if (!isApiRequestAllowed(req)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403, headers });
+  if (!hasJsonContentType(req)) return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415, headers });
+  return NextResponse.json({
+    error: "Package management and legacy availability controls are retired. Use Pi or Nix to install, update, remove and register packages; use Skills & extensions for availability only.",
+    code: "LEGACY_RESOURCE_AVAILABILITY_RETIRED",
+  }, { status: 410, headers });
 }

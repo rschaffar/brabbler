@@ -54,6 +54,11 @@ import { randomUUID } from "node:crypto";
 import { getSessionPause, removeSessionPause } from "./session-pause";
 import { acquireModelRuntimeUse, withModelRuntimeAccess } from "./session-model-refresh";
 import { withStreamingCacheWarmingDefault } from "./sdk-settings";
+import { prepareResourceRuntime, type ResourceRuntimeSelection } from "./agent-resources/runtime";
+import { resolveResourceContext } from "./agent-resources/context";
+import { initializeOwnSessionChoices } from "./agent-resources/preferences";
+import { cacheSessionPath } from "./session-reader";
+import { sessionSaveBarrier } from "./session-save";
 
 interface HostSession {
   readonly inner: AgentSessionLike;
@@ -75,7 +80,7 @@ export interface SubagentRuntimeDependencies {
   getSession(sessionId: string): HostSession | undefined;
   registerSession(
     inner: AgentSessionLike,
-    options?: { exactSystemPrompt?: string; chatOnly?: boolean },
+    options?: { exactSystemPrompt?: string; chatOnly?: boolean; resourceSelection?: ResourceRuntimeSelection },
   ): void;
   reopenSession(sessionId: string, sessionFile: string): Promise<HostSession>;
   resolveSessionPath(sessionId: string): Promise<string | null>;
@@ -96,6 +101,7 @@ type StoredSubagentExecution = {
   abortRequested: boolean;
   turnLimitReached?: boolean;
   cancelQueued?: () => boolean;
+  settlementError?: string;
 };
 
 declare global {
@@ -128,6 +134,15 @@ function getSubagentRuns(): Map<string, StoredSubagentExecution> {
 export function hasUnsettledSubagentExecution(sessionId: string): boolean {
   const stored = getSubagentRuns().get(sessionId);
   return Boolean(stored && stored.run.status !== "queued");
+}
+
+/** Explicit resource Apply refuses admitted queued children and queue-slot release,
+ * including descendants owned by a parent whose foreground turn already ended. */
+export function hasOwnedSubagentExecution(sessionId: string): boolean {
+  return [...getSubagentRuns().values()].some(stored => stored.run.sessionId === sessionId || stored.run.parentSessionId === sessionId);
+}
+export function subagentResourceSettlementError(sessionId: string): string | undefined {
+  return [...getSubagentRuns().values()].find(stored => (stored.run.sessionId === sessionId || stored.run.parentSessionId === sessionId) && stored.settlementError)?.settlementError;
 }
 
 /** A stale queue snapshot must never turn cooperative Pause into running Stop. */
@@ -240,12 +255,11 @@ export function createSubagentController(
         stored.run = recordSubagentResult(manager, result);
         // Never release live ownership before the terminal record is durable.
         if (paused) wrapper.finishPause?.(true);
-        getSubagentRuns().delete(initialRun.sessionId);
-        try { wrapper.onSubagentSettled?.(); }
-        catch (error) { console.error("[brabbler] child settlement listener failed:", error); }
+        if (cleanupError) stored.settlementError = cleanupError;
       } catch (error) {
         // Retain the failed live record for inspection; do not claim durable success.
         stored.run = { ...result, status: "failed", error: `${result.error ? `${result.error}. ` : ""}Could not persist subagent result: ${error instanceof Error ? error.message : String(error)}` };
+        stored.settlementError = stored.run.error;
         if (wrapper.isPauseRequested?.()) wrapper.pauseFailed?.(error);
       }
       update();
@@ -266,10 +280,10 @@ export function createSubagentController(
         stored.run = { ...initialRun, status: "running" };
         update();
         limiter = installSubagentTurnLimit(wrapper.inner, initialRun.turnLimit, () => { stored.turnLimitReached = true; });
+        await wrapper.waitUntilReady();
         const releaseAdmission = wrapper.beginCheckoutPromptAdmission();
-        try {
-          await wrapper.inner.prompt(task, { source: "rpc", preflightResult: () => releaseAdmission() });
-        } finally { releaseAdmission(); }
+        try { await wrapper.inner.prompt(task, { source: "rpc", preflightResult: () => releaseAdmission() }); }
+        finally { releaseAdmission(); }
         const text = wrapper.inner.getLastAssistantText()?.trim();
         const stop = stored.abortRequested ? undefined : lastAssistantStop(manager);
         const aborted = stored.abortRequested || stop?.aborted === true;
@@ -303,15 +317,18 @@ export function createSubagentController(
       observedQueueFailure = { error };
       return finish({ ...initialRun, status: "failed", completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) });
     });
-    // Keep result publication timing unchanged. Observers can separately join the
-    // queue's actual slot-release and the complete failure/persistence handler.
-    return { run: stored.run, completion, get settled() {
-      return Promise.allSettled([queued.settled, recovered]).then(results => {
-        const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
-        if (observedQueueFailure && !failures.includes(observedQueueFailure.error)) failures.push(observedQueueFailure.error);
-        if (failures.length) throw new AggregateError(failures, "Subagent queue/recovery settlement failed");
-      });
-    } };
+    // Result publication precedes slot release. Keep live ownership through BOTH.
+    const fullySettled = Promise.allSettled([queued.settled, recovered]).then(results => {
+      const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
+      if (observedQueueFailure && !failures.includes(observedQueueFailure.error)) failures.push(observedQueueFailure.error);
+      if (failures.length) stored.settlementError = String(failures[0]);
+      if (!stored.settlementError) getSubagentRuns().delete(initialRun.sessionId);
+      wrapper.onSubagentSettled?.();
+      dependencies.getSession(initialRun.parentSessionId)?.onSubagentSettled?.();
+      if (failures.length) throw new AggregateError(failures, "Subagent queue/recovery settlement failed");
+    });
+    void fullySettled.catch(error => console.error("[brabbler] subagent settlement failed:", error));
+    return { run: stored.run, completion, settled: fullySettled };
   }
 
   async function start(request: StartSubagentRequest): Promise<SubagentExecution> {
@@ -322,9 +339,11 @@ export function createSubagentController(
     if (!parent?.isAlive()) throw new Error("Parent session is no longer available");
     if (parent.isPauseRequested?.()) throw new Error("Parent session is paused or pausing");
     if (!parent.sessionFile) throw new Error("Parent session must be persisted before starting a subagent");
+    const releaseConstruction = parent.beginCheckoutPromptAdmission();
 
     let isolatedWorktree: { path: string; branch: string } | undefined;
     let unregisteredInner: AgentSessionLike | undefined;
+    let savedChildFile: string | undefined;
     const releaseRuntime = parent.inner.modelRuntime ? acquireModelRuntimeUse(parent.inner.modelRuntime) : () => {};
     try {
       const profile = resolveSubagentProfile(parent.cwd, request.profile);
@@ -355,7 +374,6 @@ export function createSubagentController(
       }
       const turnLimit = maxTurns && maxTurns > 0 ? Math.floor(maxTurns) : undefined;
       const agentDir = getAgentDir();
-      const settingsManager = withStreamingCacheWarmingDefault(SettingsManager.create(childCwd, agentDir));
       const inheritedParentContext = inheritContext
         ? `The following is the active conversation context from the parent session. Use it only as background for the delegated task:\n${parentContextText(parent)}`
         : undefined;
@@ -369,13 +387,53 @@ export function createSubagentController(
         inheritedParentContext,
       });
       const { chatOnly, appendSystemPrompt, delegatedTask } = promptPlan;
+      // Copy current own choices before factories, never at scheduler dequeue.
+      const sessionManager = isolatedWorktree
+        ? SessionManager.create(childCwd, undefined, { parentSession: parent.sessionFile })
+        : SessionManager.create(parent.cwd, undefined, { parentSession: parent.sessionFile });
+      const createdAt = new Date().toISOString();
+      const metadata: SubagentMetadata = {
+        version: 1,
+        parentSessionId,
+        parentSessionPath: parent.sessionFile,
+        parentToolCallId: request.parentToolCallId,
+        profile: profile.name,
+        description: request.description.trim() || profile.displayName,
+        task: request.task,
+        runInBackground,
+        createdAt,
+        turnLimit: turnLimit ?? 0,
+        resourceSnapshotPending: true,
+        resourceSnapshot: {
+          version: 1,
+          appendSystemPrompt: [...appendSystemPrompt],
+          tools: [...profile.tools],
+          loadSkills: profile.loadSkills,
+          loadExtensions: profile.loadExtensions,
+          ...(promptPlan.exactSystemPrompt !== undefined ? { exactSystemPrompt: promptPlan.exactSystemPrompt } : {}),
+        },
+        ...(isolatedWorktree ? { worktreePath: isolatedWorktree.path, worktreeBranch: isolatedWorktree.branch } : {}),
+      };
+      // The first reopenable header already declares a child, not an ordinary
+      // session. Pending setup refuses cold startup until copy and actual tool
+      // resolution have produced the matching finalized profile snapshot.
+      sessionManager.appendCustomEntry(SUBAGENT_META_TYPE, metadata);
+      savedChildFile = sessionManager.getSessionFile()!;
+      persistChildSession(sessionManager);
+      sessionSaveBarrier(sessionManager);
+      cacheSessionPath(sessionManager.getSessionId(), savedChildFile);
+      await initializeOwnSessionChoices(
+        await resolveResourceContext({ cwd: parent.cwd, sessionId: parentSessionId }),
+        await resolveResourceContext({ cwd: childCwd, sessionId: sessionManager.getSessionId() }));
+      const resourceRuntime = await prepareResourceRuntime({ cwd: childCwd, sessionId: sessionManager.getSessionId() });
+      const settingsManager = withStreamingCacheWarmingDefault(SettingsManager.create(childCwd, agentDir));
       if (!chatOnly) initTheme();
       const services = await createAgentSessionServices({
         cwd: childCwd,
         agentDir,
         modelRuntime: parentModelRuntime,
         settingsManager,
-        resourceLoaderOptions: {
+        resourceLoaderOptions: resourceRuntime.compose({
           noExtensions: !profile.loadExtensions,
           noSkills: !profile.loadSkills,
           noPromptTemplates: true,
@@ -396,7 +454,7 @@ export function createSubagentController(
             ...(profile.loadExtensions ? [createAskUserExtension(), createNotebookAuthoringExtension(), acceptancePlugin.extension(childCwd)] : []),
           ],
           extensionsOverride: (base) => preferUserBashExtension(profile.loadExtensions ? preferBrabblerAskUserExtension(base) : base),
-        },
+        }),
         ...((profile.loadExtensions || profile.loadSkills)
           ? { resourceLoaderReloadOptions: projectTrustReloadOptions(childCwd, agentDir) }
           : {}),
@@ -422,32 +480,8 @@ export function createSubagentController(
       const thinking = request.thinking ?? callModel?.thinkingLevel ?? profile.thinking
         ?? profileModel?.thinkingLevel ?? parent.inner.agent.state?.thinkingLevel;
       if (thinking && !SUBAGENT_THINKING_LEVELS.has(thinking as ThinkingLevel)) throw new Error(`Invalid subagent thinking level: ${thinking}`);
-      const sessionManager = isolatedWorktree
-        ? SessionManager.create(childCwd, undefined, { parentSession: parent.sessionFile })
-        : SessionManager.create(parent.cwd, undefined, { parentSession: parent.sessionFile });
-      const createdAt = new Date().toISOString();
-      const metadata: SubagentMetadata = {
-        version: 1,
-        parentSessionId,
-        parentSessionPath: parent.sessionFile,
-        parentToolCallId: request.parentToolCallId,
-        profile: profile.name,
-        description: request.description.trim() || profile.displayName,
-        task: request.task,
-        runInBackground,
-        createdAt,
-        turnLimit: turnLimit ?? 0,
-        resourceSnapshot: {
-          version: 1,
-          appendSystemPrompt: [...appendSystemPrompt],
-          tools: [...activeTools],
-          loadSkills: profile.loadSkills,
-        loadExtensions: profile.loadExtensions,
-        ...(promptPlan.exactSystemPrompt !== undefined ? { exactSystemPrompt: promptPlan.exactSystemPrompt } : {}),
-        },
-        ...(isolatedWorktree ? { worktreePath: isolatedWorktree.path, worktreeBranch: isolatedWorktree.branch } : {}),
-      };
-      sessionManager.appendCustomEntry(SUBAGENT_META_TYPE, metadata);
+      sessionManager.appendCustomEntry(SUBAGENT_META_TYPE, { ...metadata, resourceSnapshotPending: false,
+        resourceSnapshot: { ...metadata.resourceSnapshot, tools: [...activeTools] } });
       const inheritedAccounts = readSessionAccounts(parent.inner.sessionManager.getEntries() as SessionEntry[]);
       if (inheritedAccounts) appendSessionAccounts(sessionManager, inheritedAccounts);
       appendSessionModelSpeed(sessionManager, readSessionModelSpeed(parent.inner.sessionManager.getEntries() as SessionEntry[]));
@@ -465,13 +499,14 @@ export function createSubagentController(
         excludeTools: [...SUBAGENT_CONTROL_TOOL_NAMES],
       });
       unregisteredInner = inner;
-      persistChildSession(sessionManager);
+      sessionSaveBarrier(sessionManager);
       speedAgent.current = inner.agent;
       dependencies.registerSession(inner, {
         ...(promptPlan.exactSystemPrompt !== undefined
           ? { exactSystemPrompt: promptPlan.exactSystemPrompt }
           : {}),
         chatOnly,
+        resourceSelection: resourceRuntime.selection,
       });
       unregisteredInner = undefined;
       const wrapper = dependencies.getSession(inner.sessionId);
@@ -497,11 +532,12 @@ export function createSubagentController(
         () => cleanupWorktree(parent.cwd, isolatedWorktree));
     } catch (error) {
       try { unregisteredInner?.dispose(); } catch { /* Preserve the setup error. */ }
-      if (isolatedWorktree) {
+      if (isolatedWorktree && !savedChildFile) {
         try { await removeWorktree(parent.cwd, isolatedWorktree.path); } catch { /* preserve setup failure and avoid force deletion */ }
       }
+      if (savedChildFile) throw new Error(`Subagent creation failed: ${error instanceof Error ? error.message : String(error)}; saved session retained at ${savedChildFile}. Inspect before reopening; no automatic replay`, { cause: error });
       throw error;
-    } finally { releaseRuntime(); }
+    } finally { releaseRuntime(); releaseConstruction(); }
   }
 
   async function resume(request: ResumeSubagentRequest): Promise<SubagentExecution> {

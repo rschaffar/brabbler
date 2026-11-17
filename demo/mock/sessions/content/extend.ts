@@ -64,9 +64,9 @@ export const extendSession: SessionScript = {
 - \`frontend-design\` — the model may use it on its own.
 - \`release-notes\` — **model invocation is off**, so it only runs when you type \`/skill:release-notes\`.
 
-The **Skills** button at the bottom of the sidebar lists every loaded skill with that switch, and can search [skills.sh](https://skills.sh) and install new skills globally or into this project.
+In the application, **Settings → Skills & extensions** controls availability through groups, packages and individual resources, with independent Global, Project and own Session choices. Availability Off excludes a skill from advertising and explicit invocation; authored manual-only metadata is separate. Saving does not change a live conversation: explicit **Apply saved changes** acts now or reports busy, without waiting or automatic retries. This static demo only explains that flow; its old management controls are not available.
 
-**Plugins** are pi packages from npm or git. One package can bundle **extensions** (new tools, commands, UI widgets), **skills**, **prompt templates** and **themes**. Open **Settings → Plugins** to install, update, disable or remove them, globally or per project.
+**Pi packages** can bundle **extensions** (tools, commands and ordinary session contributions), **skills**, **prompt templates** and **themes**. Pi or Nix owns installation, updates, removal and registration outside Brabbler. Prompt templates and themes keep native handling. **Settings → Built-in features** is separate: it holds bundled Git Workflow, Session Launch and Acceptance permissions in the application, not external package management.
 
 **Project trust.** Skills, extensions and packages that come *with a repository* only load after you trust that project — Brabbler shows a warning in the top bar until you do.
 
@@ -78,9 +78,9 @@ The **Skills** button at the bottom of the sidebar lists every loaded skill with
 - \`frontend-design\`——模型可以自行决定使用。
 - \`release-notes\`——**关闭了模型调用**，只有你输入 \`/skill:release-notes\` 时才会运行。
 
-侧边栏底部的 **技能** 按钮会列出所有已加载的技能以及这个开关，还可以搜索 [skills.sh](https://skills.sh) 并把新技能安装到全局或当前项目。
+应用中的 **Settings → Skills & extensions** 按组、包和独立资源控制可用性，各自支持 Global、Project 和当前 Session 选择。关闭可用性会同时排除技能的自动展示和显式调用；技能作者的仅手动调用元数据与此独立。保存不会改变正在使用的会话；明确点击 **Apply saved changes** 后立即应用或报告忙碌，不等待也不自动重试。此静态演示只说明流程，不提供旧的管理控件。
 
-**插件** 是来自 npm 或 git 的 pi 包。一个包可以同时包含 **扩展**（新工具、命令、界面组件）、**技能**、**提示词模板** 和 **主题**。在 **设置 → 插件** 中可以安装、更新、停用或移除，作用范围可以是全局或单个项目。
+**Pi 包** 可以包含扩展、技能、提示词模板和主题。安装、更新、移除及注册由 Brabbler 之外的 Pi 或 Nix 管理。提示词模板和主题保留原生行为。应用中的 **Settings → Built-in features** 单独提供内置 Git Workflow、Session Launch 和 Acceptance 权限，不是外部包管理。
 
 **项目信任**：*仓库自带* 的技能、扩展和包，只有在你信任该项目后才会加载——在此之前，Brabbler 会在顶部栏显示提醒。
 

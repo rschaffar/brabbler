@@ -11,7 +11,7 @@ export type SettingsSection = (typeof SETTINGS_SECTION_VALUES)[number];
 export type SettingsDetailSection = Exclude<SettingsSection, "general">;
 
 const STORAGE_KEY = "brabbler:settings-navigation";
-const PROJECT_SECTIONS = new Set<SettingsSection>(["skills", "agents", "plugins"]);
+const PROJECT_SECTIONS = new Set<SettingsSection>(["agents", "plugins"]);
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -59,6 +59,7 @@ function readState(storage: StorageLike): SettingsNavigationState {
 
 function selectionKey(section: SettingsDetailSection, cwd?: string | null): string | null {
   if (section === "models" || section === "mcp") return section;
+  if (section === "skills") return JSON.stringify([section, cwd || null]);
   return cwd ? JSON.stringify([section, cwd]) : null;
 }
 

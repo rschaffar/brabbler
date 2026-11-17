@@ -26,6 +26,22 @@ Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
 
+## Scoped skills and extensions
+
+The [completed implementation record](archived/2026-11-16_skills-extensions-plan.md)
+connects scoped hierarchy choices, independently admitted skill inspection and explicit
+**Apply saved changes**, not automatic idle switching. Package management stays with
+Pi/Nix; bundled permission controls are Built-in features. Complete acceptance passed
+**543 core files / 4,911 tests**, **26 browser/terminal groups / 61 scenarios** and the
+genuine Home Manager VM with **32 converter cases**, in **945.744 seconds** of summed
+command time including realization. Source and browser/VM application identities match.
+[Feature contracts](../feature-internals.md), [session contracts](../session-internals.md)
+and ADRs [0044](../adr/0044-scoped-agent-resources.md),
+[0045](../adr/0045-explicit-resource-application.md) and
+[0046](../adr/0046-agent-resource-availability-only.md) own current behavior.
+Exact-state local non-FF integration remains owned by native approval/outcome receipts;
+archival is not integration, deployment, publication or cleanup authority.
+
 ## Integrated-worktree ignored-file disposal
 
 The [completed implementation record](archived/2026-11-14_integrated-ignored-cleanup-plan.md)

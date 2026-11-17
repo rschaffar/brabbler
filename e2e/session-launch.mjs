@@ -13,15 +13,33 @@ export async function sessionLaunchIdle(sessionId) {
 }
 
 /** Real production launch service and SDK wrappers with deterministic faux-provider turns. */
-export function sessionLaunchFixtureSource(root) {
-  return `import { executeSessionLaunch } from ${JSON.stringify(join(root, "plugins/session-launch/server.ts"))};
+export function sessionLaunchFixtureSource(root, resourceCapturePath = null) {
+  return `import { appendFileSync } from "node:fs";
+import { getCurrentTools, getCurrentSystemPrompt } from ${JSON.stringify(join(root, "node_modules/@earendil-works/pi-ai/dist/index.js"))};
+import { executeSessionLaunch } from ${JSON.stringify(join(root, "plugins/session-launch/server.ts"))};
 import { fauxProvider, fauxAssistantMessage, fauxToolCall } from ${JSON.stringify(join(root, "node_modules/@earendil-works/pi-ai/dist/providers/faux.js"))};
 import { join } from "node:path";
 export default function (pi) {
   const faux = fauxProvider({ provider: "e2e-session-launch", api: "e2e-session-launch" });
   pi.registerProvider(faux.provider);
+  const resourceCapturePath = ${JSON.stringify(resourceCapturePath)};
+  if (resourceCapturePath) pi.registerTool({ name: "resource_browser_control", label: "Retained browser control", description: "RESOURCE_BROWSER_CONTROL",
+    parameters: { type: "object", properties: {} }, execute: async () => ({ content: [{ type: "text", text: "control" }] }) });
   pi.on("before_agent_start", (_event, ctx) => {
     if (ctx.model?.provider !== "e2e-session-launch") return;
+    if (resourceCapturePath) {
+      // Actual model-bound callback, not a loader/status projection. Record only
+      // synthetic current tools/system/latest user, never auth/options/history.
+      faux.setResponses([context => {
+        const user = context.messages.findLast(message => message.role === "user");
+        const userText = typeof user?.content === "string" ? user.content : (user?.content ?? []).filter(block => block.type === "text").map(block => block.text).join("\\n");
+        appendFileSync(resourceCapturePath, JSON.stringify({ sessionId: ctx.sessionManager.getSessionId(),
+          tools: getCurrentTools(context.messages).map(({ name, description }) => ({ name, description })),
+          system: getCurrentSystemPrompt(context.messages), userText }) + "\\n");
+        return fauxAssistantMessage("Resource browser completed");
+      }]);
+      return;
+    }
     faux.setResponses([
       fauxAssistantMessage([fauxToolCall("ask_user", { question: "Independent child input", allowFreeform: true, options: [] }, { id: "e2e-child-input" })], { stopReason: "toolUse" }),
       fauxAssistantMessage("Independent child completed"),
@@ -65,7 +83,7 @@ export async function checkSessionLaunch(page, { base, api, post, project, agent
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "Settings", exact: true });
   if (width <= 600) await settings.getByRole("combobox", { name: "Settings", exact: true }).selectOption("plugins");
-  else await settings.getByRole("button", { name: "Plugins", exact: true }).click();
+  else await settings.getByRole("button", { name: "Built-in features", exact: true }).click();
   await settings.getByRole("button", { name: "Session Launch", exact: true }).click();
   const panel = settings.getByRole("region", { name: "Session Launch settings" });
   await panel.getByLabel("Plugin settings scope").selectOption("session");

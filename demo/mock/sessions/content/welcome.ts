@@ -34,7 +34,7 @@ The screen has four areas:
 
 | Area | What it's for |
 | --- | --- |
-| **Left sidebar** | Project picker and Git worktree switcher at the top, this **session list** in the middle, the **file explorer** at the bottom, and the **Models · Skills · Settings** buttons at the very bottom. |
+| **Left sidebar** | Project picker and Git worktree switcher at the top, this **session list** in the middle, the **file explorer** at the bottom, and the **Models · Skills & extensions · Settings** buttons at the very bottom. |
 | **Chat (center)** | The conversation. The composer below it picks the **model**, the **reasoning level** and the **tool preset**, and takes \`@file\` mentions, \`/\` commands, \`!\` shell commands and images. |
 | **Top bar** | **Full history**, **Generate title**, **Branches**, **System** (the exact system prompt) and **Tools** (the tool definitions the model sees), plus tokens, cost and context usage for this session. |
 | **Right panel** | Files and terminals in tabs. It is showing \`README.md\` right now — click any file in the explorer to open another one. |

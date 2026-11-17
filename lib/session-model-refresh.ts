@@ -12,6 +12,7 @@ type Member = {
   bind: AgentSessionLike["setModel"];
   selectionRequired: boolean;
   binding: boolean;
+  effects: number;
 };
 type Access = {
   members: Set<Member>;
@@ -135,11 +136,17 @@ export function registerModelRuntimeSession(
   alive: Member["alive"],
   persist: () => void = () => {},
   settled?: () => void,
+  assertFresh?: (name: string, args: unknown[]) => void,
 ): () => void {
   const runtime = session.modelRuntime;
   if (!runtime) return () => {}; // Legacy host/test doubles without a runtime.
   const state = access(runtime);
-  const member: Member = { session, busy, alive, persist, settled, bind: session.setModel?.bind(session), selectionRequired: false, binding: false };
+  const member: Member = { session, busy, alive, persist, settled, bind: session.setModel?.bind(session), selectionRequired: false, binding: false, effects: 0 };
+  const beginEffect = () => {
+    const release = acquireModelRuntimeUse(runtime);
+    member.effects++;
+    return () => { release(); member.effects--; };
+  };
   state.members.add(member);
   const guardedRunners = new WeakSet<object>();
   const installExtensionGuards = () => {
@@ -155,8 +162,9 @@ export function registerModelRuntimeSession(
         // preserving its getters and signal without touching private runner state.
         descriptors.executeTool = { ...descriptors.executeTool, value: async (...callArgs: Parameters<typeof execute>) => {
           if (!alive()) throw new Error("Session is unavailable");
+          assertFresh?.("executeTool", callArgs);
           assertModelRuntimeSessionReady(session);
-          const release = acquireModelRuntimeUse(runtime);
+          const release = beginEffect();
           try { return await execute(...callArgs); }
           finally { release(); }
         } };
@@ -188,8 +196,9 @@ export function registerModelRuntimeSession(
     if (typeof original !== "function") continue;
     target[name] = async (...args: unknown[]) => {
       if (!alive()) throw new Error("Session is unavailable");
+      assertFresh?.(name, args);
       assertModelRuntimeSessionReady(session);
-      const release = acquireModelRuntimeUse(runtime);
+      const release = beginEffect();
       try {
         if (name === "reload") {
           const options = (args[0] ?? {}) as { beforeSessionStart?: () => void | Promise<void> };
@@ -206,6 +215,10 @@ export function registerModelRuntimeSession(
     };
   }
   return () => { state.members.delete(member); };
+}
+
+export function modelRuntimeSessionHasEffects(session: AgentSessionLike): boolean {
+  return Boolean(session.modelRuntime && [...access(session.modelRuntime).members].some(member => member.session === session && member.effects > 0));
 }
 
 export function assertModelRuntimeSessionReady(session: AgentSessionLike): void {

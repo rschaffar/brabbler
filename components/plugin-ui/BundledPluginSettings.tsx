@@ -20,6 +20,7 @@ async function load(cwd: string, sessionId?: string | null): Promise<Entry[]> {
 }
 export function BundledPluginSidebar({ cwd, sessionId, selected, onSelect }: { cwd: string; sessionId?: string | null; selected: string | null; onSelect: (key: string) => void }) {
   const observe = useSettingsWork();
+  const { t } = useI18n();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -35,7 +36,7 @@ export function BundledPluginSidebar({ cwd, sessionId, selected, onSelect }: { c
     return () => { active = false; window.removeEventListener("brabbler:bundled-plugin-settings", refresh); };
   }, [cwd, sessionId, observe]);
   return <div className="config-sidebar-group">
-    <ConfigSidebarGroupLabel>Bundled plugins</ConfigSidebarGroupLabel>
+    <ConfigSidebarGroupLabel>{t("common.plugins")}</ConfigSidebarGroupLabel>
     {error && <p role="alert">{error}</p>}
     {entries.map(({ manifest, settings }) => <ConfigSidebarItem key={manifest.id} active={selected === `bundled:${manifest.id}`} onClick={() => onSelect(`bundled:${manifest.id}`)}>
       <ConfigStatusDot active={settings.enabled} /><ConfigSidebarText>{manifest.name}</ConfigSidebarText>

@@ -198,6 +198,13 @@ export async function checkFileWorkspace(page, base, fixture, artifacts) {
   await panel.getByRole("button", { name: "Go to editor", exact: true }).waitFor();
   await panel.getByRole("button", { name: "Hide file panel", exact: true }).click();
   await showSidebar();
+  // Selecting the lower peer scrolls the virtual list; the source near its top
+  // can then be unmounted. Navigate that real scroll owner before selecting it.
+  await page.locator(`[data-session-id="${fixture.peerSessionId}"]`).evaluate(row => {
+    const list = row.closest(".scrollbar-subtle");
+    if (!list) throw new Error("Missing session list scroll owner");
+    list.scrollTop = 0;
+  });
   await page.locator(`[data-session-id="${fixture.sessionId}"]`).click({ position: { x: 20, y: 20 } });
   await page.waitForFunction(id => new URLSearchParams(location.search).get("session") === id, fixture.sessionId);
   await page.getByRole("button", { name: "Show file panel", exact: true }).click();

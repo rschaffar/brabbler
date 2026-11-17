@@ -73,7 +73,10 @@ export default function (pi) {
     if (input === "bootstrap pause") return fauxAssistantMessage("Pause fixture idle");
     return fauxAssistantMessage("UNEXPECTED automatic pause continuation");
   };
-  faux.setResponses([respond]); pi.registerProvider(faux.provider);
+  // The SDK reserves a queue step synchronously, then calls respond in a
+  // microtask. Parent's Agent follow-up and the single admitted child can both
+  // reserve before either callback rearms; keep their two slots available.
+  faux.setResponses([respond, respond]); pi.registerProvider(faux.provider);
 }`;
 }
 

@@ -1614,3 +1614,40 @@
   .plugin-matrix-previewFacts { gap: .65rem; }
 }
 @media (prefers-reduced-motion: reduce) { .plugin-matrix-cellButton { transition: none; } }
+
+/* Scoped resources reuse Settings' split/list/detail primitives, not Plugins. */
+.resource-settings { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.resource-settings [hidden] { display: none !important; }
+.resource-context { display: flex; flex-direction: column; gap: 5px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 12px; overflow-wrap: anywhere; }
+.resource-context [role="alert"] { color: var(--error, #df5962); }
+.resource-revisions { color: var(--text-muted); font-size: 11px; }
+.resource-list-pane { display: flex; flex: 0 0 270px; min-width: 0; min-height: 0; }
+.resource-settings .config-sidebar { width: 100%; }
+.resource-detail-pane { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.resource-search { display: flex; flex-direction: column; gap: 6px; padding: 12px; font-size: 11px; color: var(--text-muted); }
+.resource-search input { min-width: 0; width: 100%; padding: 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); font: inherit; }
+.resource-tree-row { display: flex; align-items: center; min-width: 0; }
+.resource-tree-row .config-sidebar-item { flex: 1; min-width: 0; }
+.resource-kind { flex-shrink: 0; color: var(--text-muted); font-size: 10px; }
+.resource-disclosure, .resource-disclosure-space { width: 24px; flex: 0 0 24px; }
+.resource-disclosure { height: 30px; background: none; border: 0; color: var(--text-muted); cursor: pointer; }
+.resource-detail-heading { margin: 0; }
+.resource-effective { font-size: 12px; font-weight: 550; }
+.resource-scopes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.resource-scope { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin: 0; padding: 10px; border: 1px solid var(--border); border-radius: 5px; font-size: 12px; }
+.resource-scope legend { padding: 0 4px; font-size: 11px; color: var(--text-muted); }
+.resource-scope label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.resource-scope:disabled { color: var(--text-muted); }
+.resource-scope input { accent-color: var(--accent); }
+.resource-path, .resource-diagnostics code { overflow-wrap: anywhere; white-space: pre-wrap; font-size: 11px; }
+.resource-member { background: none; border: 0; color: var(--accent); text-align: left; font: inherit; cursor: pointer; }
+.resource-settings :is(button, input, h3):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.resource-diagnostics { max-height: 90px; overflow: auto; padding: 8px 14px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 11px; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .resource-list-pane, .resource-detail-pane { flex: 1; width: 100%; }
+  .resource-settings .config-sidebar { height: auto; flex: 1; border-bottom: 0; }
+  .resource-scopes { grid-template-columns: minmax(0, 1fr); }
+  .resource-back { align-self: flex-start; }
+  .resource-settings .config-footer { flex-wrap: wrap; gap: 8px; }
+  .resource-settings .config-footer-actions { flex-wrap: wrap; }
+}

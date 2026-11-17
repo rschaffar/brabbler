@@ -11,6 +11,8 @@ import { PRESET_FULL } from "./tool-presets";
 import { readBtwSource } from "./btw-source-reader";
 import { flushSessionEntries, quarantineSessionAfterSaveFailure, sessionSaveBarrier } from "./session-save";
 import type { SessionEntry, SessionInfo } from "./types";
+import { resolveResourceContext } from "./agent-resources/context";
+import { initializeOwnSessionChoices } from "./agent-resources/preferences";
 
 export interface BtwConversation { session: SessionInfo | null; snapshot: BtwSnapshot | null }
 
@@ -84,6 +86,14 @@ export async function ensureBtwConversation(parentSessionId: string, refresh = f
     } else {
       const child = SessionManager.create(parent.getCwd(), parent.getSessionDir(), { parentSession: parent.getSessionFile() });
       try {
+        // Canonical copy needs a saved header, not a published attachment. Keep
+        // the relation absent until own choices have actually initialized.
+        flushSessionEntries(child);
+        sessionSaveBarrier(child);
+        cacheSessionPath(child.getSessionId(), child.getSessionFile()!);
+        await initializeOwnSessionChoices(
+          await resolveResourceContext({ cwd: parent.getCwd(), sessionId: parentSessionId }),
+          await resolveResourceContext({ cwd: child.getCwd(), sessionId: child.getSessionId() }));
         child.appendCustomEntry(BTW_META_TYPE, { version: 1, sessionId: child.getSessionId(), parentSessionId, sourceLeafId, createdAt: snapshot.capturedAt });
         const live = getRpcSession(parentSessionId);
         const liveTools = live?.inner.getActiveToolNames?.()
@@ -101,8 +111,10 @@ export async function ensureBtwConversation(parentSessionId: string, refresh = f
         if (thinking?.type === "thinking_level_change") child.appendThinkingLevelChange(thinking.thinkingLevel);
         child.appendSessionInfo("BTW");
         saveBtwSnapshot(child, snapshot);
-        cacheSessionPath(child.getSessionId(), child.getSessionFile()!);
-      } catch (error) { quarantineSessionAfterSaveFailure(child); invalidateSessionListCache(); throw error; }
+      } catch (error) {
+        quarantineSessionAfterSaveFailure(child); invalidateSessionListCache();
+        throw new Error(`BTW creation failed: ${error instanceof Error ? error.message : String(error)}; session file retained at ${child.getSessionFile()}. Inspect before reopening; no automatic replay`, { cause: error });
+      }
     }
     invalidateSessionListCache();
     return getBtwConversation(parentSessionId);
