@@ -8,6 +8,8 @@ export type ResourceApplication = {
   ready: boolean;
   error?: string;
   available?: () => boolean;
+  /** Actual public loader membership, not saved/profile management intent. */
+  includedKeys?: () => readonly string[];
   apply?: () => Promise<void>;
 };
 export class ResourceApplyError extends Error {
@@ -31,6 +33,7 @@ export function resourceStatus(agentDir: string, id: string, savedRevision?: str
     : savedRevision && savedRevision !== actual.appliedRevision ? "saved" : "applied",
     savedRevision: savedRevision ?? null,
     appliedRevision: open && actual?.ready ? actual.appliedRevision ?? null : null,
+    includedKeys: open && actual?.ready ? actual.includedKeys?.() ?? [] : [],
     applyingRevision: actual?.applying ? actual.applyingRevision ?? null : null,
     ...(actual?.error ? { error: actual.error } : {}) };
 }

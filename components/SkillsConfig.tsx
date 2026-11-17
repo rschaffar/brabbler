@@ -30,6 +30,7 @@ type RuntimeStatus = {
   savedRevision: string | null;
   appliedRevision: string | null;
   applyingRevision: string | null;
+  includedKeys?: readonly string[];
   error?: string;
 };
 type Inventory = {
@@ -245,7 +246,7 @@ function ResourceSettings({ cwd = null, sessionId = null, onClose, embedded = fa
               </ConfigDetailHeaderInfo></ConfigDetailHeader>
               {purpose(selectedRow) && <p>{purpose(selectedRow)}</p>}
               {selectedRow.desired ? <>
-                <div className="resource-effective">{applied && selectedRow.desired.enabled && !selectedRow.skill?.disableModelInvocation
+                <div className="resource-effective">{applied && selectedRow.selectionKey && runtime?.includedKeys?.includes(selectedRow.selectionKey) && selectedRow.desired.enabled && !selectedRow.skill?.disableModelInvocation
                   ? t("resources.included") : t(selectedRow.desired.enabled ? "resources.savedEnabled" : "resources.savedDisabled")}</div>
                 {selectedRow.desired.disabledReasons.map((reason, index) => <div key={index}>{reason.code === "parent-disabled"
                   ? t("resources.parentDisabled", { name: byKey.has(reason.key) ? label(byKey.get(reason.key)!) : reason.key })

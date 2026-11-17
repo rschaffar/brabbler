@@ -153,6 +153,22 @@ test('Apply is explicit, exact, readiness-confirmed; immediate busy/error retain
   assert.equal(patches(http).length, 3);
 });
 
+for (const evidence of ['absent', 'unproved']) test(`matching applied preferences cannot promise profile-excluded inclusion: ${evidence}`, async t => {
+  const data = resourceInventory();
+  data.catalog.rows[2].skill.disableModelInvocation = false; // Not the independent manual-only gate.
+  if (evidence === 'absent') data.runtime.includedKeys = [];
+  else delete data.runtime.includedKeys;
+  const { view, http } = await fixture(t, { data });
+  assert.equal(data.runtime.savedRevision, data.runtime.appliedRevision);
+  for (const name of ['Guide', 'extension']) {
+    await selected(view, name);
+    assert.equal(text(view).includes('✓ Included in next-turn selection'), false, 'revision equality is not actual membership');
+    assert.equal(text(view).includes('Saved selection: Enabled'), true);
+    assert.equal(scope(view, 'Session').disabled, false, 'profile exclusion does not lock preference editing');
+  }
+  assert.equal(patches(http).length, 0);
+});
+
 test('same-revision Apply failure cannot retain a stale actual-readiness claim', async t => {
   const { view, http, data } = await fixture(t);
   await selected(view, 'extension');

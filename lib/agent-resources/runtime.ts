@@ -4,6 +4,7 @@ import { getAgentDir, type DefaultResourceLoader } from "@earendil-works/pi-codi
 import { readCommittedResourceSelection } from "./api";
 import { selectionKey } from "./selection";
 import { requiresResourceCatalog } from "./preferences";
+import type { AgentSessionLike } from "../pi-types";
 
 type LoaderOptions = Omit<ConstructorParameters<typeof DefaultResourceLoader>[0], "cwd" | "agentDir">;
 type Kind = "skill" | "extension";
@@ -137,5 +138,20 @@ export async function prepareResourceRuntime(input: { cwd: string; sessionId?: s
       },
     };
   } });
+}
+/** Reporting only: intersect this construction's admitted aliases with public
+ * loaded records, after profile/host overrides and resources_discover. Unknown
+ * aliases prove nothing; never probe paths or turn management eligibility into
+ * activation/inspection authority. Required inline host records have no keys. */
+export function includedResourceKeys(selection: ResourceRuntimeSelection, loader: Pick<AgentSessionLike["resourceLoader"], "getSkills" | "getExtensions">): string[] {
+  const loaded = new Set([
+    ...loader.getSkills().skills.flatMap(skill => "filePath" in skill && typeof skill.filePath === "string"
+      ? [JSON.stringify(["skill", normalize(skill.filePath)])] : []),
+    ...(loader.getExtensions?.().extensions ?? []).map(extension => JSON.stringify(["extension", normalize(extension.path)])),
+  ]);
+  return selection.catalog.rows.flatMap(row => (row.kind === "skill" || row.kind === "extension")
+    && row.membership === "confirmed" && row.identity
+    && [row.path, ...row.observedPaths].some(path => loaded.has(JSON.stringify([row.kind, normalize(path)])))
+    ? [selectionKey(row.identity)] : []);
 }
 export type ResourceRuntimeSelection = Snapshot;

@@ -1,7 +1,7 @@
 import type { Agent, AgentMessage as SdkAgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { withStreamingCacheWarmingDefault } from "./sdk-settings";
-import { prepareResourceRuntime, type ResourceRuntimeSelection } from "./agent-resources/runtime";
+import { prepareResourceRuntime, includedResourceKeys, type ResourceRuntimeSelection } from "./agent-resources/runtime";
 import { readCommittedResourceSelection } from "./agent-resources/api";
 import { resolveResourceContext } from "./agent-resources/context";
 import { initializeOwnSessionChoices } from "./agent-resources/preferences";
@@ -378,6 +378,8 @@ export class AgentSessionWrapper {
       ? createResourceApplication(getAgentDir(), inner.sessionId, options.resourceSelection.revision) : undefined);
     if (this.resourceApplication) {
       this.resourceApplication.available = () => this._alive && !this.shutdownPromise;
+      const selection = options.resourceSelection;
+      this.resourceApplication.includedKeys = selection ? () => includedResourceKeys(selection, inner.resourceLoader) : undefined;
       this.resourceApplication.apply = () => this.applySavedResources();
     }
     this.pause = getSessionPause(inner.sessionId);
@@ -1939,7 +1941,7 @@ export class AgentSessionWrapper {
     if (!this._alive) return;
     if (this.resourceApplication) {
       this.resourceApplication.ready = false; this.resourceApplication.appliedRevision = undefined;
-      this.resourceApplication.available = undefined; this.resourceApplication.apply = undefined;
+      this.resourceApplication.available = undefined; this.resourceApplication.apply = undefined; this.resourceApplication.includedKeys = undefined;
     }
     const nativeRetirement = !ownedRefusal && (this.nativeSessionTools?.enabled || this.shutdownPromise !== null);
     if (nativeRetirement) this.publishResourceRetirement();
@@ -3556,6 +3558,7 @@ async function startRpcSessionInternal(
     exactSystemPromptRef.current = exactSystemPrompt;
     const wrapper = new AgentSessionWrapper(inner, {
       resourceApplication: application,
+      resourceSelection: resourceRuntime.selection,
       exactSystemPrompt,
       chatOnly,
       initialPromptOwner: options.initialPromptOwner,

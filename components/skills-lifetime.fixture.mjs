@@ -20,7 +20,8 @@ export function resourceInventory({ cwd = '/fixture', sessionId = 'session-A', s
     nativeEnabled: kind === 'skill' ? false : null, observedPaths: [], managedBy: 'nix', ownership: 'readonly', selectionKey: key, parentKey, desired: desired(key) });
   return { version: 1, state: 'desired', contextToken: 'context-token', context: { cwd, sessionId: cwd ? sessionId : null, scopes },
     scopes: Object.fromEntries(Object.entries(scopes).map(([scope, supported]) => [scope, supported ? { revision: `${scope}-revision`, ownChoices: [] } : null])),
-    runtime: cwd && sessionId ? { sessionId, state, savedRevision: 'saved-revision', appliedRevision: state === 'applied' ? 'saved-revision' : 'old-revision', applyingRevision: null } : null,
+    runtime: cwd && sessionId ? { sessionId, state, savedRevision: 'saved-revision', appliedRevision: state === 'applied' ? 'saved-revision' : 'old-revision', applyingRevision: null,
+      includedKeys: [resourceKeys.skill, resourceKeys.extension, resourceKeys.standalone] } : null,
     catalog: { coverage: 'fixture native coverage', diagnostics: [{ code: 'retained', severity: 'warning', path: '/fixture/missing', message: 'Repair the missing declaration; preferences retained' }],
       presentation: { groups: [{ key: 'core', purpose: 'Core guidance' }], packages: [{ source: '/fixture/package', label: 'Tooling', group: 'core', members: [] }], standalone: [] },
       rows: [row('group', resourceKeys.group, null, 'core'), row('package', resourceKeys.package, resourceKeys.group, '/fixture/package'),
