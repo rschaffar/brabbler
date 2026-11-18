@@ -11,8 +11,9 @@ release. Discuss material changes before investing in a large contribution.
    worktree. Keep the primary checkout for reviewed integration, not feature edits.
    Preserve existing work; never stash/reset/clean unrelated state for convenience.
 2. Read the relevant focused guide listed in [AGENTS.md](AGENTS.md). For substantial
-   work, use the repository's [planning skill](.agents/skills/writing-plans/SKILL.md).
-   A plan is not authority to execute or publish it.
+   work, follow the [engineering workflow](docs/agents/workflow.md): local specs
+   and dependency-ordered tickets, without a parallel plan checklist.
+   A spec or ticket is not authority to execute or publish it.
 3. Make reviewable commits and run focused Nix checks while editing. Build the
    production application only in isolated Nix builders, never a working checkout.
    Do not replace managed dependencies with another checkout's directory.

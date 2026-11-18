@@ -27,7 +27,8 @@ ROOT_FILES = frozenset({
 })
 ROOT_TREES = ('app', 'components', 'hooks', 'lib', 'plugins', 'public', 'e2e', 'bin',
               'nix', 'docs', '.github')
-# Admit ONLY this maintained subtree, not other agent/private configuration.
+# Keep this exact legacy path compatible with older Acceptance profiles;
+# the retired local skill is no longer a default input. Other agent data stays excluded.
 MAINTAINED_TREE = ('.agents', 'skills', 'writing-plans')
 # Temporary offline codec/converter only; never admit unrelated tools/private data.
 MIGRATION_TREE = ('tools', 'migrations', 'git-operation-reviews')

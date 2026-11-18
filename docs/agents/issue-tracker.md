@@ -11,7 +11,15 @@ When a skill says “publish to the issue tracker”, create the appropriate
 local file. When it says “fetch a ticket”, read its referenced file;
 resolve a bare number within the selected feature directory.
 
-Durable implementation plans still belong in `docs/plans/` under the
-repository's writing-plans skill. ADRs belong in `docs/adr/`.
+New work uses the spec for requirements and tickets for execution,
+dependencies and completion. Do not maintain a parallel plan checklist.
+See [Engineering workflow](workflow.md) for skill adaptations and existing plans.
+ADRs belong in `docs/adr/`.
+
+Resolve a ticket by checking its verified acceptance criteria, recording
+concise evidence under `## Comments`, and setting `Status: done`.
+`done` is a completion state, not a sixth triage role. Reopen invalidated
+work with the appropriate triage status and explain what remains.
+
 The repository's public-safe content rules apply to `.scratch/` too;
 it is not a private evidence directory.

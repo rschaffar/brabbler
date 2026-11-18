@@ -1,6 +1,7 @@
 # Triage labels
 
-Use these strings in each issue's `Status:` line.
+For triage, use these strings in each issue's `Status:` line.
+[Issue tracker](issue-tracker.md) defines completion and reopening.
 
 | Canonical role | Local status | Meaning |
 | --- | --- | --- |
