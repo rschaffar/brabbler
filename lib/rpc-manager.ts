@@ -5,6 +5,7 @@ import { prepareResourceRuntime, includedResourceKeys, type ResourceRuntimeSelec
 import { readCommittedResourceSelection } from "./agent-resources/api";
 import { resolveResourceContext } from "./agent-resources/context";
 import { initializeOwnSessionChoices } from "./agent-resources/preferences";
+import { getAllowedFileRoots } from "./file-access";
 import { createResourceApplication, resourceApplication, resourceStatus, ResourceApplyError, type ResourceApplication } from "./agent-resources/live";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
@@ -1594,6 +1595,9 @@ export class AgentSessionWrapper {
         sessionSaveBarrier(destination);
         cacheSessionPath(newSessionId, newSessionFile);
         try {
+          // Creation owns catalogue preparation; the detached context resolver
+          // deliberately refuses cold/expired roots rather than scanning itself.
+          await getAllowedFileRoots();
           await initializeOwnSessionChoices(
             await resolveResourceContext({ cwd: sessionManager.getCwd(), sessionId: this.sessionId }),
             await resolveResourceContext({ cwd: destination.getCwd(), sessionId: newSessionId }));
@@ -1632,6 +1636,7 @@ export class AgentSessionWrapper {
         sessionSaveBarrier(forkedManager);
         cacheSessionPath(newSessionId, forkedPath);
         try {
+          await getAllowedFileRoots();
           await initializeOwnSessionChoices(
             await resolveResourceContext({ cwd: sessionManager.getCwd(), sessionId: this.sessionId }),
             await resolveResourceContext({ cwd: forkedManager.getCwd(), sessionId: newSessionId }));
