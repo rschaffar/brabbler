@@ -1,4 +1,4 @@
-import { realpathSync } from "fs";
+import { lstatSync, realpathSync } from "fs";
 import path from "path";
 import { isWindowsAbsolutePath } from "./paths";
 
@@ -20,6 +20,35 @@ export function isPathWithinRoots(target: string, roots: Set<string>): boolean {
     if (comparable === comparableRoot || comparable.startsWith(rootWithSep)) return true;
   }
   return false;
+}
+
+// Nix base32 hash (no e, o, u, t), then a name; the object is one path segment.
+const NIX_STORE_OBJECT = /^\/nix\/store\/[0-9a-df-np-sv-z]{32}-[^/]+(?=\/|$)/;
+
+/**
+ * True only for a physical path (as returned by physicalDirectoryPath) inside a
+ * Nix store object (`/nix/store/<hash>-<name>`) this server cannot modify. Store
+ * contents are immutable and world-readable by design, so reading them discloses
+ * nothing new; a missing child of an immutable object stays absent. This is a
+ * read-target predicate for callers that already admitted the lexical alias. It
+ * is never a root by itself and never makes a lexical `/nix/store` path admissible.
+ */
+export function isImmutableNixStorePath(physical: string): boolean {
+  if (process.platform === "win32" || physical !== path.posix.normalize(physical)) return false;
+  const object = NIX_STORE_OBJECT.exec(physical)?.[0];
+  if (!object) return false;
+  // Immutable to this server: neither the store nor the object belongs to the
+  // current user, and the object is not group/other writable. (Sandboxes may map
+  // the real root owner to an overflow ID, so "not ours" is the portable check.)
+  const uid = process.getuid?.();
+  if (uid === undefined) return false;
+  try {
+    const store = lstatSync("/nix/store"), owned = lstatSync(object);
+    return store.isDirectory() && store.uid !== uid && !owned.isSymbolicLink()
+      && owned.uid !== uid && (owned.mode & 0o022) === 0 && realpathSync(object) === object;
+  } catch {
+    return false;
+  }
 }
 
 /** Physical identity for managed live-use observations. Resolve existing ancestors of a

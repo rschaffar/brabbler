@@ -10,7 +10,7 @@ import { readSessionToolSelection } from "../session-tool-selection";
 import { PRESET_DEFAULT } from "../tool-presets";
 import type { SessionEntry } from "../types";
 import { getKnownAllowedFileRoots } from "../file-access";
-import { physicalDirectoryPath, isPathWithinRoots } from "../path-security";
+import { physicalDirectoryPath, isImmutableNixStorePath, isPathWithinRoots } from "../path-security";
 import { getProjectTrustStatus } from "../project-trust";
 import { buildResourceCatalog, type CatalogInput, type CatalogResult } from "./catalog";
 import { readCatalogMetadata, CatalogMetadataError } from "./catalog-metadata";
@@ -22,7 +22,8 @@ import { resourceApplication, resourceStatus, ResourceApplyError } from "./live"
 
 /** Desired-state facade and trusted internal selection snapshot. No session/loader or instruction-read authority.
  * Pilot: POSIX, installed local sources, global producer v1, canonical Project roots.
- * External physical sources must already pass the shared file-access boundary;
+ * External physical sources must already pass the shared file-access boundary,
+ * except immutable Nix store targets reached through an admitted alias;
  * neither native declarations nor metadata register arbitrary browsing roots. */
 export class ResourceApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); this.name = "ResourceApiError"; }
@@ -138,7 +139,11 @@ async function prepare(input: ContextInput, importNative = true) {
   const allow = (path: string) => {
     const admitted = roots();
     // Existing physical authority, or contained true absence; never add roots.
-    if (!isPathWithinRoots(path, admitted) || !isPathWithinRoots(physicalDirectoryPath(path), new Set([...admitted].map(root => physicalDirectoryPath(root))))) {
+    // An admitted alias may also resolve into an immutable Nix store object
+    // (Home Manager links); a lexical /nix/store path is still refused.
+    const physical = () => physicalDirectoryPath(path);
+    if (!isPathWithinRoots(path, admitted) || !isPathWithinRoots(physical(), new Set([...admitted].map(root => physicalDirectoryPath(root))))
+      && !isImmutableNixStorePath(physical())) {
       refuse(403, "source-access", `Native source is outside admitted file roots: ${path}. Admit its physical installed location through the existing file-access workflow, or remove the unsupported declaration/alias`);
     }
   };
