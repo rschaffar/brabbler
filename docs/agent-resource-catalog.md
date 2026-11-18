@@ -117,7 +117,14 @@ gate or execute twice. Ambiguous logical ownership remains an error.
 
 Native manifests and declarations remain separate source-admission boundaries.
 Support admitted read-only/symlinked sources without treating metadata as arbitrary
-filesystem authority. A configured catalog/native generation must bind coherently;
+filesystem authority. Each native path must be lexically inside an admitted root
+(the agent directory, `~/.agents`, a trusted project or a file-access root), and
+its physical target must be inside an admitted root's physical location **or** an
+immutable Nix store object (`/nix/store/<hash>-<name>` that neither the store nor
+the object makes writable by the server user). This admits Home Manager links
+without registering the store; a lexical `/nix/store` declaration still refuses,
+and store targets are never identities or browsing roots. Other outside targets
+still need the existing file-access workflow. A configured catalog/native generation must bind coherently;
 missing, malformed or inconsistent inputs are errors, not an empty successful
 selection or permission to activate an unvalidated new generation. Retain preferences.
 Implement bounded reads and diagnostics without silently ignoring unknown fields.

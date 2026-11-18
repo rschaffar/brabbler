@@ -87,7 +87,11 @@ function readObservation(path: string, allow: (path: string) => void, structural
   allow(path);
   const before = observation(path, structural);
   if (!before.stat) return { token: before.token, text: undefined, size: 0 };
-  allow(before.physical!);
+  // Re-admit the lexical alias and bind it to the observed target. The admission
+  // owner checks that alias's physical target (which may be an immutable store
+  // object); a resolved store path is never itself a lexically admitted source.
+  allow(path);
+  if (realpathSync(path) !== before.physical) fail("generation", path, "native source target changed during admission");
   if (before.stat.isDirectory()) return { token: before.token, text: undefined, size: 0 };
   if (!before.stat.isFile() || before.stat.size > BigInt(MAX_BYTES)) fail("read", path, "expected a bounded regular native file");
   const fd = openSync(before.physical!, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
