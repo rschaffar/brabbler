@@ -240,6 +240,31 @@ Settings → **Skills & extensions** (`components/SkillsConfig.tsx`) presents fl
 
 Pi or Nix owns package contents **and registration**, including unmanaged packages' normal external management. Brabbler provides ownership/guidance, not install/search/update/remove controls. Nix-managed declarations and contents are never edited here. **Built-in features** (`PluginsConfig.tsx`) contains only existing bundled Git Workflow, Session Launch and Acceptance settings/permissions, separate from external availability; internal plugin IDs/storage remain unchanged. See [ADR 0046](adr/0046-agent-resource-availability-only.md).
 
+#### Catalogue cost and freshness
+
+Member matching uses per-build physical-identity indexes, preserving native order,
+all ownership conflicts and final source-generation checks for indexed aliases.
+Successful exact-file skills reuse public SDK validation; directory entries and
+collision losers retain independent single-entry validation. Fresh source admission
+resolves each target once and checks roots lazily, including the existing immutable
+Nix-store exception only after lexical admission. No authorization is cached.
+
+`withResourceChoices` projects saved choices using a genuine successful observation's
+captured context and independent eligibility ceilings. Private weak associations
+retain these inputs only for that observation's lifetime; arbitrary serialized rows
+cannot supply them. Projection is neither discovery nor currentness authority.
+Inventory/save/runtime consumers retain all independent fresh discovery, trust,
+source, descriptor and publication guards. There is no cross-request catalogue cache.
+
+An isolated Node 24.22.2 x86_64 Linux fixture with 64 skills in one local package
+measured warm inventory at 1665–1672 ms before and 206–214 ms after this change;
+save at 2332–2339 / 317–323 ms, instruction content at 2027–2045 / 319–322 ms,
+and runtime resource preparation at 1997 / 267 ms. Warm inventory discovery builds
+fell from five to four and physical-path calls from 51,544 to 5,189. These private
+synthetic probes are not live HTTP, full startup/Apply or cold-cache guarantees.
+Native regressions bound member identity work and unrelated-root resolution rather
+than enforcing machine-dependent elapsed-time thresholds.
+
 #### Resource API and skill inspection
 
 - `GET /api/agent-resources` accepts optional `cwd` and own `sessionId`, returning desired inventory, canonical `contextToken`, per-scope revisions/own choices and selected runtime status (or null without a Session). Choice `PATCH` supplies that context, `selectionKey`, `scope`, `choice`, `revision` and `contextToken`; stale admission/revision refuses. Explicit Apply uses **only** `{cwd, sessionId, action: "apply"}`. No caller-supplied runtime snapshot is accepted. Responses are no-store; request security and bounded bodies remain enforced.

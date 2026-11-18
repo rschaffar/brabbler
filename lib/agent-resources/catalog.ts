@@ -83,6 +83,24 @@ function freeze<T>(value: T): T {
   return value;
 }
 
+// Retain only the captured selection inputs for this observation's lifetime.
+// No lookup by path/context, cross-request discovery reuse or currentness claim.
+const selectionInputs = new WeakMap<CatalogResult, { context: SelectionContext; objects: readonly SelectionObject[] }>();
+
+/** Pure desired-choice projection, not discovery or authorization. Only a genuine
+ * successful observation can supply the original context and independent ceilings.
+ * Callers must still freshly guard membership/admission before publication/use. */
+export function withResourceChoices(catalog: CatalogResult, choices: NonNullable<CatalogInput["choices"]>): CatalogResult {
+  const captured = selectionInputs.get(catalog);
+  if (!captured) throw new Error("Choice projection requires a successful captured resource catalog");
+  const selection = new Map(resolveSelection(captured.objects.map(object => ({ ...object, choices: choices(object.identity) })),
+    captured.context).map(value => [value.key, value]));
+  const result = freeze({ ...catalog, rows: catalog.rows.map(row => row.identity
+    ? { ...row, selection: selection.get(selectionKey(row.identity)) } : row) });
+  selectionInputs.set(result, captured);
+  return result;
+}
+
 /** Inert public SDK composition. No loader, extension import, factory, session,
  * temporary resolution or install/update operation. Native location probes MAY
  * execute the configured package-manager command; this is not a subprocess sandbox.
@@ -219,12 +237,33 @@ export async function buildResourceCatalog(input: CatalogInput): Promise<Catalog
       rows.push(row);
     }
   }
+  // Index physical identities once, preserving native order and every conflicting
+  // owner. These are matching observations, never eligibility/authorization. Fence
+  // all indexed paths (including aliases/supplement-only entries) at the end.
+  const memberKey = (kind: CatalogMetadataKind, target: string) => JSON.stringify([kind, target]);
+  const members = new Map<string, Row[]>(), owners = new Map<string, Set<Row>>();
+  const indexMember = (row: Row) => {
+    if (row.kind === "group" || row.kind === "package") return;
+    remember(row.path);
+    const target = physical(row.path);
+    if (target === undefined) return;
+    const key = memberKey(row.kind, target), bucket = members.get(key) ?? [];
+    bucket.push(row); members.set(key, bucket);
+  };
+  for (const row of rows) indexMember(row);
+  const supplementalTargets = new Map<(typeof supplemental)[number], string | undefined>();
+  for (const item of supplemental) {
+    remember(item.resource.path);
+    const target = physical(item.resource.path); supplementalTargets.set(item, target);
+    if (target === undefined) continue;
+    const key = memberKey(item.kind, target), bucket = owners.get(key) ?? new Set<Row>();
+    bucket.add(item.owner); owners.set(key, bucket);
+  }
   for (const item of supplemental) {
     const { kind, resource, owner } = item;
-    const target = physical(resource.path);
-    const matches = rows.filter(row => row.kind === kind && target !== undefined && physical(row.path) === target);
-    const otherOwners = supplemental.filter(other => target !== undefined && other.kind === kind && physical(other.resource.path) === target && other.owner !== owner);
-    if (otherOwners.length || matches.length > 1 || matches.some(row => row.parent && selectionKey(row.parent) !== selectionKey(owner.identity!))) {
+    const target = supplementalTargets.get(item), key = target === undefined ? undefined : memberKey(kind, target);
+    const matches = key === undefined ? [] : members.get(key) ?? [];
+    if ((key !== undefined && owners.get(key)!.size > 1) || matches.length > 1 || matches.some(row => row.parent && selectionKey(row.parent) !== selectionKey(owner.identity!))) {
       issue("ambiguous-owner", resource.path, "Physical aliases have multiple package/origin owners; no logical winner is inferred");
       owner.ceiling.source = false;
       for (const row of matches) { row.membership = "unsupported"; row.ceiling.source = false; }
@@ -247,10 +286,11 @@ export async function buildResourceCatalog(input: CatalogInput): Promise<Catalog
     }
     // Membership is confirmed by public native discovery, but original eligibility
     // is not reconstructed for object omissions, replacement/delta or alias losers.
-    rows.push({ kind, path: resource.path, scope: owner.scope, source: owner.source, membership: "unsupported", nativeEnabled: null,
+    const row: Row = { kind, path: resource.path, scope: owner.scope, source: owner.source, membership: "unsupported", nativeEnabled: null,
       observedPaths: [], managedBy: null, ownership: owner.managedBy === "nix" ? "readonly" : "native", parent: owner.identity,
       ...((kind === "skill" || kind === "extension") ? { identity: identity(kind, resource.path, owner.scope) } : {}),
-      ceiling: { ...ceiling(kind, resource.path, owner.scope, owner.source), source: false } });
+      ceiling: { ...ceiling(kind, resource.path, owner.scope, owner.source), source: false } };
+    rows.push(row); indexMember(row);
     issue("unresolved-native-eligibility", resource.path, "Local membership discovered, but original native filter/replacement eligibility has no attributed winner");
   }
   // Support limit: an observed automatic/top-level alias beneath an object
@@ -262,7 +302,7 @@ export async function buildResourceCatalog(input: CatalogInput): Promise<Catalog
     const target = physical(row.path);
     for (const boundary of objectConventions) {
       if (row.kind !== boundary.kind || !target || !target.startsWith(`${boundary.path}/`)) continue;
-      const confirmed = supplemental.some(item => item.owner === boundary.owner && item.kind === row.kind && physical(item.resource.path) === target);
+      const confirmed = owners.get(memberKey(boundary.kind, target))?.has(boundary.owner);
       if (confirmed) continue;
       row.membership = "unsupported"; row.ceiling.source = false;
       issue("unsupported-object-membership", row.path,
@@ -350,15 +390,20 @@ export async function buildResourceCatalog(input: CatalogInput): Promise<Catalog
       diagnostic.type === "warning" || collision ? "warning" : "error");
     if (collision) for (const row of skillRows) if (row.path === collision.loserPath) row.ceiling.source = false;
   }
+  const validatedFiles = new Map(validated.skills.map(skill => [skill.filePath, skill]));
   for (const row of skillRows) {
-    const own = loadSkills({ cwd: input.cwd, agentDir: input.context.agentDir, includeDefaults: false, skillPaths: [row.path] });
+    // Exact successful file entries already prove one validated skill. Directory
+    // bundles and collision losers still need their independent single-entry read.
+    const known = validatedFiles.get(row.path);
+    const own = known ? { skills: [known] }
+      : loadSkills({ cwd: input.cwd, agentDir: input.context.agentDir, includeDefaults: false, skillPaths: [row.path] });
     if (own.skills.length !== 1) {
       issue("unsupported-skill-entry", row.path, "Expected one validated skill entry; directory bundles/invalid entries require explicit native entries");
       row.ceiling.source = false; continue;
     }
     const skill = own.skills[0]; row.skill = skill;
     row.path = skill.filePath; row.identity = identity("skill", skill.filePath, row.scope);
-    if (!validated.skills.some(value => value.filePath === skill.filePath)) row.ceiling.source = false;
+    if (!validatedFiles.has(skill.filePath)) row.ceiling.source = false;
     // Returned lexical entry identity, not a physical-target preference key.
     const admittedEntry = ceiling("skill", skill.filePath, row.scope, row.source);
     row.ceiling = { source: row.ceiling.source && admittedEntry.source, trust: row.ceiling.trust && admittedEntry.trust,
@@ -381,9 +426,12 @@ export async function buildResourceCatalog(input: CatalogInput): Promise<Catalog
   for (const object of objects) { const key = selectionKey(object.identity); if (seen.has(key)) duplicates.add(key); seen.add(key); }
   for (const key of duplicates) issue("identity-collision", key, "Multiple catalog rows claim this lexical identity; repair conflicting declarations");
   const selection = duplicates.size ? [] : resolveSelection(objects, input.context);
-  for (const row of rows) if (row.identity) row.selection = selection.find(value => value.key === selectionKey(row.identity!));
+  const selected = new Map(selection.map(value => [value.key, value]));
+  for (const row of rows) if (row.identity) row.selection = selected.get(selectionKey(row.identity));
   revalidate();
-  return freeze({ coverage: "native winners plus confirmed local members; not a complete declaration inventory", ok: !diagnostics.some(value => value.severity === "error"),
+  const result: CatalogResult = freeze({ coverage: "native winners plus confirmed local members; not a complete declaration inventory", ok: !diagnostics.some(value => value.severity === "error"),
     rows: rows.map(row => { const { ceiling, ...publicRow } = row; void ceiling; return publicRow; }), native, raw, configuredPackages,
     metadataGeneration: metadata.status === "loaded" ? metadata.generation.token : null, diagnostics });
+  if (result.ok) selectionInputs.set(result, freeze({ context: { ...input.context }, objects }));
+  return result;
 }
