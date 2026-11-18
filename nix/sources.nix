@@ -23,8 +23,8 @@ let
     (fileset.union application (paths [
     "app" "components" "hooks" "lib" "plugins" "public" "e2e" "nix" "docs" ".github"
     "tools/migrations/git-operation-reviews"
-    "AGENTS.md" "CONTEXT.md" "README.md" "eslint.config.mjs"
-    "flake.nix" "flake.lock" ".gitignore" ".agents/skills/writing-plans"
+    "AGENTS.md" "GLOSSARY.md" "README.md" "eslint.config.mjs"
+    "flake.nix" "flake.lock" ".gitignore"
   ]));
   # The current TS/ESLint configuration consumes code/config, not prose. Include
   # all code, JSON and styles (including tests/TSX fixtures); exclude docs and Nix

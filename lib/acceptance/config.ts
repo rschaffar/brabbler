@@ -13,6 +13,7 @@ export const excludedInput = (name: string) => (name.startsWith(".") && ![".gith
   || ["node_modules", "result", "test-results", "coverage", "dist", "build", "out", "__pycache__", "private", "credentials", "secrets", "auth.json", "credentials.json", "settings.json", "models.json", "config.json", "next-env.d.ts"].includes(name.toLowerCase())
   || /\.(pem|key|p12|pfx|log|tsbuildinfo)$/i.test(name);
 export function inputPath(value: unknown): value is string {
+  // Retain the exact legacy skill path for saved profiles, not new template inputs.
   return typeof value === "string" && value.length > 0 && value.length < 1024 && !path.isAbsolute(value)
     && !/[\\\x00-\x1f:]/.test(value) && (value === ".agents/skills/writing-plans"
       || value.split("/").every((part) => part !== ".." && part !== "" && !excludedInput(part)));

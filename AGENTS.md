@@ -15,7 +15,7 @@ all other lifecycle safeguards remain in force.
 - **Commit signing and authorship:** No project-specific signing or identity requirement; the global lifecycle applies.
 - **Required verification:** Follow the single baseline and change-dependent acceptance matrix in [docs/testing.md](docs/testing.md). Complete acceptance comprises sandboxed core/static/plugin checks, the full browser/terminal inventory in ordinary Nix sandboxes, and the genuine Home Manager deployment NixOS VM check. Fresh entry points execute the same definitions; focused passes are not full acceptance. No additional npm baseline, development-server acceptance or non-Nix fallback is required or supported. Production package builds for verification are allowed only inside isolated Nix builders; never run `next build` or `npm run build` in a working checkout or build against the installed service.
 - **Publication constraints:** [docs/release.md](docs/release.md) owns the release process. GitHub pushes/releases and npm publication require separate, explicit authorization for the exact remote operation.
-- **Planning workflow:** [.agents/skills/writing-plans/SKILL.md](.agents/skills/writing-plans/SKILL.md) owns plans under `docs/plans/`; durable decisions belong in `docs/adr/`, and current operational or contributor behavior belongs in the focused guide under `docs/` or `README.md`/`AGENTS.md`.
+- **Engineering workflow:** [docs/agents/workflow.md](docs/agents/workflow.md) adapts Matt Pocock's skills to this repository. New multi-session work uses local specs and tickets, not parallel plans; existing `docs/plans/` remain historical or unfinished work.
 - **Intentional deviations or incompatible rules:** The required linked worktree, `main` target, and non-fast-forward merge replace the global lifecycle's optional direct-checkout, alternative/no-target, and fast-forward/squash choices for this repository. Keep its inspection, clean-state, verification, exact-state approval, remote boundary, and separate cleanup safeguards. Preserve the isolated-build boundary above.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) provides the self-contained contributor entry
@@ -34,8 +34,8 @@ internal hosts, customer/employer project details or personal filesystem paths.
 Use synthetic data and neutral placeholders. Keep sensitive investigation details
 in a private, persistent location outside the repository; review/redact before
 staging, including images and metadata. Public attribution and deliberately public
-maintainer contact details are not secrets. The planning skill owns plan-specific
-handling; publication approval never retroactively authorizes a disclosure.
+maintainer contact details are not secrets. Publication approval never
+retroactively authorizes a disclosure.
 
 For public work, also preserve the [public-history boundary](docs/release.md#local-public-history-boundary): start from cleaned `main`, never merge or blindly rebase private backup/old-worktree ancestry into it.
 
@@ -92,12 +92,13 @@ Delegate only independent work with an explicit checkout, scope, capabilities an
 deliverable. Check that the selected profile can produce that deliverable; a
 read-only researcher cannot write patches or run checks. Reuse findings instead
 of delegating fixture discovery again. Preserve one repository writer and useful
-independent safety review; do not require delegation or a durable plan for a small,
+independent safety review; do not require delegation, a spec or tickets for a small,
 obvious change. Keep one receiving candidate and a small work-in-progress limit;
-plans own current blockers/decisions, not per-run chronology. Distinguish verified,
+specs and tickets own requirements and current blockers, not per-run chronology. Distinguish verified,
 implemented-but-unverified, proposed and abandoned work. Reuse unchanged evidence
 and review findings; agent-selected packet/control/report conventions are not new
-requirements. The planning skill owns package gates and stop conditions.
+requirements. Specs and tickets carry their acceptance gates and stop conditions;
+[Engineering workflow](docs/agents/workflow.md) owns the skill adaptations.
 
 ## Browser and dev-server lifecycle
 
@@ -107,6 +108,23 @@ requirements. The planning skill owns package gates and stop conditions.
 - Diagnose failures from the exact run's logs, responses, traces and observed process events. Preserve failures before a justified retry; a passing unchanged retry does not prove a fix. Do not suppress general console/5xx errors or inflate deadlines to manufacture acceptance.
 - [docs/testing.md](docs/testing.md#diagnostics-and-retention) owns bounded current-run bulk cleanup after settlement and retained evidence. Historical roots, failed builds, checkout dependencies and backups still require separately authorized cleanup; no wildcard/age-based reapers.
 - Next.js may append a generated `BEGIN:nextjs-agent-rules` block to this file. Check `git status` after starting a server and exclude generated tooling output from unrelated commits.
+
+## Agent skills
+
+### Issue tracker
+
+For issue/spec work, use local Markdown under `.scratch/<feature>/`.
+Read `docs/agents/issue-tracker.md` before creating or updating tickets.
+
+### Triage labels
+
+For triage, use the five default status strings in
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` and `docs/adr/`.
+Before domain exploration, read `docs/agents/domain.md`.
 
 ## Read the relevant implementation guide
 
