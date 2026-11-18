@@ -108,6 +108,23 @@ requirements. The planning skill owns package gates and stop conditions.
 - [docs/testing.md](docs/testing.md#diagnostics-and-retention) owns bounded current-run bulk cleanup after settlement and retained evidence. Historical roots, failed builds, checkout dependencies and backups still require separately authorized cleanup; no wildcard/age-based reapers.
 - Next.js may append a generated `BEGIN:nextjs-agent-rules` block to this file. Check `git status` after starting a server and exclude generated tooling output from unrelated commits.
 
+## Agent skills
+
+### Issue tracker
+
+For issue/spec work, use local Markdown under `.scratch/<feature>/`.
+Read `docs/agents/issue-tracker.md` before creating or updating tickets.
+
+### Triage labels
+
+For triage, use the five default status strings in
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` and `docs/adr/`.
+Before domain exploration, read `docs/agents/domain.md`.
+
 ## Read the relevant implementation guide
 
 These are task-scoped references, not extra context to load for every change.

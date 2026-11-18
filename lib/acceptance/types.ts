@@ -58,6 +58,6 @@ export const acceptanceTerminal = (state: AcceptanceState) => !["queued", "runni
 export const nixAcceptanceProfile: AcceptanceProfile = {
   name: "full", label: "Complete Nix acceptance", coverage: "full",
   argv: ["nix", "run", "--no-write-lock-file", ".#test", "--", "all", "--workers", "4", "--jobs", "4"],
-  inputs: ["package.json", "package-lock.json", "flake.nix", "flake.lock", "tsconfig.json", "next.config.ts", "tailwind.config.ts", "eslint.config.mjs", "postcss.config.mjs", "instrumentation.ts", "instrumentation-node.ts", "proxy.ts", "LICENSE", "AGENTS.md", "CONTEXT.md", "README.md", ".gitignore", ".github", ".agents/skills/writing-plans", "app", "components", "hooks", "lib", "plugins", "public", "bin", "e2e", "nix", "docs"],
+  inputs: ["package.json", "package-lock.json", "flake.nix", "flake.lock", "tsconfig.json", "next.config.ts", "tailwind.config.ts", "eslint.config.mjs", "postcss.config.mjs", "instrumentation.ts", "instrumentation-node.ts", "proxy.ts", "LICENSE", "AGENTS.md", "GLOSSARY.md", "README.md", ".gitignore", ".github", ".agents/skills/writing-plans", "app", "components", "hooks", "lib", "plugins", "public", "bin", "e2e", "nix", "docs"],
   cpus: 16, memoryMiB: 27648, permission: "ask",
 };

@@ -18,7 +18,7 @@ import stat
 import uuid
 
 ROOT_FILES = frozenset({
-    '.gitignore', 'AGENTS.md', 'CONTEXT.md', 'LICENSE',
+    '.gitignore', 'AGENTS.md', 'GLOSSARY.md', 'LICENSE',
     'README.md', 'CONTRIBUTING.md', 'SECURITY.md',
     'flake.nix', 'flake.lock', 'package.json', 'package-lock.json',
     'tsconfig.json', 'next.config.ts', 'eslint.config.mjs',
