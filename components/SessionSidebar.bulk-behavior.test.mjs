@@ -1,7 +1,7 @@
 import "../lib/testing/client-native-boundary.fixture.mjs";
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { button, click, exact, select, inputText } from './browser-lower-runtime.fixture.mjs';
+import { button, click, exact, inputText } from './browser-lower-runtime.fixture.mjs';
 import { sidebar, session, IDS, ROOT, DEST } from './browser-lower-cases.fixture.mjs';
 
 const row = (h, id) => { const value = [...h.view.container.querySelectorAll('[data-session-id]')].find(node => node.dataset.sessionId === id); assert.ok(value, `real family ${id}`); return value; };
@@ -114,9 +114,10 @@ test('actual Sidebar archive/search/worktree/project scope transitions clear sel
   await optIn(h);
   assert.equal(checkbox(h, IDS[0]).checked, false); assert.equal(checkbox(h, IDS[1]).checked, false);
   await click(h.view, button(h.view, 'Done'));
-  await enter(); await select(h.view, h.view.container.querySelector('#session-worktree-filter'), DEST);
+  await enter(); await click(h.view, h.view.container.querySelector('#session-worktree-filter'));
   assert.equal(checks(h).length, 0);
-  await select(h.view, h.view.container.querySelector('#session-worktree-filter'), '');
+  assert.equal(h.view.container.querySelector(`[data-session-id="${IDS[1]}"]`) === null, true);
+  await click(h.view, h.view.container.querySelector('#session-worktree-filter'));
   await optIn(h); assert.equal(checks(h).some(node => node.checked), false); await click(h.view, button(h.view, 'Done'));
   await enter(); await h.command(c => c.navigation.handleSidebarSelectSession(session('scope-navigation-only', '/another-project', { projectRoot: '/another-project', projectKey: '/another-project' })));
   await h.idle(); assert.equal(checks(h).length, 0, 'project switch clears mode, selection and consent');

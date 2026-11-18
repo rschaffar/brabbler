@@ -1014,7 +1014,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "move") {
-      await coverage.run(`move/${inputId === "legacy-desktop" ? "picker-recovery-native-v2" : "picker-modal-browse-v2"}@${inputId}`, async () => {
+      await coverage.run(`move/picker-selected-worktree-v3@${inputId}`, async () => {
       const moveId = viewport.width <= 600 ? ARCHIVE : APPEND;
       await checkSessionMovePicker(page, { base, api, post, agentDir, sessionId: moveId, project, otherProject, gitProject, targetWorktree, mobile: viewport.width <= 600 });
       assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);

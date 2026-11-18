@@ -44,7 +44,7 @@ export const scenarios = {
   "questions": ["questions/native-publication-design-v4@legacy-desktop", "questions/compact-native-design-v4@legacy-mobile"],
   "session-links": ["session-links/copy-follow@legacy-desktop", "session-links/copy-follow@legacy-mobile"],
   "bulk": ["bulk/native-selection-mutations-v2@legacy-desktop", "bulk/native-selection-mutations-v2@legacy-mobile"],
-  "move": ["move/picker-recovery-native-v2@legacy-desktop", "move/picker-modal-browse-v2@legacy-mobile"],
+  "move": ["move/picker-selected-worktree-v3@legacy-desktop", "move/picker-selected-worktree-v3@legacy-mobile"],
 };
 for (const entries of Object.values(scenarios)) Object.freeze(entries);
 Object.freeze(scenarios);
