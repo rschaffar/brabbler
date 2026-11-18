@@ -7,8 +7,8 @@ interactive reviewer recording, required-answer outcomes, findings/resolution
 management, frozen feedback batches and JSON reply import. This supersedes
 [ADR 0036](0036-guided-review-recording.md)'s product and recording/handoff decisions;
 it does not change ordinary live questions, Git-operation approvals or their history.
-Implementation and verification are tracked in the
-[authoring plan](../plans/2026-11-05_notebook-authoring-plan.md).
+Implementation and candidate-specific verification are recorded in the
+[archived authoring plan](../plans/archived/2026-11-05_notebook-authoring-plan.md).
 
 The valuable workflow is reading, discussing a step in ordinary chat, asking an
 agent to revise it, and continuing. Administrative review state adds friction that

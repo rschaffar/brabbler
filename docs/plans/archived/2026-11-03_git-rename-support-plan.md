@@ -1,5 +1,19 @@
 # Rename-aware committed Git reviews
 
+**Status: completed and integrated; archived on 2026-11-18.**
+
+Reconciled against local main `56efa61a5a3f6904f9db3e0932a1406b68ce8626`.
+Candidate `2d17b1a223a19a96eaf17d5ca4ef4f686f15b5c0` is an ancestor of
+non-fast-forward merge `0ebcbfcabe246020826bab34e8a1a2b5418ef30f`, itself an
+ancestor of that main. Current contracts belong to the
+[worktree](../../worktrees.md), [feature](../../feature-internals.md) and
+[review metadata](../../git-operation-review-metadata.md) guides.
+
+Earlier worktree and pending-integration statements below are historical, not
+active work. This closure adds no new application-test evidence and preserves
+the recorded verification scope. Ancestry confirms integration, not historical
+approval provenance, deployment, publication or feature-resource cleanup.
+
 ## Goal
 
 Show a detected move as one **Renamed: old path → new path** entry, with only its
@@ -8,7 +22,7 @@ operation approvals/receipts. Authored endpoint-tree comparisons are deferred.
 Pure renames remain visible even without hunks. Reuse native Git and the existing
 diff renderer rather than inventing a rename detector.
 
-**Status / authority:** Implementation authorized by the user after independent
+**Historical implementation status / authority:** Implementation authorized by the user after independent
 plan review; work continues in the same feature worktree. Native pairing proof
 and implementation are complete. Full acceptance passed on the rebased candidate
 recorded below. Local integration uses separate exact-state native approval;
@@ -33,18 +47,18 @@ Source inspected at local `main` `14d60757535e0ed78ff3753fda1372b0e4c47bbb`:
 ## Plan Relationship
 
 This plan owns committed-review rename presentation and paired-path reads only.
-The active [Git-backed reviews plan](2026-10-31_git-backed-operation-reviews-plan.md) retains
+The active [Git-backed reviews plan](../2026-10-31_git-backed-operation-reviews-plan.md) retains
 its converter, operational migration and old-state disposition work; this plan
 neither claims those complete nor changes their implementation. The
-[Explorer fullscreen plan](2026-10-13_git-explorer-fullscreen-plan.md) retains its
+[Explorer fullscreen plan](../2026-10-13_git-explorer-fullscreen-plan.md) retains its
 layout/history queue.
 
-Preserve [ADR 0040](../adr/0040-git-backed-operation-reviews.md): immutable captured
+Preserve [ADR 0040](../../adr/0040-git-backed-operation-reviews.md): immutable captured
 content, on-demand reads, independent admission, size-independent approval and
 path/version/mode equality. This follow-up replaces the current delete/add
 **display** choice, not that equality definition. Update the maintained
-[worktree](../worktrees.md), [feature](../feature-internals.md) and
-[review metadata](../git-operation-review-metadata.md) guides with delivered behavior.
+[worktree](../../worktrees.md), [feature](../../feature-internals.md) and
+[review metadata](../../git-operation-review-metadata.md) guides with delivered behavior.
 
 ## Design and limits
 
@@ -195,7 +209,7 @@ Run focused files individually with `nix run .#test -- core --file <path>`, usin
 Focused browser: `nix run .#test -- e2e --group diff-context` and
 `nix run .#test -- e2e --group git-plugin`; use `markdown` if the guided reader changes.
 Full acceptance: `nix run .#test -- all --workers 4 --jobs 12`, subject to resource
-admission in [Testing](../testing.md#coverage-and-resource-admission); use four/four
+admission in [Testing](../../testing.md#coverage-and-resource-admission); use four/four
 or a smaller supported budget only with the concrete resource reason recorded.
 This includes static/core/plugin, all browser/terminal groups and the genuine
 Home Manager deployment VM. Focused success is not full acceptance.
@@ -307,6 +321,5 @@ remain separately gated operations.
 - [x] Existing saved metadata/outcomes/relations and operation safeguards remain intact.
 - [x] Maintained guides, independent implementation review and complete Nix acceptance pass.
 
-Exact-state local integration is governed by its separate native approval/receipt;
-no deployment, publication or feature-resource cleanup is implied by this plan's
-completion.
+Local-main integration is confirmed by the closure above. Deployment, publication
+and feature-resource cleanup remain separate operations, not effects of archival.

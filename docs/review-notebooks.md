@@ -208,8 +208,9 @@ approval; a coverage summary is not new execution evidence.
 The guided reader uses the same immutable evidence readers as inline stops.
 It is a walkthrough, not a review-management system. The original
 [implementation record](plans/archived/2026-10-23_guided-review-notebooks-plan.md)
-records historical candidate-specific acceptance; current changes and their
-verification are tracked in the [authoring plan](plans/2026-11-05_notebook-authoring-plan.md).
+records historical candidate-specific acceptance; the completed reader/authoring
+changes and their verification are recorded in the
+[archived authoring plan](plans/archived/2026-11-05_notebook-authoring-plan.md).
 Focused checks alone are not full browser/deployment acceptance.
 
 Open `index.md` in Files **Preview**, then choose **Start guided reading**.

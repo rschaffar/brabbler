@@ -148,7 +148,7 @@ structured method/path/body observations and permits only the exact existing-ses
 tuples among non-GET requests. Other sessions, extra fields, new sessions and all
 prompt/execution commands fail. Ordinary GET observations remain in diagnostics.
 No console/HTTP failures are filtered. Mounted/native owners retain policy and race
-matrices; [the active authoring plan](../docs/plans/2026-11-05_notebook-authoring-plan.md)
+matrices; [the archived authoring plan](../docs/plans/archived/2026-11-05_notebook-authoring-plan.md)
 records candidate-specific verification, not full acceptance from a focused pass.
 
 The managed-model tail retains the populated saved-context geometry at both inputs. It now also proves the direct in-provider catalog selector and thinking control have current unoccluded physical targets, preserves the other provider binding during inspection, and connects a row edit to the installed `/api/models/defaults` writer with private native-file readback and reopen. Only that exact shared preference is saved/restored; context configuration, enabled patterns, credentials and account bindings remain unmodified. Catalog/account metadata are synthetic geometry inputs, not live authentication, provider access or native catalog-discovery proof. Mounted/native owners retain precedence, validation, failures and interleaving matrices.

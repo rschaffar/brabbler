@@ -3,18 +3,19 @@
 Plans describe bounded work, not standing implementation or Git authority. Current
 behavior belongs in maintained guides and decisions in `docs/adr/`. This index
 separates the remaining queue from historical evidence; it is not another execution
-plan. Status reconciled against local main `74c4fdaf659df2509a8ee3a452a82edaf3d5ff51`
-on 2026-10-27.
+plan. The historical closure sweep used local main
+`74c4fdaf659df2509a8ee3a452a82edaf3d5ff51` on 2026-10-27.
+Rename support, notebook authoring and the Copilot schema plan were additionally
+reconciled against local main `56efa61a5a3f6904f9db3e0932a1406b68ce8626` on
+2026-11-18; see their completed records below. Other active entries retain their
+recorded scope and were not re-audited by that update.
 
 ## Active work
 
 | Plan | Remaining scope |
 | --- | --- |
-| [Rename-aware committed Git reviews](2026-11-03_git-rename-support-plan.md) | Implementation and independent review complete; committed Explorer and operation-review rename presentation preserves authored comparisons and saved outcomes/equality. Full Nix acceptance passed; local integration uses separate native approval/receipt. |
-| [Guided reading and native notebook authoring](2026-11-05_notebook-authoring-plan.md) | Reader simplification and native inspect/update/reference maintenance implemented; checkpoint and overall independent reviews closed. Rebased onto current main with independent review. Complete Nix acceptance passed: 531 core files / 4,590 tests, 26 browser/terminal groups / 60 input chains and genuine deployment VM. Ready for exact-state local non-FF merge approval; integration remains pending. |
 | [Git-backed operation reviews](2026-10-31_git-backed-operation-reviews-plan.md) | Feature-branch metadata production and existing Git-backed viewer/API are independently reviewed, with focused native/mounted/installed-browser checks. Offline converter, real-data rehearsal and complete acceptance remain open; live migration, activation and old-state removal still require separate approval. |
 | [Account-aware catalogs with shared model settings](2026-10-31_account-catalog-refresh-plan.md) | Account-targeted catalog views/refresh, shared preferences/defaults and mutable model-state ownership. Application review and complete Nix acceptance passed; companion consuming input and local integrations remain pending. |
-| [Copilot-compatible Git worktree schema](2026-10-31_copilot-argon-tool-schema-plan.md) | Object-root declaration and action-specific validation implemented; independent review, focused guard counterexamples and complete Nix acceptance passed (523 files / 4,409 tests, 26 browser/terminal groups and deployment VM). Exact-state local integration remains separately gated in the retained feature worktree; activation and publication are out of scope. |
 | [Brabbler 0.1.0 public release](2026-10-28_public-release-plan.md) | Implementation authorized and in progress: portable default-on authentication, fixed modular SDK policy and prebuilt archive are checkpointed; ELK is retained with separate source materials and notices. Linux acceptance and approved history/main cutover are complete; native macOS verification and remote repository/settings/CI/publication remain pending. |
 | [Multi-provider accounts](2026-09-25_multi-provider-accounts-plan.md) | Account-scoped real OAuth/device completion, cancellation and provider refresh evidence, plus explicit isolation-review disposition; implementation is integrated. Synthetic browser authorization is not live-provider proof. |
 | [Claude CLI sessions](2026-09-26_claude-cli-sessions-plan.md) | Backend/policy/protocol work is not delivered on main. Retained feature branches are not integration evidence. |
@@ -25,6 +26,24 @@ on 2026-10-27.
 Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
+
+## Completed-plan reconciliation (2026-11-18)
+
+These three implementations are verified and integrated into local main. Their
+plans are archived, not replacement tickets or active integration work. Each
+record retains candidate-specific acceptance and names its maintained owners.
+The merge IDs below are ancestors of the audited main; ancestry confirms local
+integration, not historical approval provenance, deployment, publication or cleanup.
+No new application acceptance was run for this documentation reconciliation.
+
+| Archived plan | Integration merge | Maintained owner |
+| --- | --- | --- |
+| [Rename-aware committed Git reviews](archived/2026-11-03_git-rename-support-plan.md) | `0ebcbfcabe24` | [Worktrees](../worktrees.md), [feature contracts](../feature-internals.md) and [review metadata](../git-operation-review-metadata.md) |
+| [Guided reading and native notebook authoring](archived/2026-11-05_notebook-authoring-plan.md) | `d219f1896fd1` | [Notebook guide](../review-notebooks.md), [retirement dispositions](../notebook-recording-retirement.md) and [ADR 0041](../adr/0041-guided-reading-and-notebook-authoring.md) |
+| [Copilot-compatible Git worktree schema](archived/2026-10-31_copilot-argon-tool-schema-plan.md) | `298a89cc54b2` | [Git plugin contracts](../git-workflow-plugin.md#tools-and-correctness) |
+
+Explicit non-goals and deferred proposals remain excluded; this closure neither
+promotes them into active work nor completes adjacent operational migrations.
 
 ## Scoped skills and extensions
 
