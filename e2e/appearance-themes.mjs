@@ -27,6 +27,33 @@ function contrast(a, b) {
 export async function checkAppearanceThemes(page, openSettings) {
   const originalViewport = page.viewportSize();
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+  // Real text geometry catches labels painting outside fixed-width tab buttons.
+  // At tablet widths the strip may scroll, but each complete tab must be reachable.
+  const tabs = page.locator(".settings-section-tab");
+  assert.equal(await tabs.count(), 6);
+  for (const width of [1280, 1172, 641]) {
+    await page.setViewportSize({ width, height: 700 });
+    for (const tab of await tabs.all()) {
+      await tab.focus();
+      await tab.scrollIntoViewIfNeeded();
+      const geometry = await tab.evaluate(button => {
+        const box = button.getBoundingClientRect();
+        const strip = button.parentElement.getBoundingClientRect();
+        const icon = button.querySelector("svg").getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(button.querySelector("span"));
+        const ink = range.getBoundingClientRect();
+        return { label: button.textContent, fits: icon.left >= box.left && icon.right <= ink.left
+          && ink.left >= box.left && ink.right <= box.right && ink.top >= box.top && ink.bottom <= box.bottom,
+        reachable: box.left >= strip.left - 1 && box.right <= strip.right + 1
+          && button.contains(document.elementFromPoint(ink.x + ink.width / 2, ink.y + ink.height / 2)) };
+      });
+      assert.equal(geometry.fits, true, `${geometry.label}: icon and full label fit their tab at ${width}px`);
+      assert.equal(geometry.reachable, true, `${geometry.label}: full tab is reachable at ${width}px`);
+    }
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  }
+  await page.setViewportSize(originalViewport);
   const group = page.getByRole("radiogroup", { name: "Appearance", exact: true });
   const radio = label => group.getByRole("radio", { name: label, exact: true });
   const expectTheme = async id => {

@@ -202,7 +202,7 @@ test('actual section icons and English labels preserve robot/general glyph data'
 test('settings navigation/typography/chat declarations retain responsive presentation and focus treatment', async () => {
   const css = await readFile(new URL('../app/settings.css', import.meta.url), 'utf8');
   for (const pattern of [/:has\(input:focus-visible\)/, /\.settings-dialog-header \{[\s\S]*?display: flex[\s\S]*?align-items: center[\s\S]*?min-height: 50px/,
-    /\.settings-section-tab \{[\s\S]*?width: 96px/, /\.settings-section-icon \{[\s\S]*?flex-shrink: 0/, /\.settings-section-tab::after \{[\s\S]*?width: 24px/,
+    /\.settings-section-tab \{[^}]*?flex: 0 0 auto[^}]*?min-width: 96px/, /\.settings-section-icon \{[\s\S]*?flex-shrink: 0/, /\.settings-section-tab::after \{[\s\S]*?width: 24px/,
     /\.settings-section-tab\[aria-current="page"\]::after/, /\.settings-section-tab:focus-visible:not\(\[aria-current="page"\]\)/,
     /\.settings-section-tab:focus-visible\[aria-current="page"\][\s\S]*?outline: none/,
     /@media \(max-width: 640px\)[\s\S]*?\.settings-section-tabs \{[\s\S]*?display: none/, /@media \(max-width: 640px\)[\s\S]*?\.settings-mobile-section-picker \{[\s\S]*?display: block/,
