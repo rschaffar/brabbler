@@ -122,7 +122,15 @@ export async function prepareResourceRuntime(input: { cwd: string; sessionId?: s
         return result;
       },
       skillsOverride(base) {
-        if (base.diagnostics.some(diagnostic => diagnostic.type !== "warning")) refused("skill loading failed; inspect SDK skill diagnostics");
+        // Native name precedence is accepted only between admitted catalog members
+        // whose loser is not enabled; any other collision stays unresolved.
+        const resolvedCollision = (diagnostic: (typeof base.diagnostics)[number]) => {
+          const collision = diagnostic.collision;
+          if (diagnostic.type !== "collision" || collision?.resourceType !== "skill") return false;
+          const winner = lookup("skill", collision.winnerPath), loser = lookup("skill", collision.loserPath);
+          return Boolean(winner && loser && winner.key !== loser.key && !loser.enabled);
+        };
+        if (base.diagnostics.some(diagnostic => diagnostic.type !== "warning" && !resolvedCollision(diagnostic))) refused("skill loading failed; inspect SDK skill diagnostics");
         const skills = base.skills.filter(skill => {
           const entry = lookup("skill", skill.filePath);
           if (!entry) refused(`unbound skill candidate ${skill.filePath}`);

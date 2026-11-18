@@ -114,6 +114,11 @@ context and admitted origin. Do not persist physical store targets as preference
 keys. Use native physical deduplication for an observed generation while retaining
 declaration provenance, so an automatic-discovery alias cannot bypass a package
 gate or execute twice. Ambiguous logical ownership remains an error.
+Distinct skills that share a **name** are not ambiguous ownership: the public SDK
+keeps the first in native load order (project before global) and reports the
+rest. The catalog mirrors that as a warning naming both paths and marks only the
+losing skill unavailable; the runtime admits that SDK collision only between
+bound catalog members whose loser is not enabled.
 
 Native manifests and declarations remain separate source-admission boundaries.
 Support admitted read-only/symlinked sources without treating metadata as arbitrary
