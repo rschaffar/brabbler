@@ -101,6 +101,12 @@ increase or aggregate archive fallback is used. The
 [temporary assertion ledger](../tools/migrations/git-operation-reviews/README.md)
 records the protocol-specific dispositions. Focused greens are not full acceptance.
 
+The appearance `layout-native-v3@legacy-desktop` receipt retains the previous
+chain and adds Settings tab text/icon containment and full-tab reachability at
+1280px, 1172px and 641px. Tabs size to their labels; narrower desktop headers
+scroll without overlapping labels. The existing mobile section picker is unchanged.
+The superseded v2 receipt is rejected before callbacks execute.
+
 Keyboard simulations verify Chromium layout/focus and preserve the same filter node/value; they do not certify native iOS/Android keyboards, Safari or installed-PWA behavior. Physical keyboard/IME/device verification remains separately reported.
 
 The mobile sidebar's `compact-search-native-rename-restore-move-v4` chain retains

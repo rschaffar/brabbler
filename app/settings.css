@@ -1110,13 +1110,13 @@
 .settings-section-tab {
   position: relative;
   display: flex;
-  flex: 0 0 96px;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  width: 96px;
+  min-width: 96px;
   height: 100%;
-  padding: 0 2px;
+  padding: 0 12px;
   border: 0;
   outline: none;
   background: transparent;

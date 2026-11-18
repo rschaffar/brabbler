@@ -533,7 +533,7 @@ let nativeToolsFixture;
     });
   } else if (group === "appearance") {
     browser = await harness.launchBrowser(chromium, { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    for (const inputId of ["numeric-wide", "legacy-desktop"]) await coverage.run(`appearance/${inputId === "numeric-wide" ? "legacy-width-bridge-v2" : "layout-native-v2"}@${inputId}`, async () => {
+    for (const inputId of ["numeric-wide", "legacy-desktop"]) await coverage.run(`appearance/${inputId === "numeric-wide" ? "legacy-width-bridge-v2" : "layout-native-v3"}@${inputId}`, async () => {
       context = await newInputContext(inputId);
       page = await context.newPage();
       const errors = harness.errorsFor(context);
