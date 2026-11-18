@@ -57,6 +57,7 @@ import { withStreamingCacheWarmingDefault } from "./sdk-settings";
 import { prepareResourceRuntime, type ResourceRuntimeSelection } from "./agent-resources/runtime";
 import { resolveResourceContext } from "./agent-resources/context";
 import { initializeOwnSessionChoices } from "./agent-resources/preferences";
+import { getAllowedFileRoots } from "./file-access";
 import { cacheSessionPath } from "./session-reader";
 import { sessionSaveBarrier } from "./session-save";
 
@@ -422,6 +423,9 @@ export function createSubagentController(
       persistChildSession(sessionManager);
       sessionSaveBarrier(sessionManager);
       cacheSessionPath(sessionManager.getSessionId(), savedChildFile);
+      // Parent roots can be catalogue-only and expired even when a new isolated
+      // worktree has its own explicit admission. Prepare both before resolving.
+      await getAllowedFileRoots();
       await initializeOwnSessionChoices(
         await resolveResourceContext({ cwd: parent.cwd, sessionId: parentSessionId }),
         await resolveResourceContext({ cwd: childCwd, sessionId: sessionManager.getSessionId() }));

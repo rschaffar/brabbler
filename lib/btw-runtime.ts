@@ -13,6 +13,7 @@ import { flushSessionEntries, quarantineSessionAfterSaveFailure, sessionSaveBarr
 import type { SessionEntry, SessionInfo } from "./types";
 import { resolveResourceContext } from "./agent-resources/context";
 import { initializeOwnSessionChoices } from "./agent-resources/preferences";
+import { getAllowedFileRoots } from "./file-access";
 
 export interface BtwConversation { session: SessionInfo | null; snapshot: BtwSnapshot | null }
 
@@ -91,6 +92,8 @@ export async function ensureBtwConversation(parentSessionId: string, refresh = f
         flushSessionEntries(child);
         sessionSaveBarrier(child);
         cacheSessionPath(child.getSessionId(), child.getSessionFile()!);
+        // Refresh shared admission here, never inside the read-only resolver.
+        await getAllowedFileRoots();
         await initializeOwnSessionChoices(
           await resolveResourceContext({ cwd: parent.getCwd(), sessionId: parentSessionId }),
           await resolveResourceContext({ cwd: child.getCwd(), sessionId: child.getSessionId() }));
