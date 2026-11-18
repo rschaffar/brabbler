@@ -341,11 +341,14 @@ export async function buildResourceCatalog(input: CatalogInput): Promise<Catalog
     && row.ceiling.source && row.ceiling.trust && row.ceiling.profile);
   const validated = loadSkills({ cwd: input.cwd, agentDir: input.context.agentDir, includeDefaults: false, skillPaths: skillRows.map(row => row.path) });
   for (const diagnostic of validated.diagnostics) {
-    issue(`native-skill-${diagnostic.type}`, diagnostic.path ?? "", diagnostic.message,
-      diagnostic.type === "warning" ? "warning" : "error");
-    if (diagnostic.collision) {
-      for (const row of skillRows) if ([diagnostic.collision.winnerPath, diagnostic.collision.loserPath].includes(row.path)) row.ceiling.source = false;
-    }
+    // A name collision follows native precedence: the SDK keeps the first skill
+    // in load order and reports later ones. Only the loser becomes unavailable;
+    // other skill diagnostics remain errors.
+    const collision = diagnostic.collision;
+    issue(`native-skill-${diagnostic.type}`, diagnostic.path ?? "",
+      collision ? `${diagnostic.message}; "${collision.winnerPath}" wins and "${collision.loserPath}" is unavailable` : diagnostic.message,
+      diagnostic.type === "warning" || collision ? "warning" : "error");
+    if (collision) for (const row of skillRows) if (row.path === collision.loserPath) row.ceiling.source = false;
   }
   for (const row of skillRows) {
     const own = loadSkills({ cwd: input.cwd, agentDir: input.context.agentDir, includeDefaults: false, skillPaths: [row.path] });
