@@ -283,18 +283,20 @@ Stop running sessions first. This moves the session and its subagents, not check
 
 ### Filter sessions by worktree
 
-The **All worktrees** filter above the session list narrows history independently
-of the working-directory selector. It does not change where **New**, Files or
-Terminal operate, and opening a chat does not reset the filter. The same scope
-applies to session search. Changing project, archive view or worktree filter clears
-bulk selection, so hidden selections cannot be moved accidentally.
+Enable **Only sessions in selected worktree** above the session list to narrow
+sessions and session search to the checkout selected above. Switching worktrees
+updates the filter automatically; opening a chat follows that chat's checkout.
+Uncheck it to show all sessions in the project. It starts unchecked.
+Changing project, archive view or filter scope clears bulk selection, so hidden
+selections cannot be moved accidentally.
 
-The filter includes registered checkouts and directories referenced by this project's
-sessions. **Directory missing** entries carry a warning icon and remain available
-for history filtering, including after Git prunes their registration. The working-
-directory menu also offers these as history-only entries; they cannot become a new
-chat/terminal destination. **Directory unavailable** is not proof of deletion.
-Historical branch labels may be unavailable; the full saved path identifies the entry.
+The worktree menu also includes history-only **Directory missing** and **Directory
+unavailable** entries, including after Git prunes their registration. Choosing one
+enables the checkbox with its saved path as the label, without changing where
+**New**, Files or Terminal operate. Unchecking restores all project sessions;
+choosing a working checkout returns to filtering that selected checkout.
+**Directory unavailable** is not proof of deletion. Historical branch labels may
+be unavailable; the full saved path identifies the entry.
 
 ### Move several sessions
 

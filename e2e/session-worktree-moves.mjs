@@ -45,12 +45,14 @@ export async function checkSessionWorktreeMoves(page, { base, api, post, agentDi
   const original = new Map([stale, liveChild, archived, missingChild].map(id => [id, readFileSync(paths.get(id), "utf8")]));
   await page.goto(`${base}/?session=${anchor}`, { waitUntil: "domcontentloaded" });
   if (mobile) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
-  const filter = page.getByLabel("Filter sessions by worktree", { exact: true });
-  await filter.locator(`option[value="${missing}"]`).waitFor({ state: "attached" });
-  assert.match(await filter.locator(`option[value="${missing}"]`).innerText(), /Directory missing/);
+  const filter = page.locator('#session-worktree-filter');
   const checkout = page.locator(`button[title="Switch worktree: ${main}"]`);
   await checkout.waitFor();
-  await filter.selectOption(missing);
+  await checkout.click();
+  const history = page.locator(`button[title="${missing}"]`);
+  await history.waitFor();
+  assert.match(await history.innerText(), /Directory missing/);
+  await history.click();
   await page.locator(`[data-session-id="${stale}"]`).waitFor();
   await page.locator(`[data-session-id="${missingChild}"]`).waitFor();
   assert.equal(await page.locator(`[data-session-id="${anchor}"]`).count(), 0);
@@ -60,10 +62,14 @@ export async function checkSessionWorktreeMoves(page, { base, api, post, agentDi
   // Filter scope participates in selection lifetime.
   await page.getByRole("button", { name: "Select", exact: true }).click();
   await page.locator(`[data-session-id="${stale}"]`).getByRole("checkbox").check();
-  await filter.selectOption(live);
+  await checkout.click();
+  await page.locator(`.wt-row button[title="${live}"]`).click();
   assert.equal(await page.getByRole("button", { name: "Done", exact: true }).count(), 0);
   assert.equal(await page.locator(`[data-session-id="${stale}"]`).count(), 0);
-  await filter.selectOption(missing);
+  await page.locator(`button[title="Switch worktree: ${live}"]`).click();
+  await page.locator(`.wt-row button[title="${main}"]`).click();
+  await checkout.click();
+  await page.locator(`button[title="${missing}"]`).click();
   // The project-wide shortcut must ignore this Active-only, missing-only view.
   await page.getByLabel("Project session actions", { exact: true }).click();
   await page.getByRole("button", { name: "Move sessions from missing worktrees to main…", exact: true }).click();
@@ -84,7 +90,7 @@ export async function checkSessionWorktreeMoves(page, { base, api, post, agentDi
     if (id === archived) assert.equal(moved.archived, true);
   }
   assert.equal(after.find(row => row.id === anchor).cwd, main, "missing child recovery leaves its parent in place");
-  await filter.selectOption("");
+  await filter.uncheck();
   await page.getByRole("button", { name: "Select", exact: true }).click();
   for (const id of [bulkA, bulkB]) {
     const row = page.locator(`[data-session-id="${id}"]`); await row.scrollIntoViewIfNeeded(); await row.getByRole("checkbox").check();
@@ -123,7 +129,7 @@ export async function checkSessionWorktreeMoves(page, { base, api, post, agentDi
     await api("/api/sessions?force=1");
     await page.goto(`${base}/?session=${activeId}`, { waitUntil: "domcontentloaded" });
     if (mobile) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
-    await page.getByLabel("Filter sessions by worktree", { exact: true }).selectOption("");
+    await page.locator('#session-worktree-filter').uncheck();
     await page.getByRole("button", { name: "Select", exact: true }).click();
     for (const id of ids) {
       const row = page.locator(`[data-session-id="${id}"]`);

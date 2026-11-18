@@ -264,12 +264,25 @@ async function checkWorktreeMoveBridges(page, { base, api, post, agentDir, other
   await api("/api/sessions?force=1");
   await page.goto(`${base}/?session=${anchor}`, { waitUntil: "domcontentloaded" });
   if (mobile) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
-  const filter = page.getByLabel("Filter sessions by worktree", { exact: true });
-  await filter.locator(`option[value="${missing}"]`).waitFor({ state: "attached" });
-  assert.match(await filter.locator(`option[value="${missing}"]`).innerText(), /Directory missing/);
+  const filter = page.locator('#session-worktree-filter');
   const checkout = page.locator(`button[title="Switch worktree: ${main}"]`);
   await checkout.waitFor();
-  await filter.selectOption(missing);
+  assert.equal(await filter.isChecked(), false);
+  await filter.check();
+  assert.equal(await page.locator(`[data-session-id="${bulkB}"]`).count(), 0);
+  await checkout.click();
+  await page.locator(`.wt-row button[title="${live}"]`).click();
+  await page.locator(`[data-session-id="${bulkB}"]`).waitFor();
+  assert.equal(await page.locator(`[data-session-id="${anchor}"]`).count(), 0, "checked filter follows selected checkout");
+  await page.locator(`button[title="Switch worktree: ${live}"]`).click();
+  await page.locator(`.wt-row button[title="${main}"]`).click();
+  await checkout.click();
+  const history = page.locator(`button[title="${missing}"]`);
+  await history.waitFor();
+  assert.match(await history.innerText(), /Directory missing/);
+  await history.click();
+  assert.equal(await filter.isChecked(), true);
+  assert.match(await filter.locator('..').innerText(), /Only sessions in/);
   await page.locator(`[data-session-id="${stale}"]`).waitFor();
   await page.locator(`[data-session-id="${missingChild}"]`).waitFor();
   assert.equal(await page.locator(`[data-session-id="${anchor}"]`).count(), 0);
@@ -320,7 +333,7 @@ async function checkWorktreeMoveBridges(page, { base, api, post, agentDir, other
     assert.equal(after.find(row => row.id === anchor).cwd, main, "missing child recovery leaves its parent in place");
   }
 
-  await filter.selectOption("");
+  await filter.uncheck();
   await page.getByRole("button", { name: "Select", exact: true }).click();
   for (const id of [bulkA, bulkB]) {
     const row = page.locator(`[data-session-id="${id}"]`); await row.scrollIntoViewIfNeeded(); await row.getByRole("checkbox").check();
@@ -366,7 +379,7 @@ async function checkWorktreeMoveBridges(page, { base, api, post, agentDir, other
     await api("/api/sessions?force=1");
     await page.goto(`${base}/?session=${selectedUncertain}`, { waitUntil: "domcontentloaded" });
     if (mobile) await page.getByRole("button", { name: "Show sidebar", exact: true }).click();
-    await page.getByLabel("Filter sessions by worktree", { exact: true }).selectOption("");
+    await page.locator('#session-worktree-filter').uncheck();
     await page.getByRole("button", { name: "Select", exact: true }).click();
     const row = page.locator(`[data-session-id="${selectedUncertain}"]`);
     await row.scrollIntoViewIfNeeded(); await row.getByRole("checkbox").check();

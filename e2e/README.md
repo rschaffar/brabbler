@@ -84,7 +84,7 @@ source-derived inventory and fresh receipts; the historical baseline stays intac
 | `questions` | Native tool ownership plus mixed question sets, draft/reload/cancel/receipts |
 | `session-links` | Desktop/mobile copying and following the copied link |
 | `bulk` | Bulk archive/conflict/retry/restore/delete |
-| `move` | Full picker, plain/Git/worktree/Browse paths, superseded reads and proposal-only changes; independent stale-worktree filters, archive-inclusive recovery, missing-child subtrees and native-modal bulk Browse/Move |
+| `move` | Full picker, plain/Git/worktree/Browse paths, superseded reads and proposal-only changes; selected-worktree checkbox following checkout changes, explicit missing-directory history, archive-inclusive recovery, missing-child subtrees and native-modal bulk Browse/Move |
 | `auth` | Installed CLI setup/mismatch/overwrite refusal, corrupt/missing state, shared throttling and password redaction, Basic/cookie access, rotation revocation, real browser login; removed SSH settings/sidebar/cards/API and no browser SSH requests, including a retired saved navigation value |
 | `terminal` | Real shell/PTY, retained Nerd/System families with shared mono base/bold weights, live palette/font-size changes without PTY/SSE replacement, coarse-touch portrait modifier/arrow input, reconnect/restart/exit, creation cancellation and workspace/Explorer coexistence |
 

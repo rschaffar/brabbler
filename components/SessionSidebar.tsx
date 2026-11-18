@@ -418,7 +418,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const { runningIds: runningSessionIds, queuedIds: queuedSessionIds,
     reviewIds: unreadSessionIds } = activity;
   const [showArchived, setShowArchived] = useState(false);
-  const [sessionFilter, setSessionFilter] = useState<{ project: string; cwd: string } | null>(null);
+  const [onlySelectedWorktree, setOnlySelectedWorktree] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState<{ project: string; cwd: string; selectedCwd: string | null; selectedSessionId: string | null } | null>(null);
   const [bulkMoveRequest, setBulkMoveRequest] = useState<BulkMoveRequest | null>(null);
   const [bulkModeScope, setBulkModeScope] = useState<string | null>(null);
   const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(() => new Set());
@@ -879,6 +880,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // works when the prop value won't change — e.g. re-clicking the already
   // open session after manually switching worktrees.
   const handleSelectSessionFromList = useCallback((s: SessionInfo, entryId?: string, blockIndex?: number) => {
+    setHistoryFilter(null);
     setAllSessions((current) => current.some((session) => session.id === s.id) ? current : [s, ...current]);
     if (s.cwd) setSelectedCwd(s.cwd);
     onSelectSession(s, false, entryId, blockIndex);
@@ -963,12 +965,22 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     [projectActivity, selectedProject],
   );
 
-  const sessionWorktreeCwd = sessionFilter && sessionFilter.project === selectedProject?.key ? sessionFilter.cwd : null;
+  const historyWorktreeCwd = historyFilter?.project === selectedProject?.key && historyFilter?.selectedCwd === selectedCwd
+    && historyFilter?.selectedSessionId === selectedSessionId ? historyFilter?.cwd ?? null : null;
+  const selectedWorktreeCwd = worktreeState?.forCwd === selectedCwd ? worktreeState.currentWorktreePath ?? selectedCwd : selectedCwd;
+  const sessionWorktreeCwd = onlySelectedWorktree ? historyWorktreeCwd ?? selectedWorktreeCwd : null;
+  // A history-only choice must not survive chat navigation or reappear after
+  // switching away and back to its originating workspace.
+  useEffect(() => {
+    setHistoryFilter(current => current && (current.project !== selectedProject?.key || current.selectedCwd !== selectedCwd
+      || current.selectedSessionId !== selectedSessionId) ? null : current);
+  }, [selectedProject?.key, selectedCwd, selectedSessionId]);
   const sessionWorktreeCatalogKey = useMemo(() => JSON.stringify(allSessions.map(session =>
     [session.id, session.cwd, session.projectKey, session.archived])), [allSessions]);
   const sessionWorktrees = useSessionWorktrees(selectedProject?.root ?? null, `${sessionWorktreeCatalogKey}:${wtRefreshKey}`);
   const chooseSessionWorktree = (cwd: string) => {
-    setSessionFilter(cwd && selectedProject ? { project: selectedProject.key, cwd } : null);
+    setOnlySelectedWorktree(true);
+    setHistoryFilter(cwd && selectedProject ? { project: selectedProject.key, cwd, selectedCwd, selectedSessionId } : null);
     setBulkModeScope(null); setBulkSelectedIds(new Set()); setBulkError(null);
   };
   const showWorktreeSwitcher = Boolean(
@@ -1094,9 +1106,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           onReturnFocus={() => wtDropdownRef.current?.querySelector("button")?.focus({ preventScroll: true })} />
       )}
       {bulkMoveRequest && <SessionBulkMoveDialog request={bulkMoveRequest} projects={recentProjects}
-        currentCwd={sessionFilter?.cwd ?? selectedCwd ?? bulkMoveRequest.project}
-        sourceUnavailable={isHistoryOnlySession({ cwdState: sessionWorktrees.inventory?.worktrees.find(entry => entry.path === (sessionFilter?.cwd ?? selectedCwd))?.state
-          ?? allSessions.find(session => session.cwd === (sessionFilter?.cwd ?? selectedCwd))?.cwdState })}
+        currentCwd={sessionWorktreeCwd ?? selectedCwd ?? bulkMoveRequest.project}
+        sourceUnavailable={isHistoryOnlySession({ cwdState: sessionWorktrees.inventory?.worktrees.find(entry => entry.path === (sessionWorktreeCwd ?? selectedCwd))?.state
+          ?? allSessions.find(session => session.cwd === (sessionWorktreeCwd ?? selectedCwd))?.cwdState })}
         onClose={() => setBulkMoveRequest(null)} onSettled={async (movedIds, failedIds, invalidatedIds, destinationCwd) => {
           invalidateCatalogue();
           // Unknown effects must invalidate a possibly stale chat, separately
@@ -1612,6 +1624,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                         >
                           <button
                             onClick={() => {
+                              setHistoryFilter(null);
                               setSelectedCwd(wt.path);
                               setWtDropdownOpen(false);
                               setWtError(null);
@@ -1912,18 +1925,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         }}
       >
         {selectedProject && <div className="flex items-center gap-1 border-b border-border px-3 py-1.5 text-xs">
-          <label htmlFor="session-worktree-filter" className="sr-only">{t("sessionWorktrees.filterLabel")}</label>
-          <select id="session-worktree-filter" aria-label={t("sessionWorktrees.filterLabel")} value={sessionWorktreeCwd ?? ""}
-            disabled={bulkBusy} onChange={event => chooseSessionWorktree(event.target.value)}
-            className="min-w-0 flex-1 rounded border border-border bg-bg px-2 py-1 text-text" title={sessionWorktreeCwd ?? t("sessionWorktrees.all")}>
-            <option value="">{t("sessionWorktrees.all")}</option>
-            {sessionWorktreeCwd && !sessionWorktrees.inventory?.worktrees.some(entry => entry.path === sessionWorktreeCwd)
-              && <option value={sessionWorktreeCwd}>{sessionWorktreeCwd}</option>}
-            {sessionWorktrees.inventory?.worktrees.map(entry => <option key={entry.path} value={entry.path}>
-              {entry.state !== "present" ? "⚠ " : ""}{entry.branch ?? displayCwd(entry.path, homeDir)}{entry.isMain ? ` · ${t("sidebar.main")}` : ""}
-              {entry.state !== "present" ? ` · ${t(entry.state === "missing" ? "sessionWorktrees.missing" : "sessionWorktrees.unavailable")}` : ""} ({entry.sessionCount})
-            </option>)}
-          </select>
+          <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-text-muted" title={sessionWorktreeCwd ?? undefined}>
+            <input id="session-worktree-filter" type="checkbox" checked={onlySelectedWorktree} disabled={bulkBusy}
+              onChange={event => { setOnlySelectedWorktree(event.target.checked); setHistoryFilter(null); }}
+              style={{ flexShrink: 0, accentColor: "var(--accent)" }} />
+            <span className="truncate">{historyWorktreeCwd
+              ? t("sessionWorktrees.historyFilter", { path: displayCwd(historyWorktreeCwd, homeDir) })
+              : t("sessionWorktrees.onlySelected")}</span>
+          </label>
           <button type="button" title={sessionWorktrees.error ?? t("sessionWorktrees.refresh")} aria-label={t("sessionWorktrees.refresh")}
             onClick={sessionWorktrees.refresh} className="rounded px-2 py-1 text-text-muted">↻</button>
           <details className="relative shrink-0">

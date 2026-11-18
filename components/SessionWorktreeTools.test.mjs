@@ -2,7 +2,7 @@ import '../lib/testing/client-native-boundary.fixture.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { act, createElement } from 'react';
-import { navigationRuntime, exact, session, click, button, row } from './navigation-runtime.fixture.mjs';
+import { navigationRuntime, exact, session, click, inputText, button, row } from './navigation-runtime.fixture.mjs';
 import { shellHarness, sidebarRoutes } from './navigation-cases.fixture.mjs';
 
 const entries = [
@@ -12,18 +12,126 @@ const entries = [
 
 test('actual history filter scopes rows/search/bulk but never adopts a missing cwd; scope change clears opt-in selection', async t => {
   const sessions = [session('a'), session('missing', '/missing', { cwdState: 'missing' })];
-  const h = await shellHarness(t, { sidebar: true, route: sidebarRoutes(sessions, undefined, { inventory: { projectRoot: '/repo', mainCwd: '/repo', worktrees: entries } }) });
+  const searches = [];
+  const h = await shellHarness(t, { sidebar: true, route: sidebarRoutes(sessions, request => {
+    if (request.url.pathname === '/api/sessions/search') {
+      const cwd = request.url.searchParams.get('cwd'); assert.ok(['/repo', '/missing'].includes(cwd));
+      exact(request, '/api/sessions/search', { q: 'needle', status: 'active', field: 'all', projectKey: '/repo', cwd }, { signal: true });
+      searches.push(cwd); return { handled: true, data: { results: [], total: 0 } };
+    }
+  }, {
+    worktrees: { projectRoot: '/repo', projectKey: '/repo', isGit: true, isTopLevel: true, currentWorktreePath: '/repo', worktrees: [entries[0]], localBranches: [] },
+    inventory: { projectRoot: '/repo', mainCwd: '/repo', worktrees: entries },
+  }) });
   await h.settled(); const cwd = h.current.state.activeCwd;
   await click(h.view, button(h.view, 'Select'));
   await click(h.view, row(h.view, 'a'));
   assert.equal(row(h.view, 'a').querySelector('input').checked, true);
-  const filter = h.view.container.querySelector('select[aria-label="Filter sessions by worktree"]');
-  filter.value = '/missing'; await h.view.dispatch(filter, new h.view.window.Event('change', { bubbles: true }));
+  await click(h.view, button(h.view, 'Switch worktree: /repo'));
+  await click(h.view, button(h.view, '/missing'));
+  const filter = h.view.container.querySelector('#session-worktree-filter');
+  assert.equal(filter.type, 'checkbox'); assert.equal(filter.checked, true);
+  assert.match(filter.parentElement.textContent, /Only sessions in \/missing/);
   assert.equal(h.current.state.activeCwd, cwd);
   assert.equal(h.view.container.querySelector('[data-session-id="a"]') === null, true);
   assert.equal(row(h.view, 'missing').querySelector('input') === null, true, 'selection mode does not leak into the new history scope');
   assert.equal(button(h.view, 'New').disabled, false, 'New still targets working checkout, not history filter');
   assert.ok(h.requests.filter(r => r.url.pathname === '/api/worktrees').every(r => r.url.searchParams.get('cwd') === '/repo'));
+  await click(h.view, button(h.view, 'Search conversations'));
+  await inputText(h.view, h.view.container.querySelector('#session-search-input'), 'needle');
+  await h.fire(300); await h.settled(); assert.deepEqual(searches, ['/missing']);
+  await inputText(h.view, h.view.container.querySelector('#session-search-input'), '');
+  await click(h.view, button(h.view, 'Search conversations'));
+  await click(h.view, button(h.view, 'Select')); await click(h.view, row(h.view, 'missing'));
+  assert.equal(row(h.view, 'missing').querySelector('input').checked, true);
+  await h.select(sessions[0]); await h.settled();
+  assert.equal(filter.checked, true); assert.equal(h.current.state.activeCwd, cwd);
+  assert.ok(row(h.view, 'a')); assert.equal(row(h.view, 'a').querySelector('input') === null, true, 'same-cwd chat navigation clears history bulk scope');
+  assert.equal(h.view.container.querySelector('[data-session-id="missing"]') === null, true);
+  await click(h.view, button(h.view, 'Search conversations'));
+  await inputText(h.view, h.view.container.querySelector('#session-search-input'), 'needle');
+  await h.fire(300); await h.settled(); assert.deepEqual(searches, ['/missing', '/repo']);
+  await inputText(h.view, h.view.container.querySelector('#session-search-input'), '');
+  await click(h.view, button(h.view, 'Search conversations'));
+  await click(h.view, button(h.view, 'Switch worktree: /repo'));
+  await click(h.view, button(h.view, '/missing'));
+  await click(h.view, button(h.view, 'Switch worktree: /repo'));
+  await click(h.view, h.view.container.querySelector('.wt-row button[title="/repo"]'));
+  assert.equal(filter.checked, true); assert.ok(row(h.view, 'a'));
+  assert.equal(h.view.container.querySelector('[data-session-id="missing"]') === null, true, 'working checkout choice clears history override even at the same cwd');
+  await click(h.view, filter);
+  assert.equal(filter.checked, false); assert.ok(row(h.view, 'missing'));
+});
+
+test('selected-worktree checkbox follows checkout and chat navigation, scopes search, and unchecked restores the whole project', async t => {
+  const live = '/repo-live';
+  const sessions = [session('a'), session('b', live)];
+  const worktrees = { projectRoot: '/repo', projectKey: '/repo', isGit: true, isTopLevel: true,
+    currentWorktreePath: '/repo', worktrees: [entries[0], { path: live, branch: 'feature', isMain: false }], localBranches: [] };
+  const searches = [];
+  const h = await shellHarness(t, { sidebar: true, route: sidebarRoutes(sessions, request => {
+    if (request.url.pathname === '/api/worktrees') {
+      const cwd = request.url.searchParams.get('cwd'); assert.ok(['/repo', live].includes(cwd));
+      exact(request, '/api/worktrees', { cwd });
+      return { handled: true, data: { ...worktrees, currentWorktreePath: cwd } };
+    }
+    if (request.url.pathname === '/api/sessions/search') {
+      const cwd = request.url.searchParams.get('cwd'); searches.push(cwd);
+      exact(request, '/api/sessions/search', { q: 'needle', status: 'active', field: 'all', projectKey: '/repo', ...(cwd ? { cwd } : {}) }, { signal: true });
+      return { handled: true, data: { results: [], total: 0 } };
+    }
+  }, { listings: new Map([['/repo', []], [live, []]]), worktrees }) });
+  await h.settled();
+  const filter = h.view.container.querySelector('#session-worktree-filter');
+  assert.equal(filter.type, 'checkbox'); assert.equal(filter.checked, false);
+  assert.ok(row(h.view, 'a')); assert.ok(row(h.view, 'b'));
+  await click(h.view, filter);
+  assert.ok(row(h.view, 'a')); assert.equal(h.view.container.querySelector('[data-session-id="b"]') === null, true);
+  await click(h.view, button(h.view, 'Switch worktree: /repo'));
+  await click(h.view, button(h.view, live)); await h.settled();
+  assert.equal(filter.checked, true); assert.equal(h.current.state.activeCwd, live);
+  assert.ok(row(h.view, 'b')); assert.equal(h.view.container.querySelector('[data-session-id="a"]') === null, true);
+  await click(h.view, button(h.view, 'Search conversations'));
+  await inputText(h.view, h.view.container.querySelector('#session-search-input'), 'needle');
+  await h.fire(300); await h.settled(); assert.equal(searches.at(-1), live);
+  await h.select(sessions[0]); await h.settled(); await h.fire(300); await h.settled();
+  assert.equal(searches.at(-1), '/repo');
+  await click(h.view, filter); await h.fire(300); await h.settled();
+  assert.equal(searches.at(-1), null);
+  await inputText(h.view, h.view.container.querySelector('#session-search-input'), '');
+  await click(h.view, button(h.view, 'Search conversations'));
+  assert.ok(row(h.view, 'a')); assert.ok(row(h.view, 'b'));
+  await click(h.view, filter);
+  await h.select(sessions[1]); await h.settled();
+  assert.equal(filter.checked, true); assert.ok(row(h.view, 'b'));
+  assert.equal(h.view.container.querySelector('[data-session-id="a"]') === null, true);
+});
+
+for (const { name, cwd, project, canonical, checkout } of [
+  { name: 'repository subdirectory', cwd: '/repo/pkg', project: '/repo/pkg', canonical: null, checkout: '/repo' },
+  { name: 'Windows drive spelling', cwd: 'c:/Projects/Repo', project: 'C:\\Projects\\Repo', canonical: 'C:\\Projects\\Repo', checkout: 'C:\\Projects\\Repo' },
+  { name: 'UNC spelling', cwd: '//server/Share/Repo', project: '\\\\server\\Share\\Repo', canonical: '\\\\server\\Share\\Repo', checkout: '\\\\server\\Share\\Repo' },
+]) test(`selected-worktree checkbox keeps ${name} rows and uses server identity for search`, async t => {
+  const sessions = [session('a', cwd, { projectRoot: project, projectKey: project })];
+  const searches = [];
+  const h = await shellHarness(t, { sidebar: true, route: sidebarRoutes(sessions, request => {
+    if (request.url.pathname === '/api/sessions/worktrees') {
+      assert.ok([project, cwd].includes(request.url.searchParams.get('project')));
+      return { handled: true, data: { projectRoot: project, mainCwd: checkout, worktrees: [] } };
+    }
+    if (request.url.pathname === '/api/sessions/search') {
+      exact(request, '/api/sessions/search', { q: 'needle', status: 'active', field: 'all', projectKey: project, cwd: canonical ?? cwd }, { signal: true });
+      searches.push(request); return { handled: true, data: { results: [], total: 0 } };
+    }
+  }, { listings: new Map([...new Set([project, cwd, checkout])].map(path => [path, []])),
+    worktrees: { projectRoot: project, projectKey: project, isGit: true, isTopLevel: canonical !== null,
+      currentWorktreePath: canonical, worktrees: [{ path: checkout, branch: 'main', isMain: true }], localBranches: [] } }) });
+  await h.settled(); await h.select(sessions[0]); await h.settled();
+  await click(h.view, h.view.container.querySelector('#session-worktree-filter'));
+  assert.ok(row(h.view, 'a'), 'the selected directory retains its own session');
+  await click(h.view, button(h.view, 'Search conversations'));
+  await inputText(h.view, h.view.container.querySelector('#session-search-input'), 'needle');
+  await h.fire(300); await h.settled(); assert.equal(searches.length, 1);
 });
 
 test('real history hook accepts only current A/B/A key, rejects ignored-abort success/error, and cleans up its pending request', async t => {
