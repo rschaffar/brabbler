@@ -60,7 +60,7 @@ automatic fallback. Work from copies rather than modifying originals blindly.
 Original coordinates below refer to base commit `14d60757535e0ed78ff3753fda1372b0e4c47bbb`.
 Replacement assertions are implementation owners, not a claim that verification
 has passed; candidate-specific results belong in the
-[active plan](plans/2026-11-05_notebook-authoring-plan.md).
+[archived implementation record](plans/archived/2026-11-05_notebook-authoring-plan.md).
 
 | Original owner / coordinates | Disposition and surviving obligation |
 | --- | --- |

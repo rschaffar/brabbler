@@ -1,10 +1,27 @@
 # Guided reading and native notebook authoring
 
-**Status:** Ready for exact-state local integration approval. P0–P3 checkpoint
+**Status: completed and integrated; archived on 2026-11-18.**
+
+Reconciled against local main `56efa61a5a3f6904f9db3e0932a1406b68ce8626`.
+Accepted implementation `cc73c92e6921e3fd95bab69950ac1113c406e2d2`, including
+checkpoint `4e88758bff64ca477bbda113e9c28993ee6b1728`, is the second parent of
+non-fast-forward merge `d219f1896fd1b2ccd098b4b1590609859c9283c9`, an ancestor
+of that main. The [notebook guide](../../review-notebooks.md),
+[retirement dispositions](../../notebook-recording-retirement.md) and
+[ADR 0041](../../adr/0041-guided-reading-and-notebook-authoring.md) own current
+behavior and compatibility boundaries.
+
+Earlier worktree and pending-integration statements below are historical, not
+active work. This closure adds no new application-test evidence and preserves
+the recorded verification scope. Ancestry confirms integration, not historical
+approval provenance, deployment, publication or feature-resource cleanup.
+Saved reviewer data and the explicitly deferred features remain untouched.
+
+**Historical implementation status:** Ready for exact-state local integration approval. P0–P3 checkpoint
 reviews, P4 overall review and complete Nix acceptance are finished. Reader
 simplification, native inspect/update and explicit reference maintenance are
 implemented. Local merge remains pending; no deployment or publication is implied.
-**Workspace:** `feat/notebook-authoring`, originally based on local `main` at
+**Historical workspace:** `feat/notebook-authoring`, originally based on local `main` at
 `14d60757535e0ed78ff3753fda1372b0e4c47bbb`, subsequently rebased onto
 `b5696cd4cfb935b9bdc3f8d7918bbd41da419286` and then
 `3539b8f6c23b816ca9fec7e7a1ad2298bee1f7a9`, with approved conflict resolutions.
@@ -240,7 +257,7 @@ P1 evidence (2026-11-05, x86_64-linux ordinary Nix sandboxes):
   and code readability; replacement assertions now pass. One intermediate test
   failure incorrectly forbade ordinary code-copy buttons as question forms; the
   assertion now distinguishes them. Failed evidence remains retained privately.
-- [Retirement dispositions and recovery](../notebook-recording-retirement.md), live
+- [Retirement dispositions and recovery](../../notebook-recording-retirement.md), live
   test classification and current guides are updated. Local Markdown-document link
   existence and `git diff --check` pass. Raw logs/reviewer reports remain in the
   private task evidence directory, not tracked. Full core/plugin, other browser/
@@ -353,9 +370,9 @@ P3 checkpoint evidence (2026-11-05, x86_64-linux ordinary Nix sandboxes):
   intervals. Focused checks never count as full acceptance.
 - [x] Rebase onto current local main and reassess verification. The current-base
   acceptance and independent rebase review are recorded below.
-- [ ] Obtain exact-state integration approval and use the required non-FF merge.
-  Resource cleanup remains independently gated; never publish or delete saved
-  notebook data implicitly.
+- [x] Local-main integration confirmed by non-FF merge `d219f1896fd1` (see closure).
+  Historical approval provenance is not reconstructed by this audit. Resource
+  cleanup, publication and deletion of saved notebook data are not archival effects.
 
 P4 delivery evidence (2026-11-05):
 
@@ -460,4 +477,4 @@ logs and raw reviewer/test evidence stay outside tracked files.
 - [x] Reference updates are scoped, validated and explicit; ambiguity remains visible.
 - [x] Required independent review and complete Nix acceptance pass at the candidate.
 - [x] Maintained guides/ADR updated and public-safe.
-- [ ] Exact local integration approved and completed; no publication or cleanup implied.
+- [x] Local integration confirmed by merge ancestry; no publication or cleanup implied.

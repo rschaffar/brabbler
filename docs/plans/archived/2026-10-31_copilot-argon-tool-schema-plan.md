@@ -1,5 +1,18 @@
 # Copilot-compatible Git worktree tool schema
 
+**Status: completed and integrated; archived on 2026-11-18.**
+
+Reconciled against local main `56efa61a5a3f6904f9db3e0932a1406b68ce8626`.
+Candidate `2f3b73427597d4d5a94ffeea0e12b4d922331844` is an ancestor of
+non-fast-forward merge `298a89cc54b27d050dca1c51a41a93f279a83866`, itself an
+ancestor of that main. [Git plugin contracts](../../git-workflow-plugin.md#tools-and-correctness)
+own the maintained object-root schema and execution-time validation boundary.
+
+Earlier worktree and pending-integration statements below are historical, not
+active work. This closure adds no new application-test or live-provider evidence
+and preserves the recorded verification scope. Ancestry confirms integration,
+not historical approval provenance, activation, publication or resource cleanup.
+
 ## Goal
 
 Allow an ordinary coding session with the optional Git Workflow plugin enabled to
@@ -7,7 +20,7 @@ send a request to `github-copilot/gemini-4-argon` without its `git_worktree` too
 declaration causing HTTP 400. Preserve the tool's public name, argument names,
 three actions, selected-repository authority and existing Git safeguards.
 
-**Status / authority:** Implementation authorized after the independent plan
+**Historical implementation status / authority:** Implementation authorized after the independent plan
 reviews and local-main rebase. The plugin-local schema, validation and regression
 tests passed focused verification, independent implementation review and complete
 Nix acceptance. The receiving candidate is ready for exact-state local integration
@@ -50,8 +63,8 @@ successful native invocation alone does not protect declaration compatibility.
 The active plans indexed in `docs/plans/README.md` do not own this tool schema.
 Provider-account completion and public-release work retain their own scopes; this
 plan does not refresh catalogs, change authentication or authorize publication.
-[ADR 0015](../adr/0015-cross-repository-git-plugin-tools.md) and
-[Git plugin contracts](../git-workflow-plugin.md#tools-and-correctness) continue to
+[ADR 0015](../../adr/0015-cross-repository-git-plugin-tools.md) and
+[Git plugin contracts](../../git-workflow-plugin.md#tools-and-correctness) continue to
 own cross-repository authority. No new policy decision or ADR is proposed.
 
 ## Architecture
@@ -150,7 +163,7 @@ or the SDK adapter about Git actions.
   failure collectors. An SDK-caught fixture exception must not count as the
   expected malformed-argument error. Resolve material findings before exporting
   the settled source for complete acceptance.
-- [x] Run complete acceptance per [Testing](../testing.md): normally
+- [x] Run complete acceptance per [Testing](../../testing.md): normally
   `nix run .#test -- all --workers 4 --jobs 12` after coordinating resource
   admission. If insufficient headroom would serialize that profile, use the
   documented four/four profile and record the concrete reason and requested /
@@ -158,11 +171,10 @@ or the SDK adapter about Git actions.
   inventory and genuine Home Manager deployment VM; never use the host service
   or an in-checkout production build. Report preparation and execution intervals
   separately where available, apart from review/coordination time.
-- [ ] After implementation is authorized and verified, commit coherent changes
-  on this feature branch, rebase onto current local `main`, reassess relevant
-  verification for the resulting inputs, and present exact IDs/diff/evidence
-  for the required non-fast-forward integration gate. Retain this worktree
-  through that preparation; no separate receiving feature worktree is needed.
+- [x] Feature committed and integrated into local main by non-FF merge
+  `298a89cc54b2` (see closure). No further integration preparation remains in
+  this plan. Historical approval provenance is not reconstructed by this audit;
+  resource cleanup remains separately gated.
 
 ## Risks and stop conditions
 
@@ -259,6 +271,6 @@ receipt; publication, activation and backup-resource deletion remain separate.
   Nix acceptance pass for the receiving candidate; evidence scope is explicit.
 - [x] Maintained Git plugin guidance contains the durable compatibility contract;
   no private sessions, hosts, credentials or personal paths enter tracked files.
-- [ ] Local-main integration passes its exact-state approval and verification;
-  retain or clean feature resources only through the separate authorized gate.
-  Remote publication and service activation remain outside this plan.
+- [x] Local-main integration confirmed by merge ancestry; retain or clean feature
+  resources only through the separate authorized gate. Remote publication and
+  service activation remain outside this plan.
