@@ -12,7 +12,7 @@ import type { SessionEntry } from "../types";
 import { getKnownAllowedFileRoots } from "../file-access";
 import { physicalDirectoryPath, isImmutableNixStorePath, isPathWithinRoots } from "../path-security";
 import { getProjectTrustStatus } from "../project-trust";
-import { buildResourceCatalog, type CatalogInput, type CatalogResult } from "./catalog";
+import { buildResourceCatalog, withResourceChoices, type CatalogInput, type CatalogResult } from "./catalog";
 import { readCatalogMetadata, CatalogMetadataError } from "./catalog-metadata";
 import { resolveResourceContext, ResourceContextError } from "./context";
 import { ensureScopedNativeImport, NativeImportError } from "./native-import";
@@ -141,11 +141,16 @@ async function prepare(input: ContextInput, importNative = true) {
     // Existing physical authority, or contained true absence; never add roots.
     // An admitted alias may also resolve into an immutable Nix store object
     // (Home Manager links); a lexical /nix/store path is still refused.
-    const physical = () => physicalDirectoryPath(path);
-    if (!isPathWithinRoots(path, admitted) || !isPathWithinRoots(physical(), new Set([...admitted].map(root => physicalDirectoryPath(root))))
-      && !isImmutableNixStorePath(physical())) {
-      refuse(403, "source-access", `Native source is outside admitted file roots: ${path}. Admit its physical installed location through the existing file-access workflow, or remove the unsupported declaration/alias`);
+    if (isPathWithinRoots(path, admitted)) {
+      const physical = physicalDirectoryPath(path);
+      if (isImmutableNixStorePath(physical)) return;
+      // Resolve fresh roots only until containment is proved. No authorization
+      // survives this call: a later guard sees retargeted aliases/current roots.
+      for (const root of admitted) {
+        if (isPathWithinRoots(physical, new Set([physicalDirectoryPath(root)]))) return;
+      }
     }
+    refuse(403, "source-access", `Native source is outside admitted file roots: ${path}. Admit its physical installed location through the existing file-access workflow, or remove the unsupported declaration/alias`);
   };
   const metadataPath = join(agentDir, "resource-catalog.json"); allow(metadataPath);
   const metadata = readCatalogMetadata({ status: "configured", path: metadataPath, context: context.selection });
@@ -227,7 +232,9 @@ async function prepare(input: ContextInput, importNative = true) {
     }
     context.assertAdmissionCurrent();
     const revisions = Object.freeze([...snapshots].map(([scope, snapshot]) => Object.freeze({ scope, revision: snapshot.revision })));
-    const catalog = await buildResourceCatalog({ ...catalogInput, choices }); await guard();
+    // Choices cannot change native membership or its captured hard ceilings.
+    // Project them without another discovery; keep the independent fresh guard.
+    const catalog = withResourceChoices(first, choices); await guard();
     return Object.freeze({ context: context.selection, cwd: context.cwd, catalog,
       revision: hash([token, revisions]), revisions, assertCurrent: guard });
   };
