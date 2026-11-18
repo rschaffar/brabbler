@@ -1738,6 +1738,11 @@
       "reason": "Reviewed small private filesystem/settings fixtures and helper boundaries; mutations and fs mocks remain file-process-local; no subprocess work."
     },
     {
+      "path": "lib/path-security.test.mjs",
+      "lane": "F",
+      "reason": "Pure predicate over read-only lstat/realpath of the existing Node runtime's Nix store object plus one private mkdtemp root removed by t.after; no writes outside it, no mocks, subprocesses, network or cross-file state."
+    },
+    {
       "path": "lib/brabbler-node-args.test.mjs",
       "lane": "F",
       "reason": "Reviewed configuration/argument/security helpers on supplied data; no server startup, network or CLI execution."
