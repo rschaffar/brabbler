@@ -32,6 +32,55 @@ No successor spec/ticket is needed: migration is declined and repository retirem
 is this bounded change, not deferred work. The [historical migration guide](git-operation-review-migration.md)
 owns any future recovery request and explicit retention permissions.
 
+## Retirement verification
+
+Independent source/safety review closed with no remaining findings, including the
+mixed service assertions, package/export wiring and closure documentation. A
+focused Nix selection passed **41 tests / three files**, plus **34 exporter
+contracts** and static checks. Its first run exposed an overbroad architecture
+regex that rejected the legitimate installed `lib/node_modules/brabbler` path;
+the corrected guard rejects only the retired source/modules inputs. That failure
+is retained, not relabelled as a passing run.
+
+Fresh complete acceptance passed on committed candidate
+`a9df8cb86e588488769872d7faf92f944c522808` with:
+
+```sh
+nix run --no-update-lock-file --no-write-lock-file .#test -- all --workers 4 --jobs 12
+```
+
+On x86_64 Linux / Node 24.22.2, all **544 core files / 4,909 tests / 14 suites**,
+**26 browser/terminal groups** and **five genuine Home Manager deployment checks**
+passed. Core had zero failures, skips or cancellations. Declared-input static
+checks passed with seven existing nonfatal lint warnings; exporter contracts
+passed 34 cases. Requested/effective widths were **12/12 core, 4/4 browser**, with
+32 CPUs and about 61 GiB available at admission; core/browser overlapped.
+
+End-to-end command wall was about **340 s**, including in-run realization. Core
+was **296.349 s** (2.531 s before-first-file envelope; 293.333 s file window).
+Browser was **266.273 s**, including 4.201 s support and 6.060 s definition
+preparation; its group-client window was 256.009 s. Deployment was **67.057 s**,
+including 19.215 s guest acceptance; a separate realization interval is not exposed
+in that report. Overlapping intervals are not additive. Focused-run preparation
+and available cached package/static prerequisites preceded this command; this is
+not a cold-cache benchmark or a comparison with the original rollout.
+
+Outer source identity is
+`3045c92b08bd7d732228436b4479ce1edc1cc24cb82c0f23b8d5be3dff5b19ad`, inner
+core identity
+`62905fecc1dc8ee6fd8c556026f0c2729287b50d9578920d5c769b0b02c3454a`.
+The immutable core report is in
+`/nix/store/qn41pb425rffs4hbg13d01qgcmfgr7p2-brabbler-core-checks`;
+source-bound outer/browser/guest reports and failures remain private. Browser and
+VM used the same installed package, which read-only evaluation also matched to
+unchanged local main: no application artifact change. The guest registry/evidence
+contains five checks and four artifacts with no converter process/receipt.
+
+This evidence-only follow-up does not claim a second full run on a later commit.
+Local Markdown target-existence, whitespace and public-safety checks accompany
+closure; these are source checks, not browser link-opening verification. Local
+integration retains its exact-state gate; no live operation follows from acceptance.
+
 ## Historical reproduction
 
 A clean detached worktree at `61f1f60d7befd8cff60dfc0a597d0b863f50bd60`, with its
