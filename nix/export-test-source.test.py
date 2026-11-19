@@ -153,16 +153,23 @@ class SourceExportTests(unittest.TestCase):
         self.assertNotIn('.agents/skills/unapproved/secret.md', report['omittedNames'])
         self.assertIn('protected descendants not traversed', report['omissionPolicy'])
 
-    def test_only_exact_temporary_migration_subtree_is_admitted(self):
-        self.put('tools/migrations/git-operation-reviews/legacy-store.ts', 'export {};\n')
+    def test_retired_migration_subtree_and_other_tools_are_not_admitted_or_traversed(self):
+        former = 'tools/migrations/git-operation-reviews/legacy-store.ts'
+        self.put(former, 'DO_NOT_READ')
         self.put('tools/migrations/other/private.md', 'DO_NOT_READ')
         self.put('tools/unrelated/private.md', 'DO_NOT_READ')
-        report = self.run_export()
-        self.assertIn('tools/migrations/git-operation-reviews/legacy-store.ts', report['before'])
+        real_open = os.open
+        def guarded_open(file, *args, **kwargs):
+            self.assertNotEqual(os.fspath(file), 'tools', 'tools must not be traversed')
+            return real_open(file, *args, **kwargs)
+        with patch.object(exporter.os, 'open', side_effect=guarded_open):
+            report = self.run_export()
+        self.assertNotIn(former, report['before'])
         self.assertNotIn('tools/migrations/other/private.md', report['before'])
         self.assertNotIn('tools/unrelated/private.md', report['before'])
-        self.assertFalse((self.output / 'tools/migrations/other').exists())
-        self.assertFalse((self.output / 'tools/unrelated').exists())
+        self.assertFalse((self.output / 'tools').exists())
+        self.assertIn('tools', report['omittedNames'])
+        self.assertFalse(any(name.startswith('tools/') for name in report['omittedNames']))
 
     def test_admitted_file_symlink_is_refused_without_reading_target(self):
         outside = self.base / 'outside-secret'

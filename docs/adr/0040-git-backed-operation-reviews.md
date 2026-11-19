@@ -1,11 +1,15 @@
 # ADR 0040: Git-backed operation reviews
 
-- Status: Accepted; metadata production and Git-backed viewer/API independently
-  reviewed on the feature branch with focused native and installed-browser checks.
-  Converter implementation, complete acceptance and operational cutover remain pending.
-- Revises: ADR 0018's permanent, repository-independent patch archive when the new
-  producer is activated; preserves its size-independent approval scope.
-- Execution owner: [Git-backed operation reviews plan](../plans/2026-10-31_git-backed-operation-reviews-plan.md).
+- Status: Accepted; implementation, independent review and complete original
+  acceptance are delivered and integrated. Old-history migration explicitly declined
+  on 2026-11-19; temporary converter retired from current source.
+- Revises: ADR 0018's permanent, repository-independent patch archive; preserves
+  its size-independent approval scope.
+- Maintained owners: [metadata/API](../git-operation-review-metadata.md),
+  [historical migration guide](../git-operation-review-migration.md) and
+  [retirement ledger](../git-operation-review-retirement.md). The
+  [archived plan](../plans/archived/2026-10-31_git-backed-operation-reviews-plan.md)
+  preserves implementation evidence.
 
 ## Context
 
@@ -49,18 +53,20 @@ becomes unavailable, the other can still be displayed with an accurate label.
 
 ## Legacy history
 
-Use an explicit offline converter, with dry-run reporting, verified backups,
-exact-file installation/recovery and native synthetic tests. Preserve recoverable
+Any future legacy conversion uses the tested historical offline converter, with
+dry-run reporting, verified backups, exact-file installation/recovery and native
+synthetic tests. Live old-history migration is not required for current use. Preserve recoverable
 comparisons and recorded outcomes; mark missing content unavailable without
 inventing original repository identity or cross-branch result facts. Do not
 reconstruct missing Git history from old patches.
 
-Legacy decoding belongs only to the temporary converter, outside the application
-runtime dependency graph. After verified real conversion, remove the converter
-in a separate change, leaving its tested historical revision and invocation in
-the migration guide. Old-store deletion and backup disposal require separate
-bounded authorization. Unmigrated cards retain their outcome and an unsupported
-review placeholder; no production legacy bundle service remains after cutover.
+Legacy decoding never belongs in the application runtime dependency graph. The
+original sequence required verified real conversion before converter removal.
+The maintainer instead explicitly declined migration and approved repository-only
+retirement, accepting unavailable old diffs. The migration guide retains the exact
+tested historical revision and invocation. Old-store deletion and backup disposal
+still require separate bounded authorization. Unmigrated cards retain their outcome
+and an unsupported review placeholder; no production legacy bundle service remains.
 
 ## Consequences and current boundary
 
@@ -76,10 +82,12 @@ precede publication; failed final reporting cannot repeat a native effect.
 
 The existing per-file viewer and read-only APIs use the registered Git provider.
 Actual-result/proposal selection, unavailable states and bounded convenience state
-retain the same renderer and approval scope. Legacy decoding lives only in temporary
-offline support, outside the realized runtime package. The
+retain the same renderer and approval scope. Legacy decoding is available only in the
+frozen historical converter, outside current source and the runtime package. The
 [schema/API map](../git-operation-review-metadata.md) owns current interfaces.
 
-No existing state has been converted or removed. Converter implementation, full
-acceptance, connected migration review and separately authorized operational cutover
-remain open; focused application checks are not a completed rollout.
+This decision and repository retirement claim no live conversion, deployment or
+data deletion. The recorded real-history rehearsal used a private copy and restored
+it; source acceptance is not live execution evidence. Existing stores, backups and
+private evidence remain retained under the migration guide's maintainer-owned
+retention boundary. No operational migration obligation remains open.

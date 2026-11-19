@@ -1,11 +1,11 @@
 # Optional Git Workflow plugin
 
-**Implementation checkpoint:** new operation reviews use saved structured metadata,
-not patch bundles. The registered read-only provider connects session/standalone
-GETs to the existing per-file viewer. Focused native/mounted evidence and pending
-independent/full-acceptance gates are recorded in the active plan. See the
-[schema/API map](git-operation-review-metadata.md). No live conversion or deployment
-is claimed.
+New operation reviews use saved structured metadata, not patch bundles. The
+registered read-only provider connects session/standalone GETs to the existing
+per-file viewer. Independent review and complete original acceptance are recorded
+in the archived plan. See the [schema/API map](git-operation-review-metadata.md).
+Old-history migration was explicitly declined and the temporary converter retired;
+no live conversion or deployment is claimed.
 
 Brabbler works with every bundled plugin disabled. **Settings → Plugins → Git
 Workflow** enables this browser-only bundled plugin; it is off by default.
@@ -546,14 +546,14 @@ Per-view availability is independent, and read errors leave actions/outcomes int
 
 Git owns review content retention. Session JSONL/standalone backups preserve
 metadata and outcomes, not missing repositories/objects. New operations create no
-patch archive, database or content-retention refs. Retain any existing legacy review
-store and backups until separately authorized offline conversion and disposition;
-there is no automatic migration or cleanup. The explicit-root
-[offline conversion/recovery guide](git-operation-review-migration.md) describes the
-temporary CLI and its separate permissions. [ADR 0040](adr/0040-git-backed-operation-reviews.md)
+patch archive, database or content-retention refs. Existing legacy review stores and backups remain retained unless separately
+approved for exact disposition; there is no automatic migration or cleanup.
+Old-history migration is not required. The
+[historical conversion/recovery guide](git-operation-review-migration.md) records
+the retired CLI's tested revision and the permissions needed for any future use. [ADR 0040](adr/0040-git-backed-operation-reviews.md)
 revises ADR 0018's archive choice while preserving size-independent approval scope.
 See the [schema/API map](git-operation-review-metadata.md) and
-[implementation plan](plans/2026-10-31_git-backed-operation-reviews-plan.md).
+[archived implementation plan](plans/archived/2026-10-31_git-backed-operation-reviews-plan.md).
 
 ### Optional full-file patch context
 

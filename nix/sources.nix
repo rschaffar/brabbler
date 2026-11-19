@@ -22,7 +22,6 @@ let
       (paths [ "public/mermaid-renderer" ]))
     (fileset.union application (paths [
     "app" "components" "hooks" "lib" "plugins" "public" "e2e" "nix" "docs" ".github"
-    "tools/migrations/git-operation-reviews"
     "AGENTS.md" "GLOSSARY.md" "README.md" "eslint.config.mjs"
     "flake.nix" "flake.lock" ".gitignore"
   ]));
