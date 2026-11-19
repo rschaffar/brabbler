@@ -49,7 +49,7 @@ export async function checkManagerReadyReview(surface) {
   await surface.getByRole("status").filter({ hasText: new RegExp(`^${READY}$`) }).waitFor();
   await surface.getByRole("heading", { name: "Remove selected Git resources", exact: true }).waitFor();
   await surface.getByText("Manual browser confirmation required", { exact: true }).waitFor();
-  await surface.getByText("Approves only these frozen branch/worktree/artifact resources together. It is not future disposal authority.", { exact: true }).waitFor();
+  await surface.getByText("Approves only the frozen branch/worktree/artifact resources together, including items beyond this preview. It is not future disposal authority.", { exact: true }).waitFor();
 }
 
 /** Thin installed/native bridge. Controlled Manager records are not Git authority:
