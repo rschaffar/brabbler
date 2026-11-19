@@ -77,7 +77,7 @@ test('large reference-only review SSR remains bounded with the complete live act
     review: { version: 1, id: 'review', operationId: 'operation', sha256: 'a'.repeat(64), entries: 100000, bytes: 5_000_000_000 },
     actions: [{ id: 'approve', label: 'Approve merge', primary: true }] };
   const html = h.html(createElement(PluginCard, { request, sessionId: 'current-session', onRespond() {} }));
-  assert.match(html, /Legacy review unavailable; offline migration required/); assert.doesNotMatch(html, /Download complete exact/);
+  assert.match(html, /Legacy review format unsupported/); assert.doesNotMatch(html, /Download complete exact/);
   assert.match(html, /data-primary="true"[^>]*>Approve merge/); assert.match(html, /Approve the entire operation/);
   assert.equal(html.length < 10000, true); assert.equal(h.requests.length, 0, 'SSR never starts attachment reads');
 });

@@ -110,6 +110,6 @@ test('missing actual never falls back; partial proposal availability, empty no-o
   assert.match(root.textContent, /No file changes in this comparison/);
   const count = h.requests.length;
   await h.render(createElement(h.BlockingRequestCard, { key: 'legacy', request: { ...h.request, review: { ...review, version: 1 } }, sessionId: 'current', onReadWork: h.onReadWork, onRespond() {} }));
-  assert.match(root.textContent, /Legacy review unavailable; offline migration required/); assert.equal(h.requests.length, count);
+  assert.match(root.textContent, /Legacy review format unsupported/); assert.equal(h.requests.length, count);
   assert.ok(textButton(root, 'Approve commit')); assert.equal(root.querySelector('a[href*="reviews/"]') === null, true);
 });

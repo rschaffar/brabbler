@@ -35,14 +35,15 @@ test("literal roots reject traversal, metadata aliases, malformed values and nor
   assert.equal(pathKey("SRC./Meetings.../CACHE"), "src/meetings/cache");
 });
 
-test("resource selection and unabridged cards are not capped by presentation counts", () => {
+test("resource selections are not capped by bounded card presentation", () => {
   for (const count of [25, 100]) {
     const roots = Array.from({ length: count }, (_, i) => `generated-${i}`);
     assert.doesNotThrow(() => validateArtifactRoots(roots), "valid root counts have no artificial ceiling");
     const snapshot = capture({ artifacts: roots.map(path => ({ path, entries: 1, bytes: 9, digest: "c".repeat(64) })), unapprovedArtifacts: roots });
     const before = structuredClone(snapshot);
     const card = cleanupCard({ ...cleanupOp, artifactRoots: roots }, snapshot);
-    assert.deepEqual(card.sections[0].fields.map(field => field.label), roots, "the exact card retains every selected resource");
+    assert.deepEqual(card.sections[0].fields.map(field => field.label), roots.slice(0, 24));
+    assert.match(card.sections[0].text, new RegExp(`Showing 24 of ${count} items`));
     assert.deepEqual(snapshot, before);
   }
 });

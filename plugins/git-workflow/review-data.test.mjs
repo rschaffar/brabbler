@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createJiti } from 'jiti';
 import { cleanupReviewSnapshot } from './review-resources.fixture.mjs';
 const jiti = createJiti(import.meta.url, { fsCache: false });
-const { gitReviewResult, isGitReviewComparison, isCapturedGitReview, readGitReviewPayload, isGitReviewUnavailableComparison, resolveGitReviewSettlement, isGitReviewResultBasis } = await jiti.import('./review-data.ts');
+const { gitReviewResult, isGitReviewComparison, isCapturedGitReview, readGitReviewPayload, resolveGitReviewSettlement } = await jiti.import('./review-data.ts');
 const { snapshotOperationReview, readOperationReview } = await jiti.import('../../lib/plugins/review-metadata.ts');
 const oid = n => String(n).repeat(40);
 function fixture(action = 'commit') {
@@ -84,7 +84,7 @@ test('saved comparison schema accepts only full compatible object IDs and metada
   assert.equal(isCapturedGitReview(captured), true);
   assert.equal(isCapturedGitReview({ ...captured, patch: 'not allowed' }), false);
   assert.equal(isCapturedGitReview({ ...captured, repository: { ...captured.repository, identity: 'unverified' } }), false);
-  assert.equal(isCapturedGitReview({ ...captured, repository: { ...captured.repository, bindingOrigin: 'offline-admitted' } }), true);
+  assert.equal(isCapturedGitReview({ ...captured, repository: { ...captured.repository, bindingOrigin: 'offline-admitted' } }), false);
   assert.equal(isCapturedGitReview({ ...captured, comparison: { before: '1'.repeat(64), after: '2'.repeat(64) } }), false);
 });
 
@@ -98,56 +98,35 @@ test('settled result projection preserves full SHA-256 endpoint IDs', () => {
   }
 });
 
-test('legacy unavailable schema retains trustworthy OIDs and complete once-only artifact details without inventing physical identity', () => {
-  const unavailable = { reason: 'legacy-binding-not-captured', comparison: { before: oid(1), after: oid(2) } };
-  const fields = Array.from({ length: 5000 }, (_, i) => ({ label: `generated-${i}`, value: `Needs one-time approval · ${i + 1} entries · SHA256 ${'a'.repeat(64)}`, code: true }));
-  const payload = { version: 1, kind: 'legacy-unavailable', unavailable,
-    details: { title: 'Historical cleanup', sections: [{ title: 'Exact generated resources', text: 'm'.repeat(2 * 1024 * 1024), fields }] } };
-  const record = snapshotOperationReview('git-workflow', 'a046677d-8293-4445-9a2b-558317341280', 'git-operation/v1', payload);
-  const reopened = readGitReviewPayload(readOperationReview(JSON.parse(JSON.stringify(record))).payload);
-  assert.ok(reopened); assert.equal(reopened.kind, 'legacy-unavailable');
-  assert.deepEqual(structuredClone(reopened.unavailable.comparison), unavailable.comparison);
-  assert.equal(Object.hasOwn(reopened.unavailable, 'repository'), false);
-  assert.deepEqual(structuredClone(reopened.details.sections[0].fields), fields);
-  assert.equal(reopened.details.sections[0].text.length, 2 * 1024 * 1024);
-  const admitted = { ...unavailable, repository: { commonDirectory: '/fixture/.git', identity: '1:2:16877', checkout: '/fixture', primaryCheckout: '/fixture', bindingOrigin: 'offline-admitted' } };
-  assert.equal(isGitReviewUnavailableComparison(admitted), true);
-  assert.equal(isGitReviewUnavailableComparison({ ...admitted, repository: { ...admitted.repository, bindingOrigin: 'captured' } }), false, 'an offline observation must not become original captured identity');
-  assert.equal(readGitReviewPayload({ ...payload, patch: '+not metadata' }), null);
-  assert.equal(readGitReviewPayload({ ...payload, details: { patch: '+not metadata' } }), null);
-  assert.equal(isGitReviewUnavailableComparison({ ...unavailable, comparison: { before: 'HEAD', after: oid(2) } }), false);
+test('converter-only proposals and incomplete settlement outcome facts fail closed', () => {
+  const proposal = resourceProposal();
+  for (const value of [
+    { version: 1, kind: 'legacy-unavailable', unavailable: { reason: 'legacy-endpoints-missing' } },
+    { ...proposal, details: { title: 'Imported card' } },
+    { ...proposal, source: { kind: 'unavailable', unavailable: { reason: 'legacy-endpoints-missing' } } },
+  ]) assert.equal(readGitReviewPayload(value), null);
+  const settlement = { version: 1, kind: 'settlement', proposal: reference,
+    outcome: { phase: 'succeeded', effectStarted: true, completed: true, checksStarted: false, effects: [] }, relation: 'unknown' };
+  assert.ok(readGitReviewPayload(settlement));
+  for (const key of ['completed', 'checksStarted', 'effects']) {
+    const partial = structuredClone(settlement); delete partial.outcome[key]; assert.equal(readGitReviewPayload(partial), null);
+  }
 });
-
-test('unknown legacy outcome facts remain absent, not false/empty, and unavailable settlements can link incomplete proposals', () => {
-  const proposal = { version: 1, kind: 'legacy-unavailable', unavailable: { reason: 'legacy-endpoints-missing' } };
-  const settlement = { version: 1, kind: 'settlement', proposal: { version: 2, id: 'a046677d-8293-4445-9a2b-558317341280', operationId: 'a046677d-8293-4445-9a2b-558317341281' },
-    outcome: { phase: 'succeeded', effectStarted: true }, unavailableResult: { reason: 'result-unproven' }, relation: 'unknown' };
-  const decoded = readGitReviewPayload(settlement); assert.ok(decoded); assert.equal(resolveGitReviewSettlement(proposal, decoded), true);
-  assert.equal(Object.hasOwn(decoded.outcome, 'completed'), false); assert.equal(Object.hasOwn(decoded.outcome, 'checksStarted'), false); assert.equal(Object.hasOwn(decoded.outcome, 'effects'), false);
-  assert.ok(readGitReviewPayload({ ...settlement, outcome: { ...settlement.outcome, completed: false, checksStarted: false, effects: [] } }));
-});
-test('settlement-local display basis is strictly shaped and independently corresponds to commit/merge/rebase proposal and frozen method', () => {
-  const ref = { version: 2, id: 'a046677d-8293-4445-9a2b-558317341280', operationId: 'a046677d-8293-4445-9a2b-558317341281' };
+test('current result links require verified postflight and a proposal baseline, not converter display facts', () => {
+  const repository = { commonDirectory: '/fixture/.git', identity: '1:2:16877', checkout: '/fixture', primaryCheckout: '/fixture', bindingOrigin: 'captured' };
   for (const action of ['commit', 'merge', 'rebase']) {
-    const { baseline, report } = fixture(action), resultBasis = { action, refs: baseline.refs,
-      ...(action === 'commit' ? { candidateTree: oid(4) } : action === 'merge' ? { mergeMethod: 'non-ff' } : {}) };
-    const comparison = action === 'commit' ? { before: oid(1), after: oid(4) } : { before: oid(9), after: oid(2) };
-    const repository = { commonDirectory: '/fixture/.git', identity: '1:2:16877', checkout: '/fixture', primaryCheckout: '/fixture', bindingOrigin: 'offline-admitted' };
+    const { baseline, report } = fixture(action), comparison = { before: oid(1), after: action === 'commit' ? oid(4) : oid(2) };
     const proposal = { version: 1, kind: 'proposal', operation: action === 'commit' ? { action, checkout: '/fixture', mode: 'staged', message: 'exact' }
-      : { action, checkout: '/fixture', featureBranch: 'feature', targetBranch: 'main', ...(action === 'merge' ? { mergeMethod: 'non-ff' } : {}) },
-      cwd: '/fixture', fingerprint: 'a'.repeat(64), checks: [], nativeArgs: action === 'merge' ? ['-c', 'branch.main.mergeOptions=', 'merge', '--no-ff', '--commit', '--no-edit', '--no-gpg-sign', oid(2)]
-        : action === 'rebase' ? ['rebase', '--no-autostash', '--no-update-refs', '--no-rebase-merges', '--no-gpg-sign', oid(1)] : [],
+      : { action, checkout: '/fixture', featureBranch: 'feature', targetBranch: 'main' },
+      cwd: '/fixture', fingerprint: 'a'.repeat(64), checks: [], nativeArgs: [], baseline,
       source: { kind: 'git', captured: { version: 1, repository, comparison, trees: comparison } } };
-    const settlement = { version: 1, kind: 'settlement', proposal: ref, resultBasis, postflight: report,
-      outcome: { phase: 'succeeded', effectStarted: true, completed: true }, relation: 'unknown',
+    const settlement = { version: 1, kind: 'settlement', proposal: reference, postflight: report,
+      outcome: { phase: 'succeeded', effectStarted: true, completed: true, checksStarted: false, effects: [] }, relation: 'unknown',
       result: { captured: { version: 1, repository, comparison: { before: oid(1), after: oid(3) }, trees: { before: oid(1), after: oid(4) } }, commit: oid(3), label: action === 'rebase' ? 'Rebased feature changes' : 'Actual result' } };
     assert.ok(readGitReviewPayload(proposal)); assert.ok(readGitReviewPayload(settlement)); assert.equal(resolveGitReviewSettlement(proposal, settlement), true);
-    assert.equal(isGitReviewResultBasis({ ...resultBasis, cwd: '/fictional' }), false);
-    assert.equal(resolveGitReviewSettlement({ ...proposal, baseline }, settlement), false, 'no redundant full baseline plus imported basis');
-    for (const completed of [undefined, false]) assert.equal(resolveGitReviewSettlement(proposal, { ...settlement, outcome: { ...settlement.outcome, completed } }), false);
-    const changed = structuredClone(proposal); changed.source.captured.comparison.after = oid(8); assert.equal(resolveGitReviewSettlement(changed, settlement), false);
-    if (action === 'merge') { const wrong = structuredClone(proposal); wrong.nativeArgs[3] = '--ff-only'; assert.equal(resolveGitReviewSettlement(wrong, settlement), false); }
-    if (action === 'rebase') { const wrong = structuredClone(proposal); wrong.nativeArgs[5] = oid(8); assert.equal(resolveGitReviewSettlement(wrong, settlement), false); }
+    assert.equal(resolveGitReviewSettlement({ ...proposal, baseline: undefined }, settlement), false);
+    assert.equal(resolveGitReviewSettlement(proposal, { ...settlement, outcome: { ...settlement.outcome, completed: false } }), false);
+    assert.equal(readGitReviewPayload({ ...settlement, resultBasis: { action, refs: baseline.refs, candidateTree: baseline.candidateTree } }), null);
   }
 });
 
@@ -208,16 +187,15 @@ test('worktree proposals and optional settlement observations validate every dec
     assert.equal(readGitReviewPayload({ ...settlement, resourceResult }), null);
   }
 });
-test('legacy and proposal check definitions share strict member validation without limits', () => {
-  const legacy = { version: 1, kind: 'legacy-unavailable', unavailable: { reason: 'legacy-endpoints-missing' }, checks: [{ name: 'test', command: 'true', timeoutMs: 0 }] };
-  assert.ok(readGitReviewPayload(legacy));
+test('current proposal check definitions and discard selections validate every member', () => {
+  const proposal = { ...resourceProposal(), checks: [{ name: 'test', command: 'true', timeoutMs: 0 }] };
+  assert.ok(readGitReviewPayload(proposal));
   const operation = { action: 'discardResources', checkout: '/repo', subject: { kind: 'branch', branch: 'feature', tip: oid(1) },
     comparisonTarget: { branch: 'main', tip: oid(2) }, removeWorktree: true, deleteBranch: true, artifactRoots: [] };
-  assert.ok(readGitReviewPayload({ ...legacy, operation }));
-  assert.equal(readGitReviewPayload({ ...legacy, operation: { ...operation, subject: { ...operation.subject, patch: '+not metadata' } } }), null);
-  assert.equal(readGitReviewPayload({ ...legacy, operation: { ...operation, comparisonTarget: { branch: 'main', tip: 'HEAD' } } }), null);
+  assert.ok(readGitReviewPayload({ ...proposal, operation }));
+  assert.equal(readGitReviewPayload({ ...proposal, operation: { ...operation, subject: { ...operation.subject, patch: '+not metadata' } } }), null);
+  assert.equal(readGitReviewPayload({ ...proposal, operation: { ...operation, comparisonTarget: { branch: 'main', tip: 'HEAD' } } }), null);
   for (const checks of [[null], [{ name: 'test' }], [{ name: 'test', command: 1 }], [{ name: 'test', command: 'true', timeoutMs: -1 }], [{ name: 'test', command: 'true', patch: '+not metadata' }]]) {
-    assert.equal(readGitReviewPayload({ ...legacy, checks }), null);
-    assert.equal(readGitReviewPayload({ ...resourceProposal(), checks }), null);
+    assert.equal(readGitReviewPayload({ ...proposal, checks }), null);
   }
 });

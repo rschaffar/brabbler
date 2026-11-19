@@ -5,7 +5,7 @@ import { bundledPlugin } from "./registry";
 import { readOperationReview, type OperationReviewRecord } from "./review-metadata";
 import type { OperationReviewReference } from "./review-reference";
 import type { PluginReviewReference } from "./types";
-import { ReviewReadError, type ReviewOverview, type ReviewQuery } from "./review-protocol";
+import { REVIEW_PAGE_SIZE, ReviewReadError, type ReviewOverview, type ReviewQuery } from "./review-protocol";
 export { ReviewReadError } from "./review-protocol";
 
 export interface ReviewOwner {
@@ -60,7 +60,7 @@ function query(request: Request): ReviewQuery {
   }
   const view = params.get("view");
   if (view !== "proposal" && view !== "result") return invalid();
-  if (op === "page") { const start = number("start", 0); if (start % 40) invalid(); return { op, view, start }; }
+  if (op === "page") { const start = number("start", 0); if (start % REVIEW_PAGE_SIZE) invalid(); return { op, view, start }; }
   if (op === "preview") return { op, view, file: number("file"), offset: number("offset", 0) };
   if (op === "context") return { op, view, file: number("file") };
   return { op: "patch", view, ...(params.has("file") ? { file: number("file") } : {}) };
@@ -97,7 +97,7 @@ export async function operationReviewResponse(request: Request, owner: ReviewOwn
     const metadata = readOperationReview(owner.metadata);
     if (owner.ref.version !== 2 || !metadata || metadata.id !== owner.ref.id || metadata.pluginId !== owner.pluginId
       || metadata.operationId !== owner.ref.operationId || !provider?.formats.includes(metadata.format)) {
-      const reason = owner.ref.version === 1 ? "Legacy review unavailable; offline migration required." : "Review format unavailable.";
+      const reason = owner.ref.version === 1 ? "Legacy review format unsupported." : "Review format unavailable.";
       if (selection.op !== "overview") throw new ReviewReadError(reason, 501);
       detach();
       return Response.json({ defaultView: "result", views: [{ view: "result", label: "Review unavailable", available: false, reason }],

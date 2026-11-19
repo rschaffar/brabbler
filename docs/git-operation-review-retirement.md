@@ -126,6 +126,29 @@ artifacts (journals, observations and fixture archive). Root-private staging,
 no-follow/special-file tree refusal, guest SHA-256 before transfer, host verification,
 independent safe diagnostic attempts and uncertain-settlement refusal remain.
 
+## Current-reader cleanup dispositions
+
+The maintainer withdrew current-runtime readability of converter output. The
+converter's tested revision, original acceptance and historical reproduction above
+remain evidence for that software only. Reproducing those assertions or reading
+converter output requires matching historical software. There is no migration,
+rewrite, deletion or new recovery task in the current-reader cleanup.
+
+Coordinates below refer to `4ce29a13f903d9663cd6e5e6651721b34fc3403a`.
+
+| Original owner / inputs | Disposition and continuing proof |
+| --- | --- |
+| `plugins/git-workflow/review-reader.test.mjs:307–308`, second SHA-256 repository patch download | Drop only the 64-character hash-length assertion and redundant stream. Keep the SHA-256 endpoint, inventory, patch content, immutable context and relation assertions (`:300–306`), and the independent full-byte native/API streaming and cancellation checks. |
+| `plugins/git-workflow/review-data.test.mjs:87,101–127`, offline binding, 5,000 legacy artifact rows / 2 MiB details, incomplete import outcomes | Imported shapes are now refused, not coerced to current metadata or fabricated results. Keep full structured resource/check round trips (`:160–167`) and add a current result-capture failure case that retains verified OIDs without serving a result. |
+| Same `:129–153`, converter result basis for commit/rebase/merge, frozen args/OID/branch correspondence and coexistence refusal | Imported result bases are rejected outright. Current links still require the original baseline and verified postflight; retain native method, exact-state, SDK and ancestry tests. |
+| Same `:211–224`, shared legacy/current check and discard members | Retire only legacy acceptance and duplicate legacy validation. Exercise the original valid/invalid check and discard tuples against the current proposal decoder. |
+| `plugins/git-workflow/review-presentation.test.mjs:13–62` and `resource-rules.test.mjs:38–48`, full-card intermediate, budgets 1/2/4 and 24/25, and uncapped 25/100 selections | The full presentation is obsolete. Retain immutable captures, essential rows, budget rejection and exact totals; check bounded production cards and complete structured metadata separately. Add observable omitted-row and eager-operation-JSON controls, not just short-output checks. |
+| `lib/plugins/review-provider.test.mjs:87–122,150–182,226–240,274–306` | Keep independent owner/receipt/review IDs, recorded rename relation, pre-header selection refusal, disabled history, distinct owner anchor/content checkout, and denied/missing anchor. Consolidate setup only. The inert v1 unsupported placeholder still does not fetch a bundle; converter-specific v2 payloads fail closed. |
+
+Generic supplied patches and notebooks, the viewer and all five genuine service
+checks keep their existing coverage. The changed tests require fresh candidate
+acceptance, not the historical runs above.
+
 ## Historical support snapshot
 
 The remainder preserves the removed README and its P3 assertion ledger from

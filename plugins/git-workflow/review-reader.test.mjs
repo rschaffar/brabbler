@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,7 +7,7 @@ import test from 'node:test';
 import { createJiti } from 'jiti';
 const jiti = createJiti(import.meta.url, { fsCache: false });
 const { captureGitReview, assertGitReviewAvailable, gitReviewPage, gitReviewPatch, gitReviewPreview, gitReviewContext,
-  gitReviewRelation, GIT_REVIEW_PREVIEW_BYTES, parseGitReviewInventory } = await jiti.import('./review-reader.ts');
+  gitReviewRelation, parseGitReviewInventory } = await jiti.import('./review-reader.ts');
 const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, '-c', 'commit.gpgSign=false', ...args], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).trimEnd();
 function fixture(t, objectFormat) {
   const root = mkdtempSync(join(tmpdir(), 'brabbler-git-review-reader-'));
@@ -178,9 +177,9 @@ test('large giant-line and binary patches stream completely while raw previews r
   const selected = await collect(gitReviewPatch(review, f.access, id));
   const first = await gitReviewPreview(review, f.access, id), next = await gitReviewPreview(review, f.access, id, first.next);
   assert.equal(first.complete, false); assert.equal(first.bytes, selected.length);
-  assert.equal(Buffer.byteLength(first.text), GIT_REVIEW_PREVIEW_BYTES);
-  assert.equal(first.next, GIT_REVIEW_PREVIEW_BYTES);
-  assert.equal(next.text, selected.subarray(first.next, first.next + GIT_REVIEW_PREVIEW_BYTES).toString());
+  assert.equal(Buffer.byteLength(first.text), 256 * 1024);
+  assert.equal(first.next, 256 * 1024);
+  assert.equal(next.text, selected.subarray(256 * 1024, 512 * 1024).toString());
   await assert.rejects(gitReviewPreview(review, f.access, id, selected.length + 1), error => error.code === 'INVALID');
   await assert.rejects(gitReviewContext(review, f.access, id), /1 MiB/);
   assert.equal(paths(f.root).some(path => path.includes('brabbler/reviews')), false);
@@ -304,8 +303,6 @@ test('SHA-256 repository endpoints are full IDs too', async t => {
   assert.match((await collect(gitReviewPatch(review, f.access))).toString(), /candidate/);
   assert.equal((await gitReviewContext(review, f.access, 0)).newFile.contents, 'candidate\n');
   assert.equal(await gitReviewRelation(review, review, f.access), 'same');
-  const bytes = await collect(gitReviewPatch(review, f.access));
-  assert.equal(createHash('sha256').update(bytes).digest('hex').length, 64);
 });
 
 test('each selected file/directory transition patch excludes changed descendants in both directions', async t => {

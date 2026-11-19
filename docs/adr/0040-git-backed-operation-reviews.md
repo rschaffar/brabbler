@@ -2,7 +2,8 @@
 
 - Status: Accepted; implementation, independent review and complete original
   acceptance are delivered and integrated. Old-history migration explicitly declined
-  on 2026-11-19; temporary converter retired from current source.
+  on 2026-11-19; temporary converter retired from current source. Current-runtime
+  readability of converter-specific metadata is no longer a requirement.
 - Revises: ADR 0018's permanent, repository-independent patch archive; preserves
   its size-independent approval scope.
 - Maintained owners: [metadata/API](../git-operation-review-metadata.md),
@@ -53,12 +54,13 @@ becomes unavailable, the other can still be displayed with an accurate label.
 
 ## Legacy history
 
-Any future legacy conversion uses the tested historical offline converter, with
-dry-run reporting, verified backups, exact-file installation/recovery and native
-synthetic tests. Live old-history migration is not required for current use. Preserve recoverable
-comparisons and recorded outcomes; mark missing content unavailable without
-inventing original repository identity or cross-branch result facts. Do not
-reconstruct missing Git history from old patches.
+The historical offline converter used dry-run reporting, verified backups,
+exact-file installation/recovery and native synthetic tests. It preserved recoverable
+comparisons and marked missing facts unavailable without inventing original
+repository identity or cross-branch results. This is a historical contract, not
+an application upgrade path. Reproducing conversion or reading its output requires
+matching historical software; current code neither reconstructs missing history from
+old patches nor interprets converter-only shapes as current review metadata.
 
 Legacy decoding never belongs in the application runtime dependency graph. The
 original sequence required verified real conversion before converter removal.
@@ -72,8 +74,8 @@ and an unsupported review placeholder; no production legacy bundle service remai
 
 Session-only backups preserve review identifiers and outcomes, not Git content.
 Ordinary repository backups and Git object retention determine historical diff
-availability. Whole-repository moves/replacements can require an explicitly
-admitted offline mapping or leave the view unavailable; saved paths are not access
+availability. Whole-repository moves/replacements can leave the view unavailable;
+the current reader accepts only originally captured bindings. Saved paths are not access
 permission.
 
 New Git operations save hidden structured metadata, small v2 references and immutable
@@ -82,8 +84,8 @@ precede publication; failed final reporting cannot repeat a native effect.
 
 The existing per-file viewer and read-only APIs use the registered Git provider.
 Actual-result/proposal selection, unavailable states and bounded convenience state
-retain the same renderer and approval scope. Legacy decoding is available only in the
-frozen historical converter, outside current source and the runtime package. The
+retain the same renderer and approval scope. Legacy decoding and converter-output
+support stay in the matching historical source, outside current runtime composition. The
 [schema/API map](../git-operation-review-metadata.md) owns current interfaces.
 
 This decision and repository retirement claim no live conversion, deployment or

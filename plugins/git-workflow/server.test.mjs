@@ -103,7 +103,7 @@ test("ask shows exact resource, message, patch and checks; decline and no UI do 
   assert.deepEqual(card.sections.find((section) => section.title === "Commit message"), { title: "Commit message", text: "Exact message\n\nBody", code: true });
   assert.deepEqual(card.sections.find((section) => section.title === "Required checks").fields, [{ label: "Bounded check", value: "printf checked", code: true }]);
   assert.equal(card.fields.find((field) => field.label === "Checkout").value, repo);
-  assert.match(card.scope, /entire commit candidate and the listed checks/);
+  assert.match(card.scope, /entire commit candidate and every required check in the exact review/);
   assert.match(card.sections.find((section) => section.notice).text, /do not certify a separately exported candidate tree/);
   assert.ok(card.sections.find((section) => section.title === "Technical details").collapsible);
   assert.equal(card.actions.find((action) => action.primary).label, "Approve commit");

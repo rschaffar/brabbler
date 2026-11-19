@@ -113,9 +113,10 @@ Each of `commit`, `rebase`, `merge`, `createWorktree`, `attachWorktree`,
 `removeWorktree` and `cleanupFeature` has exactly one **deny / ask / allow** setting, default **ask**:
 
 - **deny** refuses before preview or checks.
-- **ask** displays the selected resources, captured full refs/tree, exact message,
-  Git arguments and required check commands, then waits for an explicit answer.
-  That approval covers those checks and the operation, not future invocations.
+- **ask** displays the selected resources and captured refs/tree, with bounded
+  excerpts of the commit message, Git arguments and check commands. The exact
+  review contains all selections and full values. Approval covers every required
+  check and the entire captured operation, not a visible excerpt or future call.
 - **allow** executes without an approval question, with the same validation, except
   cleanup artifacts missing from reusable artifact authority still require one-time
   approval. Operation Allow never supplies missing artifact authority.
@@ -477,12 +478,14 @@ the review, answering the request or stopping the agent. The file drawer and nes
 per-file Wide view consume their own Escape first. Native modal focus containment
 keeps background controls inaccessible; shadow-aware Tab boundary wrapping keeps
 keyboard traversal in the fullscreen reader. Closing restores focus to its trigger. Fullscreen is transient and is not saved across reloads. Git cards show
-checkout/branch and operation-specific fields, the exact commit message, required
-checks, visible operation notes and the whole-operation approval scope. Full refs,
-candidate tree and native arguments are under Technical details. Cancel cancels
-the pending request; Reject answers its declared reject action. The prominent
-operation-specific action approves the entire candidate and listed checks, never
-just an expanded file. Worktree approvals use the same layout without patches.
+checkout/branch and operation-specific fields, bounded excerpts of the commit
+message and required checks, operation notes and the whole-operation approval
+scope. Technical details show captured ref/tree IDs and a native-argument preview;
+the exact review contains the original values and complete selections. Cancel
+cancels the pending request; Reject answers its declared reject action. The
+operation-specific action approves the entire candidate and all required checks,
+not just the displayed rows or an expanded file. Worktree approvals use the same
+layout without patches.
 
 Cards use the existing per-session pending-dialog maps and `extension_ui_response`
 transport. Only an action declared by the matching live request can resolve it.
@@ -524,7 +527,9 @@ A separate immutable settlement links that exact proposal and may capture a
 verified result. Receipts never use a latest-by-operation UUID lookup. Session
 append/initial-flush/fsync and standalone atomic-save failures refuse pre-effect
 authority; failed final saving never implies rollback or permits a native retry.
-Full metadata stays out of ordinary standalone status/list responses.
+Full metadata stays out of ordinary standalone status/list responses. Cards build
+bounded message excerpts and resource/check row prefixes directly, without expanding
+complete presentation copies. These are display budgets, not operation limits.
 
 GET `/api/sessions/[id]/reviews/[reviewId]` and the standalone counterpart dispatch
 exact owned metadata to the registered plugin provider, even when execution is
@@ -534,7 +539,8 @@ complete streamed patch downloads and lazy metadata/details share the strict
 Session review GETs never use SDK open/migration or a writing catalogue fallback.
 Standalone owner-anchor admission precedes any content fallback; saved paths/OIDs
 grant no access. Legacy v1 references keep cards/outcomes with **Legacy review
-unavailable; offline migration required**, without opening old bundles. Generic
+format unsupported**, without opening old bundles. Converter-specific metadata is
+not supported by the current reader even when it has a v2 reference. Generic
 supplied-patch cards remain supported.
 
 Trustworthy settled **Actual result** is the default; rebase says **Rebased feature

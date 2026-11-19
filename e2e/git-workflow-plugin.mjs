@@ -367,7 +367,7 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     await card.getByRole("button", { name: "Raw patch", exact: true }).click();
     const reviewedPatch = await first.getByRole("region", { name: "Raw patch", exact: true }).textContent();
     assert.equal(reviewedPatch.match(/^@@ /gm)?.length, 2, "The original partial patch contains both distant changes");
-    assert.equal(reviewedPatch.includes("Plugin context 2500"), false, "Unchanged full-file text is not part of the supplied patch");
+    assert.equal(reviewedPatch.includes("Plugin context 2500"), false, "Unchanged full-file text is not part of the captured patch");
     const completePatchUrl = new URL(await fullPatchLink(card).getAttribute("href"), base).href;
     const completeResponse = await page.request.get(completePatchUrl);
     const reviewedCompletePatch = await completeResponse.text();
@@ -790,7 +790,7 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     await fullscreen(card, "Clean up integrated Git feature");
     await restore(card);
     await page.screenshot({ path: join(artifacts, `git-plugin-${cleanupMode}-approval-${width}.png`) });
-    await card.getByRole("button", { name: "Clean up listed resources", exact: true }).click();
+    await card.getByRole("button", { name: "Clean up selected resources", exact: true }).click();
     await finish(cleanupMode, "completed");
     assert.equal(decisions().length, cleanupDecisionsBefore + 2, "Exactly one decision for each cleanup attempt");
     assert.equal(decisions().at(-1).action, "approve");
@@ -807,7 +807,7 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     const cleanupGroup = historicalCleanup.getByRole("group", { name: "Clean up integrated Git feature", exact: true });
     await checkBlockingCard(cleanupGroup);
     for (const root of cleanupRoots) await cleanupGroup.getByText(root, { exact: true }).waitFor();
-    assert.equal(await cleanupGroup.getByRole("button", { name: /Clean up listed resources|Keep resources|Reject|Cancel/ }).count(), 0);
+    assert.equal(await cleanupGroup.getByRole("button", { name: /Clean up (?:selected|listed) resources|Keep resources|Reject|Cancel/ }).count(), 0);
     const persisted = await page.request.get(`${base}/api/sessions/${sessionId}?tail=1000&tree=summary`);
     assert.ok(persisted.ok(), await persisted.text());
     const outcomes = (await persisted.json()).context.messages.filter((message) => message.role === "custom"

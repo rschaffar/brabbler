@@ -1,4 +1,6 @@
 /** Client-safe review display protocol. No repository paths/revisions are inputs. */
+export const REVIEW_PAGE_SIZE = 40;
+export const REVIEW_PREVIEW_BYTES = 256 * 1024;
 export class ReviewReadError extends Error {
   constructor(message: string, readonly status = 409) { super(message); }
 }
