@@ -56,14 +56,26 @@ for (const mode of ["ask", "allow"]) for (const size of [1_476_834, 3 * 1024 * 1
     assert.equal(git(f.repo, "rev-list", "--parents", "-n", "1", "HEAD").split(" ").length, 3);
   });
 }
-test("257 whole files and a long message preserve unrelated staging; many checks and noisy output remain executable", async () => {
+test("257 whole files and a long message preserve unrelated staging; many checks and noisy output remain executable", async t => {
   const f = fixture("allow");
   const files = Array.from({ length: 257 }, (_, i) => `selected-${i}`);
   for (const name of files) writeFileSync(join(f.repo, name), name);
   writeFileSync(join(f.repo, "unrelated"), "keep staged"); git(f.repo, "add", "unrelated");
   const message = "Large exact message\n\n" + "m".repeat(70000);
   updatePluginSettings(gitWorkflowManifest, "project", f.repo, { commitChecks: [{ name: "noisy", command: `${JSON.stringify(process.execPath)} -e 'process.stdout.write("x".repeat(3*1024*1024))'` }] }, []);
-  success(await executeGitOperation(f.repo, { action: "commit", checkout: f.repo, mode: "files", files, message }, f.ui));
+  const stringify = JSON.stringify;
+  let prettyOperationCopies = 0;
+  // Exact metadata serialization remains required; detect the separate eager
+  // display-only JSON copy even when the final card is short.
+  const observe = t.mock.method(JSON, "stringify", (value, replacer, space) => {
+    if (space && value?.action === "commit" && value.message === message) prettyOperationCopies++;
+    return stringify(value, replacer, space);
+  });
+  try { success(await executeGitOperation(f.repo, { action: "commit", checkout: f.repo, mode: "files", files, message }, f.ui)); }
+  finally { observe.mock.restore(); }
+  assert.equal(prettyOperationCopies, 0, "card construction must not pretty-print the full operation");
+  const messageSection = f.receipts[0].card.sections.find(section => section.title === "Commit message");
+  assert.equal(messageSection.text, message.slice(0, 8192) + "… [full value in exact review]");
   assert.equal(git(f.repo, "diff", "--cached", "--name-only"), "unrelated");
   assert.equal(git(f.repo, "show", "-s", "--format=%B"), message);
   assert.equal(f.receipts.at(-1).checks[0].status, "passed");

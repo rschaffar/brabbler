@@ -1,4 +1,4 @@
-import type { PluginCard, RequiredCheck } from "../../lib/plugins/types";
+import type { RequiredCheck } from "../../lib/plugins/types";
 import type { OperationReviewReference } from "../../lib/plugins/review-metadata";
 import type { ReviewedGitOperation } from "./server";
 import type { PostflightBaseline, PostflightReport } from "./postflight";
@@ -54,19 +54,4 @@ export async function gitReviewSettlement(proposal: GitReviewProposal, reference
   const payload = readGitReviewPayload(metadata({ version: 1, kind: "settlement", proposal: reference, outcome, postflight, result, resourceResult, unavailableResult, relation }));
   if (payload?.kind !== "settlement" || !resolveGitReviewSettlement(proposal, payload)) throw new Error("Invalid Git settlement metadata");
   return payload;
-}
-const excerpt = (value: string, length: number) => value.length > length ? value.slice(0, length) + "… [full value in exact review]" : value;
-/** Application presentation configuration, never operation JSON or Git policy. */
-export interface GitCardPresentation { readonly sectionFieldLimit: number }
-export const DEFAULT_GIT_CARD_PRESENTATION: GitCardPresentation = Object.freeze({ sectionFieldLimit: 24 });
-/** Limits apply only to presentation. Complete structured metadata is saved first. */
-export function compactGitCard(card: PluginCard, presentation: GitCardPresentation = DEFAULT_GIT_CARD_PRESENTATION): PluginCard {
-  const sectionLimit = presentation.sectionFieldLimit;
-  if (!Number.isSafeInteger(sectionLimit) || sectionLimit < 1 || sectionLimit > DEFAULT_GIT_CARD_PRESENTATION.sectionFieldLimit) throw new Error("Git section preview limit must be an integer from 1 to 24");
-  const fields = (values: NonNullable<PluginCard["fields"]>, limit: number) => values.slice(0, limit).map((field) => ({ ...field, label: excerpt(field.label, 90), value: excerpt(field.value, 2048) }));
-  return { ...card, fields: card.fields && fields(card.fields, 24),
-    sections: card.sections?.map((section) => ({ ...section, title: excerpt(section.title, 90),
-      ...(section.fields ? { fields: fields(section.fields, sectionLimit) } : {}), text: [section.text ? excerpt(section.text, 8192) : "",
-        section.fields && section.fields.length > sectionLimit ? `Showing ${sectionLimit} of ${section.fields.length} items. The exact review contains every item.` : ""].filter(Boolean).join("\n") })),
-  };
 }

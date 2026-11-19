@@ -5,12 +5,11 @@ import { devNull } from "node:os";
 import { samePath, toNativePath } from "../../lib/paths";
 import { readGitFileContext } from "../../lib/git-file-context";
 import { GIT_RENAME_ARGS, gitFilePathspecs, isGitRenameStatus, nestedRenameRoot } from "../../lib/git-rename";
+import { REVIEW_PAGE_SIZE, REVIEW_PREVIEW_BYTES } from "../../lib/plugins/review-protocol";
 import { directoryIdentity } from "./checkout-safety";
 import { gitOutput, gitText } from "./process";
 import { isCapturedGitReview, isGitReviewComparison, isGitReviewOid, type CapturedGitReview, type GitReviewComparison, type GitReviewRelation } from "./review-data";
 
-export const GIT_REVIEW_PAGE_SIZE = 40;
-export const GIT_REVIEW_PREVIEW_BYTES = 256 * 1024;
 export class GitReviewReadError extends Error {
   constructor(readonly code: "INVALID" | "ACCESS_DENIED" | "UNAVAILABLE", message: string) { super(message); }
 }
@@ -172,7 +171,7 @@ export async function gitReviewPage(captured: CapturedGitReview, access: GitRevi
   const cwd = await checkout(captured, access, signal), files: GitReviewFile[] = [];
   let total = 0;
   for await (const file of inventory(cwd, captured, signal)) {
-    if (file.id >= start && files.length < GIT_REVIEW_PAGE_SIZE) files.push(file);
+    if (file.id >= start && files.length < REVIEW_PAGE_SIZE) files.push(file);
     total++;
   }
   if (start > total) throw invalid();
@@ -208,15 +207,15 @@ export async function gitReviewPreview(captured: CapturedGitReview, access: GitR
   integer(offset);
   const chunks: Buffer[] = []; let bytes = 0;
   for await (const chunk of gitReviewPatch(captured, access, fileId, signal)) {
-    const start = Math.max(0, offset - bytes), end = Math.min(chunk.length, offset + GIT_REVIEW_PREVIEW_BYTES - bytes);
+    const start = Math.max(0, offset - bytes), end = Math.min(chunk.length, offset + REVIEW_PREVIEW_BYTES - bytes);
     if (end > start) chunks.push(chunk.subarray(start, end));
     bytes += chunk.length;
     if (!Number.isSafeInteger(bytes)) throw unavailable();
   }
   if (offset > bytes) throw invalid();
-  const length = Math.min(GIT_REVIEW_PREVIEW_BYTES, bytes - offset);
+  const length = Math.min(REVIEW_PREVIEW_BYTES, bytes - offset);
   return { text: Buffer.concat(chunks).toString("utf8"), bytes, offset, next: offset + length < bytes ? offset + length : null,
-    complete: offset === 0 && bytes <= GIT_REVIEW_PREVIEW_BYTES };
+    complete: offset === 0 && bytes <= REVIEW_PREVIEW_BYTES };
 }
 export async function gitReviewContext(captured: CapturedGitReview, access: GitReviewAccess, fileId: number, signal?: AbortSignal) {
   const cwd = await checkout(captured, access, signal), file = await selected(cwd, captured, fileId, signal);

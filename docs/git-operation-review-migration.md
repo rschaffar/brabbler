@@ -2,9 +2,11 @@
 
 The one-time converter has been retired from current source. New Git operation
 cards already save metadata and read their diffs from Git; they do not need this
-converter. Legacy cards retain their recorded outcomes but may show **Legacy review
-unavailable; offline migration required**. There is no automatic conversion or
-legacy bundle reader.
+converter. Legacy patch references retain their recorded outcomes but may show
+**Legacy review format unsupported**. There is no automatic conversion or legacy
+bundle reader. Converter-specific output is not a supported current review format;
+reproducing conversion or reading its output requires the matching historical
+software, not the current application.
 
 The maintainer explicitly declined live old-history migration on 2026-11-19.
 This is a scope decision, not a claim that live conversion or deployment passed.
@@ -22,7 +24,7 @@ Node **24.21.0**, SDK **1.4.0**, Git **2.55.0**, Linux, Python 3 and `flock`.
 Use the entire historical source and lockfiles, not just a copied CLI or current
 helpers/dependencies. No remote tag or publication is needed.
 
-For a separately authorized future conversion, prepare a clean detached historical
+For a separately authorized historical reproduction or recovery, prepare a clean detached historical
 worktree at that exact commit using the normal repository workflow. Keep all
 private inputs and output outside the checkout, test exports and Nix store. Read
 these files **in the historical worktree** before proceeding:

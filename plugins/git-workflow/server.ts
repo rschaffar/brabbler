@@ -3,7 +3,8 @@ import { refuseFilters } from "./checkout-safety";
 import { capturePostflight, collectPostflight, postflightText, postflightReceiptSummary, unobservedPostflight, type ReportAction, type PostflightBaseline, type PostflightReport } from "./postflight";
 import { gitText as git, gitOutput, gitEnvironment, records, outputDigest, run, withPreparationSignal } from "./process";
 import { spawn } from "node:child_process";
-import { gitReviewProposal, gitReviewSettlement, compactGitCard, type GitCardPresentation } from "./review";
+import { gitReviewProposal, gitReviewSettlement } from "./review";
+import { gitCardExcerpt, gitCardField, gitCardSection, gitCardSectionLimit, type GitCardPresentation } from "./card-presentation";
 import { GIT_REVIEW_FORMAT, type GitReviewProposal, type GitReviewResources } from "./review-data";
 import { assertGitReviewAvailable } from "./review-reader";
 import type { OperationReviewReference } from "../../lib/plugins/review-metadata";
@@ -102,26 +103,25 @@ function cleanupAccess(ui: Partial<PluginUiContext>, rejectUnignoredUntracked = 
   return { rejectUnignoredUntracked, git, records: (cwd, args) => records(gitOutput(cwd, args)), checkout, branchTip, worktrees, project: pluginProjectIdentityAsync,
     inUse: (path) => { if (!ui.isDirectoryInUse) throw new Error("Cleanup requires live directory-use inspection"); return ui.isDirectoryInUse(path); } };
 }
-async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitSettings, ui: Partial<PluginUiContext> = {}, budget?: CleanupBudget, rejectUnignoredUntracked = false): Promise<Snapshot> {
+async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitSettings, ui: Partial<PluginUiContext> = {}, budget?: CleanupBudget, options?: GitExecutionOptions): Promise<Snapshot> {
   if (op.action === "discardResources") {
     const cleanup = await captureBrowserDiscard(callerCwd, op, policy, cleanupAccess(ui, true), budget);
     return { fingerprint: digest([cleanup.fingerprint, op, cleanup.lossEvidence!, relevantPolicy(policy, op.action)]), cleanup,
-      cwd: cleanup.cwd, args: [], checks: [], resources: { kind: "cleanup", snapshot: cleanup }, card: browserDiscardCard(op, policy, cleanup) };
+      cwd: cleanup.cwd, args: [], checks: [], resources: { kind: "cleanup", snapshot: cleanup }, card: browserDiscardCard(op, policy, cleanup, options?.presentation) };
   }
   if (op.action === "cleanupFeature") {
     if (!op.removeWorktree && !op.deleteBranch && !op.artifactRoots.length) throw new Error("Choose at least one cleanup resource");
-    const cleanup = await captureCleanup(callerCwd, op, policy, cleanupAccess(ui, rejectUnignoredUntracked), budget);
+    const cleanup = await captureCleanup(callerCwd, op, policy, cleanupAccess(ui, options?.browserConfirmation), budget);
     const postflight = await capturePostflight({ action: "cleanupFeature", cwd: cleanup.cwd, paths: [cleanup.cwd, ...(cleanup.path ? [cleanup.path] : [])],
       refs: { feature: { branch: op.featureBranch, before: op.featureTip }, target: { branch: cleanup.target, before: await branchTip(cleanup.cwd, cleanup.target) } },
       cleanup: { featureTip: op.featureTip, integrationCommit: op.integrationCommit, path: cleanup.path, removeWorktree: op.removeWorktree,
         deleteBranch: op.deleteBranch, artifacts: cleanup.artifacts.map(item => item.path), ancestorIdentities: cleanup.artifactParentIdentities } });
     return { fingerprint: digest([cleanup.fingerprint, relevantPolicy(policy, op.action)]), cleanup, postflight,
-      cwd: cleanup.cwd, args: [], checks: [], resources: { kind: "cleanup", snapshot: cleanup }, card: cleanupCard(op, cleanup, policy) };
+      cwd: cleanup.cwd, args: [], checks: [], resources: { kind: "cleanup", snapshot: cleanup }, card: cleanupCard(op, cleanup, policy, options?.presentation) };
   }
   const cwd = await checkout(op.checkout);
   const current = await head(cwd);
-  const rows: string[] = [JSON.stringify(op, null, 2), `Checkout: ${cwd}`, `Branch: ${current.branch}`, `HEAD: ${current.tip}`,
-    "Native Git operation is unsigned and hook-free. Stronger user/repository instructions still apply."];
+  const rows = [`HEAD: ${current.tip}`];
   const fields: PluginCardField[] = [{ label: "Checkout", value: cwd, code: true }, { label: "Branch", value: current.branch, code: true }];
   const sections: PluginCardSection[] = [];
   const notices = ["Native Git operation is unsigned and hook-free. Stronger user/repository instructions still apply."];
@@ -141,8 +141,9 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
     if (!op.message.trim() || op.message.includes("\0")) throw new Error("An exact nonempty commit message is required");
     checks = policy.commitChecks;
     fields.push({ label: "Selection", value: op.mode === "files" ? "Selected whole files, including unstaged content" : "Complete staged set" });
-    sections.push({ title: "Commit message", text: op.message, code: true });
+    sections.push({ title: "Commit message", text: gitCardExcerpt(op.message, 8192), code: true });
     const files = op.mode === "files" ? await fileSelection(cwd, op.files) : undefined;
+    if (files) rows.push(`Selected whole files: ${files.length}. The exact review contains every selected path.`);
     if (op.mode !== "staged" && op.mode !== "files") throw new Error("Invalid commit mode");
     if (op.mode === "staged" && op.files !== undefined) throw new Error("Staged mode commits the complete staged set, not selected paths");
     const scratch = mkdtempSync(join(tmpdir(), "brabbler-git-preview-"));
@@ -163,7 +164,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
       if (tree === (await git(cwd, ["rev-parse", `${current.tip}^{tree}`])).trim()) throw new Error("No selected changes to commit");
       comparison = { before: current.tip, after: tree };
       state.push(tree);
-      rows.push(`Candidate tree: ${tree}`, `Exact message:\n${op.message}`);
+      rows.push(`Candidate tree: ${tree}`);
     } finally { rmSync(scratch, { recursive: true, force: true }); }
     args = ["commit", "--no-gpg-sign", "--cleanup=verbatim", ...(files ? ["--only"] : [])];
     postflight = await capturePostflight({ action: "commit", cwd, paths: [cwd], candidateTree: comparison!.after,
@@ -191,8 +192,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
     state.push(feature, target);
     fields.push({ label: "Feature → target", value: `${op.featureBranch} → ${policy.targetBranch}`, code: true });
     notices.push("Diffs show feature changes since the merge base, not a predicted rebase/merge result.");
-    rows.push(`Feature: ${op.featureBranch} ${feature}`, `Target: ${policy.targetBranch} ${target}`,
-      "Patch shows feature changes since the merge base, not a predicted rebase/merge result.");
+    rows.push(`Feature tip: ${feature}`, `Target tip: ${target}`);
     const base = (await git(cwd, ["merge-base", target, feature])).trim();
     comparison = { before: base, after: feature };
     if (op.action === "rebase") {
@@ -203,7 +203,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
     } else {
       checks = policy.mergeChecks;
       fields.push({ label: "Merge method", value: policy.mergeMethod === "ff-only" ? "Fast-forward only" : "Non-fast-forward merge" });
-      rows.push(`Merge method: ${policy.mergeMethod}`, "Checks run in the selected feature checkout before merging; no automatic rebase.");
+      notices.push("No automatic rebase.");
       if (checks.length && !sourceCheckout) throw new Error("Required merge checks need the feature's registered clean checkout");
       args = ["-c", `branch.${policy.targetBranch}.mergeOptions=`, "merge", policy.mergeMethod === "ff-only" ? "--ff-only" : "--no-ff", "--commit", "--no-edit", "--no-gpg-sign", feature];
       postflight = await capturePostflight({ action: "merge", cwd, paths: [cwd, ...(sourceCheckout ? [sourceCheckout.path] : [])],
@@ -232,7 +232,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
     resources = { kind: "worktree", checkout: cwd, head: current, registrations, base: { branch: op.baseBranch, tip: base } };
     fields.push({ label: "Base branch", value: op.baseBranch, code: true }, { label: "Worktree branch", value: op.branch, code: true },
       { label: "Destination", value: destination, code: true });
-    rows.push(`Base: ${op.baseBranch} ${base}`, `Destination: ${destination}`);
+    rows.push(`Base tip: ${base}`);
     args = op.action === "createWorktree" ? ["worktree", "add", "-b", op.branch, destination, base] : ["worktree", "add", destination, op.branch];
   } else if (op.action === "removeWorktree") {
     const selected = (await worktrees(cwd)).find((entry) => samePath(entry.path, op.path));
@@ -247,27 +247,26 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
     resources = { kind: "worktree", checkout: cwd, head: current, registrations, selected };
     fields.push({ label: "Remove worktree", value: physical, code: true });
     notices.push("Only this worktree directory is removed. Branch and session history remain.");
-    rows.push(`Remove only: ${physical}`, "Branch and session history remain. No automatic cleanup.");
+    notices.push("No automatic cleanup.");
     args = ["worktree", "remove", physical];
   } else throw new Error("Unknown Git action");
-  if (checks.length) rows.push("Required checks (shell commands, may have side effects):", ...checks.map((check) => `${check.name}: ${check.command}`),
-    op.action === "commit" ? "Checks run in the selected checkout, including its current staged/unstaged contents." : "Checks run in the feature checkout.");
   if (checks.length) {
-    sections.push({ title: "Required checks", fields: checks.map((check) => ({ label: check.name, value: check.command, code: true })) });
+    sections.push(gitCardSection("Required checks", checks, check => ({ label: check.name, value: check.command, code: true }), options?.presentation));
     notices.push("Checks are shell commands and may have side effects.", op.action === "commit"
       ? "Checks run in the selected checkout, including its current staged/unstaged contents; they do not certify a separately exported candidate tree."
       : "Checks run in the selected feature checkout before merging, not on a predicted merged result.");
   }
   sections.push({ title: "Operation notes", text: notices.join("\n"), notice: true });
-  rows.push(`Git arguments: ${JSON.stringify(args)}`);
-  sections.push({ title: "Technical details", text: rows.join("\n\n"), code: true, collapsible: true });
+  // Argument count is fixed by the native command grammar. Excerpt before
+  // encoding (paths/ref names are inputs), and keep the untouched args in metadata.
+  rows.push(`Git arguments: ${JSON.stringify(args.map(arg => gitCardExcerpt(arg, 512)))}`);
+  sections.push({ title: "Technical details", text: gitCardExcerpt(rows.join("\n\n"), 8192), code: true, collapsible: true });
   // Bind only applicable settings, not unrelated action permissions.
   state.push(relevantPolicy(policy, op.action));
   return { fingerprint: digest(state), cwd, args, checks, comparison, postflight, resources,
     card: { title: { commit: "Git commit", rebase: "Git rebase", merge: "Git merge", createWorktree: "Create Git worktree", attachWorktree: "Attach Git worktree", removeWorktree: "Remove Git worktree" }[op.action],
-      subtitle: "Approval required", fields, sections,
+      subtitle: "Approval required", fields: fields.map(gitCardField), sections,
       scope: `Approves the entire ${op.action === "commit" ? "commit candidate" : "selected operation"}${checks.length ? " and the listed checks" : ""}${comparison ? ", not just an expanded file or displayed page" : ""}.`,
-      patchBefore: op.action === "commit" ? "HEAD" : "Merge base", patchAfter: op.action === "commit" ? "Candidate" : "Selected feature",
       actions: [{ id: "reject", label: "Reject" }, { id: "approve", primary: true,
         label: { commit: "Approve commit", rebase: "Approve rebase", merge: "Approve merge", createWorktree: "Create worktree", attachWorktree: "Attach worktree", removeWorktree: "Remove worktree" }[op.action] }] } };
 }
@@ -376,8 +375,9 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
     // precedes preview and checks. Identity is supplied by the host, not the model.
     const policy = currentSettings();
     if (policy[op.action] === "deny") throw new Error(`${op.action} is denied by current settings`);
+    gitCardSectionLimit(options?.presentation);
     onProgress?.("Capturing exact Git state; large repositories are processed incrementally. Stop cancels preparation.");
-    const snapshot = await withPreparationSignal(signal, () => preview(callerCwd, op, policy, ui, cleanupBudget, options?.browserConfirmation));
+    const snapshot = await withPreparationSignal(signal, () => preview(callerCwd, op, policy, ui, cleanupBudget, options));
     baseline = snapshot.postflight;
     const origin = readPluginSettings(gitWorkflowManifest, op.checkout, undefined, session);
     if (origin.effective[op.action] !== policy[op.action]) throw new Error("Policy changed during preparation");
@@ -386,7 +386,7 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
     if (!ui.saveOperationReview) throw new Error("Git operations require durable Brabbler review metadata");
     proposal = await gitReviewProposal(op, snapshot, signal);
     const review = proposalReference = await ui.saveOperationReview(gitWorkflowManifest.id, operationId, GIT_REVIEW_FORMAT, proposal);
-    snapshot.card = { ...compactGitCard(snapshot.card, options?.presentation), review };
+    snapshot.card = { ...snapshot.card, review };
     const artifactApproval = !!snapshot.cleanup?.unapprovedArtifacts.length;
     const { subtitle, ...authorization } = operationAuthorization(policy[op.action], origin.sources[op.action], artifactApproval, !!options?.browserConfirmation);
     const { mode } = authorization;
@@ -421,7 +421,7 @@ async function executeOperation(callerCwd: string, operation: ReviewedGitOperati
       // Check ORIGINAL objects before files-preview can recreate a missing tree
       // with the same OID, concealing expiry under the old approval.
       if (proposal?.source.kind === "git") await assertGitReviewAvailable(proposal.source.captured, { assertAllowed: async () => {} }, signal);
-      if (current[op.action] === "deny" || (await withPreparationSignal(signal, () => preview(callerCwd, op, current, ui, cleanupBudget, options?.browserConfirmation))).fingerprint !== snapshot.fingerprint
+      if (current[op.action] === "deny" || (await withPreparationSignal(signal, () => preview(callerCwd, op, current, ui, cleanupBudget, options))).fingerprint !== snapshot.fingerprint
         || digest(relevantPolicy(currentSettings(), op.action)) !== digest(relevantPolicy(policy, op.action))) throw new Error("Stale operation: relevant settings or repository state changed; invoke again");
     };
     // Cleanup owns a single full revalidation per effect, under its directory

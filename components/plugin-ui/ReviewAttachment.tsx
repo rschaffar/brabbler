@@ -9,7 +9,7 @@ import { ReviewNavigationState } from "@/lib/operation-review-state";
 import type { DiffContext } from "@/lib/diff-context";
 import type { GitDiffPreferences } from "@/lib/git-diff-preferences";
 import type { PluginReviewReference } from "@/lib/plugins/types";
-import type { ReviewAvailability, ReviewOverview, ReviewPage, ReviewPreview, ReviewView } from "@/lib/plugins/review-protocol";
+import { REVIEW_PAGE_SIZE, REVIEW_PREVIEW_BYTES, type ReviewAvailability, type ReviewOverview, type ReviewPage, type ReviewPreview, type ReviewView } from "@/lib/plugins/review-protocol";
 
 type Observe = (work: Promise<void>) => void;
 function useRead<T>(url: string | null, observe: Observe) {
@@ -62,7 +62,7 @@ function SelectedFile({ id, path, status, url, source, preferences, navigation, 
       : <><p>Raw preview at byte {offset.toLocaleString()}. Download contains every byte.</p>
         <pre aria-label="Raw patch" className="max-h-[44vh] overflow-auto whitespace-pre font-mono text-xs">{read.body.text}</pre></>)}
     <div className="flex gap-3">
-      {offset > 0 && <button type="button" onClick={() => setOffset(Math.max(0, offset - 256 * 1024))}>Previous content</button>}
+      {offset > 0 && <button type="button" onClick={() => setOffset(Math.max(0, offset - REVIEW_PREVIEW_BYTES))}>Previous content</button>}
       {read.body?.next != null && <button type="button" onClick={() => setOffset(read.body!.next!)}>Next content</button>}
     </div>
   </section>;
@@ -78,7 +78,7 @@ function Files({ url, source, observe, navigation }: { url: string; source: Revi
       <p>Showing files {start + 1}–{start + read.body.files.length} of {read.body.total}.</p>
       <ReviewFileBrowser paged files={read.body.files.map(file => ({ id: String(file.id), label: file.previousPath ? `${file.previousPath} → ${file.path}` : file.path, description: file.status }))}
         pagination={<>
-          {start > 0 && <button type="button" onClick={() => setStart(Math.max(0, start - 40))}>Previous files</button>}
+          {start > 0 && <button type="button" onClick={() => setStart(Math.max(0, start - REVIEW_PAGE_SIZE))}>Previous files</button>}
           {read.body.next !== null && <button type="button" onClick={() => setStart(read.body!.next!)}>Next files</button>}
         </>}>
         {(selected, preferences) => <SelectedFile key={`${source.view}:${selected.id}`} id={Number(selected.id)} path={selected.label} status={read.body!.files.find(file => file.id === Number(selected.id))?.status} url={url} source={source}
@@ -96,7 +96,7 @@ function Details({ url, observe }: { url: string; observe: Observe }) {
     {read.body ? <><p>Metadata at byte {offset.toLocaleString()} of {read.body.bytes.toLocaleString()}.</p>
       <pre className="max-h-[44vh] overflow-auto whitespace-pre font-mono text-xs">{read.body.text}</pre>
       <div className="flex gap-3">
-        {offset > 0 && <button type="button" onClick={() => setOffset(Math.max(0, offset - 256 * 1024))}>Previous details</button>}
+        {offset > 0 && <button type="button" onClick={() => setOffset(Math.max(0, offset - REVIEW_PREVIEW_BYTES))}>Previous details</button>}
         {read.body.next !== null && <button type="button" onClick={() => setOffset(read.body!.next!)}>Next details</button>}
       </div></> : !read.error && <p role="status">Loading operation metadata…</p>}
   </div>;
@@ -132,7 +132,7 @@ function NativeReview({ url, observe }: { url: string; observe: Observe }) {
 /** The same shared file browser/Pierre reader as supplied-patch cards and Explorer.
  * Saved source/view/file scopes own all async publication and reading state. */
 export function ReviewAttachment({ review, sessionId, reviewBaseUrl, onReadWork }: {
-  review: PluginReviewReference; sessionId?: string; before?: string; after?: string; contextHandle?: string; pluginId?: string;
+  review: PluginReviewReference; sessionId?: string;
   reviewBaseUrl?: string; onReadWork?: Observe;
 }) {
   const observer = useRef(onReadWork); observer.current = onReadWork;
@@ -141,7 +141,7 @@ export function ReviewAttachment({ review, sessionId, reviewBaseUrl, onReadWork 
   return <section aria-label="Exact operation review" className="min-w-0 space-y-2 text-xs">
     <h3 className="blocking-card-section-title">Operation review</h3>
     <p>Approval covers the entire operation, not just this page.</p>
-    {review.version === 1 ? <p role="status">Legacy review unavailable; offline migration required.</p>
+    {review.version === 1 ? <p role="status">Legacy review format unsupported.</p>
       : sessionId || reviewBaseUrl ? <NativeReview key={url} url={url} observe={observe} /> : <p>Open the saved owner to read its review.</p>}
   </section>;
 }

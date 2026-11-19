@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -304,8 +303,6 @@ test('SHA-256 repository endpoints are full IDs too', async t => {
   assert.match((await collect(gitReviewPatch(review, f.access))).toString(), /candidate/);
   assert.equal((await gitReviewContext(review, f.access, 0)).newFile.contents, 'candidate\n');
   assert.equal(await gitReviewRelation(review, review, f.access), 'same');
-  const bytes = await collect(gitReviewPatch(review, f.access));
-  assert.equal(createHash('sha256').update(bytes).digest('hex').length, 64);
 });
 
 test('each selected file/directory transition patch excludes changed descendants in both directions', async t => {

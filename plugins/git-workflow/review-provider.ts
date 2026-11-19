@@ -1,5 +1,5 @@
 import type { OperationReviewProvider, ReviewProviderContext } from "../../lib/plugins/review-provider";
-import { ReviewReadError, type ReviewAvailability, type ReviewOverview, type ReviewQuery, type ReviewView } from "../../lib/plugins/review-protocol";
+import { REVIEW_PREVIEW_BYTES, ReviewReadError, type ReviewAvailability, type ReviewOverview, type ReviewQuery, type ReviewView } from "../../lib/plugins/review-protocol";
 import { GIT_REVIEW_FORMAT, readGitReviewPayload, resolveGitReviewSettlement, type CapturedGitReview } from "./review-data";
 import { assertGitReviewAvailable, gitReviewContext, gitReviewPage, gitReviewPatch, gitReviewPreview, GitReviewReadError } from "./review-reader";
 
@@ -8,13 +8,13 @@ function sources(context: ReviewProviderContext) {
   if (!payload) throw new ReviewReadError("Invalid saved Git review.");
   const linked = payload.kind === "settlement" ? context.resolveLinked(payload.proposal) : null;
   const proposal = payload.kind === "settlement" ? readGitReviewPayload(linked?.payload) : payload;
-  if (!proposal || proposal.kind === "settlement") throw new ReviewReadError("Original proposal metadata is unavailable.");
+  if (proposal?.kind !== "proposal") throw new ReviewReadError("Original proposal metadata is unavailable.");
   const settlement = payload.kind === "settlement" ? payload : undefined;
   const captured: Partial<Record<ReviewView, CapturedGitReview>> = {};
-  if (proposal.kind === "proposal" && proposal.source.kind === "git") captured.proposal = proposal.source.captured;
+  if (proposal.source.kind === "git") captured.proposal = proposal.source.captured;
   const trustworthy = settlement && resolveGitReviewSettlement(proposal, settlement);
   if (trustworthy && settlement.result) captured.result = settlement.result.captured;
-  const resources = proposal.kind === "proposal" && proposal.source.kind === "resources";
+  const resources = proposal.source.kind === "resources";
   // A pre-effect failure/cancellation has no actual result. Anything that might
   // have executed defaults to an explicitly unavailable result, never proposal.
   const preEffect = settlement && settlement.outcome.effectStarted === false && settlement.outcome.completed === false;
@@ -46,7 +46,7 @@ export const gitReviewProvider: OperationReviewProvider = {
         for (let offset = 0; offset < bytes.length; offset += 65536) { signal.throwIfAborted(); yield bytes.subarray(offset, offset + 65536); }
       })() };
       if (query.offset > bytes.length) throw new ReviewReadError("Invalid details page.", 400);
-      const end = Math.min(bytes.length, query.offset + 256 * 1024);
+      const end = Math.min(bytes.length, query.offset + REVIEW_PREVIEW_BYTES);
       return { body: { text: bytes.subarray(query.offset, end).toString("utf8"), bytes: bytes.length, offset: query.offset,
         next: end < bytes.length ? end : null, complete: query.offset === 0 && end === bytes.length } };
     }

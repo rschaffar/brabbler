@@ -4,8 +4,10 @@ New Git operation cards use saved metadata and Git-backed diffs through the
 registered session/standalone reader and existing per-file viewer. Independent
 review and complete original acceptance are recorded in the archived plan.
 The temporary converter is retired after the maintainer declined old-history
-migration; [historical instructions](git-operation-review-migration.md) retain its
-tested revision. This is not a live-conversion, deployment or deletion claim.
+migration. Current readers do not support converter-specific metadata, even within
+a v2 reference. [Historical instructions](git-operation-review-migration.md) retain
+the tested revision and require matching software for reproduction. No live
+conversion, deployment or deletion is claimed.
 
 ## Generic host boundary
 
@@ -57,21 +59,16 @@ validators, `gitReviewResult`, and `resolveGitReviewSettlement`.
 
 | Discriminant | Complete metadata |
 | --- | --- |
-| `proposal` | Exact operation, fingerprint, cwd, full native arguments/check definitions, optional postflight baseline; source is a captured Git comparison, complete resource capture, or explicit unavailable descriptor. New producers do not also save an unbounded presentation card. |
+| `proposal` | Exact operation, fingerprint, cwd, full native arguments/check definitions, optional postflight baseline; source is a captured Git comparison or complete resource capture. |
 | `settlement` | Exact proposal reference, outcome/effect/check facts, structured settled postflight, optional captured result or unavailable-result descriptor, optional resource observations, and `same` / `different` / `unknown` relation. |
-| `legacy-unavailable` | Only recoverable operation/fingerprint/check/argument facts, an explicit unavailable descriptor and lossless details. Missing facts never become an exact proposal or a proven result. |
 
 `GitReviewResources` retains complete worktree/ref/registration facts or cleanup
 artifact counts, bytes, digests, paths and permission distinctions outside card
-limits. `GitReviewDetails` is the once-only home for **legacy presentation-only**
-fields/sections/text, including complete cleanup artifact rows. These metadata
-fields have no card text/count ceilings and contain no patch/ref/action fields.
-
-`GitReviewUnavailableComparison` can retain trustworthy full comparison/tree OIDs
-without a repository binding. Omit unknown identity. A binding observed/admitted
-by an offline converter uses `bindingOrigin: "offline-admitted"`, never invented
-`"captured"` provenance. Reasons distinguish missing legacy binding/endpoints,
-unavailable repository/objects, unproven result and unsupported legacy data.
+limits. Structured metadata has no card text/count ceilings and contains no patch
+bodies. Only `bindingOrigin: "captured"` is admitted. If capture fails after verified
+postflight, `unavailableResult` records the verified full endpoints and original
+proposal binding with `reason: "objects-unavailable"`. It is not a captured result
+and is never materialized as one.
 
 The decoder validates complete nested resource inventories, permission/parent
 records, worktree/head/registration observations, check definitions and optional
@@ -79,20 +76,17 @@ resource results. Unknown body fields and malformed counts/digests refuse; array
 and text lengths are not card-bounded. Incomplete metadata is not silently promoted
 to a typed resource capture.
 
-Legacy settlement `outcome.completed`, `checksStarted` and `effects` are optional:
-absence is unknown, not false or an empty list. Existing live producers still supply
-full facts. Every migrated terminal occurrence links its own settlement even when
-its proposal is `legacy-unavailable`; that no-result link cannot label a proposal
-as actual. A settlement-local optional `resultBasis` contains only action/refs/
-candidateTree/mergeMethod display facts, never fictional physical execution guards.
-It is strictly decoded and independently matched to proposal OIDs, operation and
-frozen argument grammar. It cannot coexist with a full live proposal baseline.
-Actual results still require `completed === true`, started effect, succeeded phase,
-the unchanged finalization/action/parent/tree/relationship gates and repository-bound
-capture. Missing admission/objects retains trustworthy endpoints as unavailable.
+Current settlements record `outcome.completed`, `checksStarted` and `effects`
+explicitly; incomplete imported settlements are not coerced into current facts.
+Actual results require `completed === true`, started effect, succeeded phase,
+the exact proposal baseline, verified postflight and repository-bound capture.
+Missing postflight or unverified observations cannot prove a result, and equality
+can remain unknown even when a result was captured.
 
-`review.ts` composes proposals and settlements; `compactGitCard` only bounds
-presentation. Result endpoints come from finalized, verified postflight with its
+`review.ts` composes proposals and settlements. Card presentation is built directly
+from bounded excerpts and row prefixes (`card-presentation.ts`), without first
+serializing the full operation or formatting omitted rows. Full metadata and
+execution inputs are unchanged by display budgets. Result endpoints come from finalized, verified postflight with its
 exact baseline/relationship guards, then repository-bound capture. Summary prose,
 `report.commit` alone, current HEAD or an equal operation UUID are not proof.
 Missing capture preserves verified endpoint facts as unavailable, not a fabricated
@@ -112,7 +106,9 @@ exact envelope/ref/plugin/operation/format and wraps linked resolution with thos
 same bindings. Git payload decoding, trustworthy settlement validation and source
 selection live in `plugins/git-workflow/review-provider.ts`, not generic chat.
 The client-safe protocol/error types are separate from registry dispatch to avoid
-an initialization cycle. Disabling execution never enables tools through a GET.
+an initialization cycle. The client, host and Git provider share the page size and
+preview byte budget in `lib/plugins/review-protocol.ts`. Disabling execution never
+enables tools through a GET.
 
 The session route resolves only persisted operation/interaction receipt occurrences.
 `review-session-entries.ts` opens a non-writing descriptor, validates the header and
@@ -189,10 +185,13 @@ Late ignored-abort replies cannot publish over the new view. Complete metadata a
 resource lists are lazy/paged, not duplicated in polling/cards. Generic supplied
 patches/notebook storage are unchanged.
 
-Legacy/unknown formats retain cards and outcomes with an unavailable overview (200);
-materialization requests return unsupported (501). The UI's v1 placeholder performs
-no bundle request. The temporary codec/converter and migration-only tests have been removed from
-current source; no application or test export admits them. The
+Legacy patch references retain only inert card identity; the UI shows an unsupported
+placeholder and performs no bundle request. Direct requests for those references or
+unregistered formats have an unavailable overview (200) and unsupported materialization
+(501). Converter-only payloads claiming the current format fail payload or linkage
+validation (409), without opening a bundle, adopting a repository or rewriting history.
+The temporary codec/converter and migration-only tests are outside current source.
+The
 [retirement ledger](git-operation-review-retirement.md) preserves continuing
 assertion dispositions. The [historical guide](git-operation-review-migration.md)
 names the tested converter revision, supported formats and recovery boundaries.

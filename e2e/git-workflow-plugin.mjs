@@ -367,7 +367,7 @@ async function checkGitWorkflowPluginConnection(page, base, repo, sessionId, art
     await card.getByRole("button", { name: "Raw patch", exact: true }).click();
     const reviewedPatch = await first.getByRole("region", { name: "Raw patch", exact: true }).textContent();
     assert.equal(reviewedPatch.match(/^@@ /gm)?.length, 2, "The original partial patch contains both distant changes");
-    assert.equal(reviewedPatch.includes("Plugin context 2500"), false, "Unchanged full-file text is not part of the supplied patch");
+    assert.equal(reviewedPatch.includes("Plugin context 2500"), false, "Unchanged full-file text is not part of the captured patch");
     const completePatchUrl = new URL(await fullPatchLink(card).getAttribute("href"), base).href;
     const completeResponse = await page.request.get(completePatchUrl);
     const reviewedCompletePatch = await completeResponse.text();

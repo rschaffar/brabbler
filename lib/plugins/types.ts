@@ -78,11 +78,9 @@ export interface PluginCardSection {
   collapsible?: boolean;
   notice?: boolean;
 }
-/** Legacy archive shape. Runtime cards keep its identity/outcome, never decode its content. */
-export interface LegacyPluginReviewReference {
-  version: 1; id: string; operationId: string; sha256: string; entries: number; bytes: number;
-}
-export type PluginReviewReference = import("./review-reference").OperationReviewReference | LegacyPluginReviewReference;
+/** The legacy discriminator retains only inert receipt identity, not archive facts. */
+export type PluginReviewReference = import("./review-reference").OperationReviewReference
+  | { version: 1; id: string; operationId: string };
 /** Browser presentation only; never instructions or execution authority. */
 export interface PluginCard {
   /** Correlates a decision card with durable operation stage snapshots. */

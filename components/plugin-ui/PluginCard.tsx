@@ -41,7 +41,7 @@ export function PluginCardContent({ request, sessionId, cwd, onOpenFile, reviewB
     {request.text && <pre className="blocking-card-code">{request.text}</pre>}
     {request.markdown && <MarkdownBody cwd={cwd} onOpenFile={onOpenFile ? openFile : undefined}>{request.markdown}</MarkdownBody>}
     {request.sections?.filter((section) => !section.collapsible).map((section, index) => <Section key={index} section={section} />)}
-    {request.review && <ReviewAttachment key={`${sessionId}:${request.review.id}`} review={request.review} sessionId={sessionId} reviewBaseUrl={reviewBaseUrl} onReadWork={onReadWork} before={request.patchBefore} after={request.patchAfter} contextHandle={request.patchContext} pluginId={request.pluginId} />}
+    {request.review && <ReviewAttachment key={`${sessionId}:${request.review.id}`} review={request.review} sessionId={sessionId} reviewBaseUrl={reviewBaseUrl} onReadWork={onReadWork} />}
     {request.patch && <SuppliedPatchStack navigation patch={request.patch} before={request.patchBefore ?? "Current"} after={request.patchAfter ?? "Proposed"}
       contextHandle={request.patchContext} pluginId={request.pluginId} onReadWork={onReadWork} />}
     {request.sections?.filter((section) => section.collapsible).map((section, index) => <Section key={index} section={section} />)}
