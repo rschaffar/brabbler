@@ -4,7 +4,7 @@ import { capturePostflight, collectPostflight, postflightText, postflightReceipt
 import { gitText as git, gitOutput, gitEnvironment, records, outputDigest, run, withPreparationSignal } from "./process";
 import { spawn } from "node:child_process";
 import { gitReviewProposal, gitReviewSettlement } from "./review";
-import { gitCardExcerpt, gitCardField, gitCardSection, gitCardSectionLimit, type GitCardPresentation } from "./card-presentation";
+import { gitCardExcerpt, gitCardField, gitCardSectionLimit, requiredChecksSection, type GitCardPresentation } from "./card-presentation";
 import { GIT_REVIEW_FORMAT, type GitReviewProposal, type GitReviewResources } from "./review-data";
 import { assertGitReviewAvailable } from "./review-reader";
 import type { OperationReviewReference } from "../../lib/plugins/review-metadata";
@@ -251,7 +251,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
     args = ["worktree", "remove", physical];
   } else throw new Error("Unknown Git action");
   if (checks.length) {
-    sections.push(gitCardSection("Required checks", checks, check => ({ label: check.name, value: check.command, code: true }), options?.presentation));
+    sections.push(requiredChecksSection(checks, options?.presentation));
     notices.push("Checks are shell commands and may have side effects.", op.action === "commit"
       ? "Checks run in the selected checkout, including its current staged/unstaged contents; they do not certify a separately exported candidate tree."
       : "Checks run in the selected feature checkout before merging, not on a predicted merged result.");
@@ -266,7 +266,7 @@ async function preview(callerCwd: string, op: ReviewedGitOperation, policy: GitS
   return { fingerprint: digest(state), cwd, args, checks, comparison, postflight, resources,
     card: { title: { commit: "Git commit", rebase: "Git rebase", merge: "Git merge", createWorktree: "Create Git worktree", attachWorktree: "Attach Git worktree", removeWorktree: "Remove Git worktree" }[op.action],
       subtitle: "Approval required", fields: fields.map(gitCardField), sections,
-      scope: `Approves the entire ${op.action === "commit" ? "commit candidate" : "selected operation"}${checks.length ? " and the listed checks" : ""}${comparison ? ", not just an expanded file or displayed page" : ""}.`,
+      scope: `Approves the entire ${op.action === "commit" ? "commit candidate" : "selected operation"}${checks.length ? " and every required check in the exact review" : ""}${comparison ? ", not just an expanded file or displayed page" : ""}.`,
       actions: [{ id: "reject", label: "Reject" }, { id: "approve", primary: true,
         label: { commit: "Approve commit", rebase: "Approve rebase", merge: "Approve merge", createWorktree: "Create worktree", attachWorktree: "Attach worktree", removeWorktree: "Remove worktree" }[op.action] }] } };
 }

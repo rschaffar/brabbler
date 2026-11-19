@@ -1,4 +1,4 @@
-import type { PluginCardField, PluginCardSection } from "../../lib/plugins/types";
+import type { PluginCardField, PluginCardSection, RequiredCheck } from "../../lib/plugins/types";
 
 /** Application presentation configuration, never operation JSON or Git policy. */
 export interface GitCardPresentation { readonly sectionFieldLimit: number }
@@ -23,4 +23,8 @@ export function gitCardSection<T>(title: string, items: readonly T[], field: (it
   const limit = gitCardSectionLimit(presentation);
   return { title, fields: items.slice(0, limit).map(item => gitCardField(field(item))),
     ...(items.length > limit ? { text: `Showing ${limit} of ${items.length} items. The exact review contains every item.` } : {}) };
+}
+
+export function requiredChecksSection(checks: readonly RequiredCheck[], presentation?: GitCardPresentation): PluginCardSection {
+  return gitCardSection("Required checks", checks, check => ({ label: check.name, value: check.command, code: true }), presentation);
 }

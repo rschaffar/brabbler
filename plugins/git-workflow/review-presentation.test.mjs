@@ -3,7 +3,7 @@ import test from "node:test";
 import { createJiti } from "jiti";
 import { cleanupReviewSnapshot } from "./review-resources.fixture.mjs";
 const jiti = createJiti(import.meta.url, { fsCache: false });
-const { DEFAULT_GIT_CARD_PRESENTATION, gitCardSection } = await jiti.import("./card-presentation.ts");
+const { DEFAULT_GIT_CARD_PRESENTATION, requiredChecksSection } = await jiti.import("./card-presentation.ts");
 const { cleanupCard, browserDiscardCard } = await jiti.import("./resource-cards.ts");
 const { gitReviewProposal } = await jiti.import("./review.ts");
 
@@ -58,8 +58,8 @@ test("cleanup and browser discard do not format omitted artifact rows", () => {
 
 test("required-check presentation formats only displayed commands", () => {
   const checks = [{ name: "first", command: "x".repeat(100000) }, { name: "second", get command() { assert.fail("omitted check was formatted"); } }];
-  const section = gitCardSection("Required checks", checks, check => ({ label: check.name, value: check.command }), { sectionFieldLimit: 1 });
-  assert.deepEqual(section.fields, [{ label: "first", value: "x".repeat(2048) + "… [full value in exact review]" }]);
+  const section = requiredChecksSection(checks, { sectionFieldLimit: 1 });
+  assert.deepEqual(section.fields, [{ label: "first", value: "x".repeat(2048) + "… [full value in exact review]", code: true }]);
   assert.match(section.text, /Showing 1 of 2 items/);
 });
 

@@ -180,6 +180,7 @@ export const enLocale: LocalePlugin = {
     "pluginMatrix.presetBoundary": "Presets change workflow choices only—not operation permissions, checks, saved targets or methods. Ask means an ask_user question for every applicable choice; answers are not remembered. Presets never authorize remote actions or override stronger repository rules.",
     "pluginMatrix.presetExplicit": "Applying saves every listed choice explicitly in {scope}, including parent-equal values.",
     "pluginMatrix.applyPreset": "Apply workflow preset",
+    "operationReview.legacyUnsupported": "Legacy review format unsupported.",
     "gitSettings.group.workflow": "Workflow choices",
     "gitSettings.group.approvals": "Operation permissions",
     "gitSettings.group.browser": "Browser-only permission",

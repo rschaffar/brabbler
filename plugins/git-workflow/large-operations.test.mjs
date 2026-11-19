@@ -62,7 +62,9 @@ test("257 whole files and a long message preserve unrelated staging; many checks
   for (const name of files) writeFileSync(join(f.repo, name), name);
   writeFileSync(join(f.repo, "unrelated"), "keep staged"); git(f.repo, "add", "unrelated");
   const message = "Large exact message\n\n" + "m".repeat(70000);
-  updatePluginSettings(gitWorkflowManifest, "project", f.repo, { commitChecks: [{ name: "noisy", command: `${JSON.stringify(process.execPath)} -e 'process.stdout.write("x".repeat(3*1024*1024))'` }] }, []);
+  const checks = [{ name: "noisy", command: `${JSON.stringify(process.execPath)} -e 'process.stdout.write("x".repeat(3*1024*1024))'` },
+    { name: "beyond preview", command: "true", timeoutMs: 0 }];
+  updatePluginSettings(gitWorkflowManifest, "project", f.repo, { commitChecks: checks }, []);
   const stringify = JSON.stringify;
   let prettyOperationCopies = 0;
   // Exact metadata serialization remains required; detect the separate eager
@@ -71,19 +73,29 @@ test("257 whole files and a long message preserve unrelated staging; many checks
     if (space && value?.action === "commit" && value.message === message) prettyOperationCopies++;
     return stringify(value, replacer, space);
   });
-  try { success(await executeGitOperation(f.repo, { action: "commit", checkout: f.repo, mode: "files", files, message }, f.ui)); }
+  try {
+    success(await executeGitOperation(f.repo, { action: "commit", checkout: f.repo, mode: "files", files, message }, f.ui,
+      undefined, undefined, undefined, undefined, { presentation: { sectionFieldLimit: 1 } }));
+  }
   finally { observe.mock.restore(); }
   assert.equal(prettyOperationCopies, 0, "card construction must not pretty-print the full operation");
   const messageSection = f.receipts[0].card.sections.find(section => section.title === "Commit message");
   assert.equal(messageSection.text, message.slice(0, 8192) + "… [full value in exact review]");
   assert.equal(git(f.repo, "diff", "--cached", "--name-only"), "unrelated");
   assert.equal(git(f.repo, "show", "-s", "--format=%B"), message);
-  assert.equal(f.receipts.at(-1).checks[0].status, "passed");
+  const checkSection = f.receipts[0].card.sections.find(section => section.title === "Required checks");
+  assert.deepEqual(checkSection.fields.map(field => field.label), ["noisy"]);
+  assert.match(checkSection.text, /Showing 1 of 2 items/);
+  assert.match(f.receipts[0].card.scope, /every required check in the exact review/);
+  assert.deepEqual(f.receipts.at(-1).checks, [
+    { name: "noisy", status: "passed" }, { name: "beyond preview", status: "passed" },
+  ]);
   assert.equal((await reviewFiles(f.receipts[0].card.review)).total, 257);
   const metadata = reviewMetadata(f.receipts[0].card.review);
   assert.deepEqual(metadata.operation.files, files);
   assert.equal(metadata.operation.message, message);
-  assert.equal(metadata.checks[0].name, "noisy");
+  assert.deepEqual(structuredClone(metadata.checks), checks);
+  assert.deepEqual(metadata.nativeArgs, ["commit", "--no-gpg-sign", "--cleanup=verbatim", "--only"]);
   assert.equal(existsSync(join(root, "agent/brabbler/reviews")), false);
 });
 test("check deadlines terminate noisy processes, while ordinary successful output is only display-limited", async () => {

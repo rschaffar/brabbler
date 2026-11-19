@@ -135,13 +135,14 @@ export function ReviewAttachment({ review, sessionId, reviewBaseUrl, onReadWork 
   review: PluginReviewReference; sessionId?: string;
   reviewBaseUrl?: string; onReadWork?: Observe;
 }) {
+  const { t } = useI18n();
   const observer = useRef(onReadWork); observer.current = onReadWork;
   const observe = useCallback((work: Promise<void>) => observer.current?.(work), []);
   const url = reviewBaseUrl ?? `/api/sessions/${encodeURIComponent(sessionId ?? "")}/reviews/${encodeURIComponent(review.id)}`;
   return <section aria-label="Exact operation review" className="min-w-0 space-y-2 text-xs">
     <h3 className="blocking-card-section-title">Operation review</h3>
     <p>Approval covers the entire operation, not just this page.</p>
-    {review.version === 1 ? <p role="status">Legacy review format unsupported.</p>
+    {review.version === 1 ? <p role="status">{t("operationReview.legacyUnsupported")}</p>
       : sessionId || reviewBaseUrl ? <NativeReview key={url} url={url} observe={observe} /> : <p>Open the saved owner to read its review.</p>}
   </section>;
 }

@@ -60,7 +60,7 @@ export async function checkManagerDiscard(page, { base, fixture, manager, open, 
   const { repo, dirty, git, discard: f } = fixture;
   const surface = manager.getByRole("region", { name: "Removal review & outcome", exact: true });
   const status = text => surface.getByRole("status").filter({ hasText: new RegExp(`^${text}$`) });
-  const remove = () => surface.getByRole("button", { name: "Remove listed resources", exact: true });
+  const remove = () => surface.getByRole("button", { name: "Remove selected resources", exact: true });
   const loss = () => surface.getByRole("checkbox", { name: LOSS, exact: true });
   const getOperation = id => readBrowserJson(page, `${base}${ACTIONS}/${id}`);
   const branchTip = branch => git("for-each-ref", "--format=%(objectname)", `refs/heads/${branch}`);
@@ -106,7 +106,7 @@ export async function checkManagerDiscard(page, { base, fixture, manager, open, 
     await loss().focus();
     assert.equal(await loss().evaluate(node => node === document.activeElement), true);
     await loss().check();
-    await waitManagerButton(page, surface, "Remove listed resources");
+    await waitManagerButton(page, surface, "Remove selected resources");
     await remove().scrollIntoViewIfNeeded();
     const geometry = await remove().evaluate(node => {
       const bounds = node.getBoundingClientRect();
