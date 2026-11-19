@@ -47,9 +47,10 @@ Source inspected at local `main` `14d60757535e0ed78ff3753fda1372b0e4c47bbb`:
 ## Plan Relationship
 
 This plan owns committed-review rename presentation and paired-path reads only.
-The active [Git-backed reviews plan](../2026-10-31_git-backed-operation-reviews-plan.md) retains
-its converter, operational migration and old-state disposition work; this plan
-neither claims those complete nor changes their implementation. The
+At this checkpoint the [Git-backed reviews plan](2026-10-31_git-backed-operation-reviews-plan.md)
+retained its converter, operational migration and old-state disposition work; this
+plan did not complete or change those obligations. Its later archived closure
+records migration declined, repository-only tool retirement and retained data. The
 [Explorer fullscreen plan](../2026-10-13_git-explorer-fullscreen-plan.md) retains its
 layout/history queue.
 

@@ -1,11 +1,95 @@
-# Temporary Git operation review migration support
+# Git operation review converter retirement
+
+## Closure disposition — 2026-11-19
+
+The Git-backed producer, viewer/API and converter were delivered, independently
+reviewed and accepted at `61f1f60d7befd8cff60dfc0a597d0b863f50bd60`, integrated
+through `9e7f5d093daa72b6b6fbd212275a9e7e596fafe0`. The implementation plan's
+later P4 closure, not its stale index/checkpoint prose, records complete acceptance.
+
+The maintainer reports that new Git cards work and explicitly declines migration
+of old history. This is not independent installed-package verification or a claim
+that live conversion occurred. The recorded real-history cycle operated on a
+private copy and restored it. Unmigrated cards keep outcomes and unavailable legacy
+review placeholders. New operations need no converter.
+
+This repository-only change removes the temporary converter, legacy codec and
+migration-only fixtures, core bridge, export/fileset exception and guest execution/
+receipt wiring. It does not remove current metadata/reader/viewer tests or generic
+supplied-patch support. No live stores, backups or private evidence are deleted;
+no deployment, service operation or remote publication is included.
+
+| Obligation | Disposition / current owner |
+| --- | --- |
+| Implementation, independent review and original full acceptance | Delivered; archived plan preserves exact candidate/input evidence. |
+| Local source integration | Confirmed through merge `9e7f5d093daa`; this retirement uses its own verification and integration gates. |
+| Live old-history conversion and conversion-specific activation/card checks | Deliberately not pursued, not marked passed. No further migration task. |
+| Old-store, backup and private-evidence disposition | Retained; installation maintainer owns any future separately approved exact proposal under the migration guide. No pending deletion requirement. |
+| Temporary converter/tests | Retired from current source; historical reproduction recorded below. |
+| Current operation-review behavior | Maintained by the metadata and Git plugin guides; normal application acceptance remains required. |
+
+No successor spec/ticket is needed: migration is declined and repository retirement
+is this bounded change, not deferred work. The [historical migration guide](git-operation-review-migration.md)
+owns any future recovery request and explicit retention permissions.
+
+## Historical reproduction
+
+A clean detached worktree at `61f1f60d7befd8cff60dfc0a597d0b863f50bd60`, with its
+original lockfiles, reproduced the recorded tool/helper identity
+`bfcd74fc8dc85c4adf7f19aee9d9b0b249eda1420e8cc451ec5582939c618d10` on Linux
+with Node 24.21.0, SDK 1.4.0 and Git 2.55.0.
+
+`nix develop --no-update-lock-file --no-write-lock-file -c node --test
+--test-reporter=tap lib/plugins/git-operation-review-migration.test.mjs` passed
+**34/34** historical cases: four legacy codec, 29 converter and one import-boundary
+case. A separate synthetic session/standalone CLI cycle passed **11 steps** covering
+all five modes, pending check, wrong-confirmation refusal, target-format idempotence,
+repeated restore and resume-after-restore refusal. Exact original bytes and modes
+were restored. These are synthetic reproduction results, not live migration or
+current application acceptance.
+
+Initial offline preparation failed on an uncached shell prerequisite before any
+converter test ran. Normal configured Nix substitutions then prepared the unchanged
+source in **82 s**. Verification took **31 s**: the matrix **23.538 s**, direct CLI
+cycle **7 s**. The earlier failure is retained privately; no source fix is claimed.
+The historical checkout remained clean. Private commands, driver, TAP, runtime/
+source hashes and per-mode receipts are retained outside tracked repository files.
+The migration guide gives the reproducible historical entry point; do not copy
+current helpers into the frozen converter.
+
+## Retirement assertion dispositions
+
+Coordinates refer to immutable source `5e04c8f06aa419c2ed9b65cdf4634264cddab6c4`.
+Removal is intentional obsolescence, not a claim that current code still converts
+history. The complete original converter assertions remain in the historical source.
+
+| Original owner / inputs | Disposition and continuing proof |
+| --- | --- |
+| `tools/migrations/git-operation-reviews/*`, classified bridge and `nix/migration-cases.json` | Remove the old codec, converter/metadata-refusal and guest-only matrices with their feature. Historical `61f1f60d` reproduction above retains a runnable recovery path. Current Git reference/schema/provider/reader/native/SDK/viewer tests remain. |
+| `lib/nix-service.test.mjs:17–141` registry/plan/passed/failure fixtures | Remove only converter registry/proof/settlement/check/artifacts. Keep all five actual deployment checks and their original negative tuples; add rejection of retired migration fields/check/TAP against otherwise valid receipts. |
+| Same `:143–165,258–304,338–491` native artifact, environment, HTTP/PTY diagnostics and actual driver cases | Retain missing/changed/symlink/hardlink/root-alias refusal, private diagnostics and original errors, bounded HTTP/SSE, existing-channel boot-failure collection, safe journals despite unsafe helpers, guest hashing before copy and transfer corruption refusal. |
+| Same `:167–256,492–543` 29+3 guest titles, converter proof/TAP/identity and converter-unit settlement | Obsolete with the deleted guest converter process. No skips replace positive execution. Real Home Manager unit, native PTY, service generation, client uncertainty, authenticated cgroup/port settlement and outer owned-execution gates remain. |
+| Same `:306–336` deployment architecture | Replace converter source/modules/unit/closure presence with absence assertions. Retain restricted network/resources, no host mount/forwarding, real HM service, generic artifact validation before publication and execution/evidence cleanup gates. |
+| `nix/export-test-source.test.py:156–165` exact converter subtree and unrelated private tools inputs | Replace converter admission with exclusion/no-traversal sentinel. Keep sibling-tool exclusion and all other exporter identity/race/integrity/third-party allowlist cases. No `tools` subtree enters current test or application exports. |
+
+The service VM retains **five** genuine deployment proofs and **four** mandatory
+artifacts (journals, observations and fixture archive). Root-private staging,
+no-follow/special-file tree refusal, guest SHA-256 before transfer, host verification,
+independent safe diagnostic attempts and uncertain-settlement refusal remain.
+
+## Historical support snapshot
+
+The remainder preserves the removed README and its P3 assertion ledger from
+`5e04c8f06aa419c2ed9b65cdf4634264cddab6c4`. **Paths, commands and pending-gate
+wording below describe that historical source only**, not current tool availability
+or new work. The closure and maintained historical guide above govern current use.
 
 This temporary directory contains the explicit-root Linux/Node 24 offline CLI,
 isolated v1 codec and synthetic migration cases. It supports dry-run/check/apply/
 resume/restore, exact per-file backups/journal and private SDK/graph validation.
 It does not authorize live state conversion, repository admission or deletion.
-See [migration and recovery instructions](../../../docs/git-operation-review-migration.md)
-and the [active plan](../../../docs/plans/2026-10-31_git-backed-operation-reviews-plan.md).
+See [migration and recovery instructions](git-operation-review-migration.md)
+and the [archived plan](plans/archived/2026-10-31_git-backed-operation-reviews-plan.md).
 
 `legacyReviewStore(absoluteRoot)` requires an explicit root; it never calls SDK
 `getAgentDir` or searches global state. Its legacy writer exists only to generate

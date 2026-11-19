@@ -14,7 +14,6 @@ recorded scope and were not re-audited by that update.
 
 | Plan | Remaining scope |
 | --- | --- |
-| [Git-backed operation reviews](2026-10-31_git-backed-operation-reviews-plan.md) | Feature-branch metadata production and existing Git-backed viewer/API are independently reviewed, with focused native/mounted/installed-browser checks. Offline converter, real-data rehearsal and complete acceptance remain open; live migration, activation and old-state removal still require separate approval. |
 | [Account-aware catalogs with shared model settings](2026-10-31_account-catalog-refresh-plan.md) | Account-targeted catalog views/refresh, shared preferences/defaults and mutable model-state ownership. Application review and complete Nix acceptance passed; companion consuming input and local integrations remain pending. |
 | [Brabbler 0.1.0 public release](2026-10-28_public-release-plan.md) | Implementation authorized and in progress: portable default-on authentication, fixed modular SDK policy and prebuilt archive are checkpointed; ELK is retained with separate source materials and notices. Linux acceptance and approved history/main cutover are complete; native macOS verification and remote repository/settings/CI/publication remain pending. |
 | [Multi-provider accounts](2026-09-25_multi-provider-accounts-plan.md) | Account-scoped real OAuth/device completion, cancellation and provider refresh evidence, plus explicit isolation-review disposition; implementation is integrated. Synthetic browser authorization is not live-provider proof. |
@@ -25,6 +24,25 @@ recorded scope and were not re-audited by that update.
 Parked work outside main's plan queue, including broad MCP/OAuth/configuration
 work and notebook authoring-guidance packaging, is not completed by this sweep.
 Its existing worktrees/owners remain untouched.
+
+## Git-backed operation reviews closure (2026-11-19)
+
+The [Git-backed operation reviews plan](archived/2026-10-31_git-backed-operation-reviews-plan.md)
+is archived. Implementation, converter, independent review, private-copy rehearsal
+and complete acceptance were delivered at `61f1f60d7befd8cff60dfc0a597d0b863f50bd60`,
+integrated through `9e7f5d093daa72b6b6fbd212275a9e7e596fafe0`. The former active
+row incorrectly left converter/rehearsal/full acceptance open; the plan's later P4
+closure is the evidence owner.
+
+The maintainer reports new cards working and explicitly declines old-history
+migration. This is not a live-conversion or independent deployment claim.
+Repository-only converter retirement removes temporary tests/wiring, not current
+Git-backed reviews. The [retirement ledger](../git-operation-review-retirement.md)
+records historical reproduction, assertion dispositions and current closure owners.
+[Historical migration/retention instructions](../git-operation-review-migration.md)
+retain the tested revision and assign any future old-store/backup disposition to
+the installation maintainer; all data remains retained absent separate approval.
+No successor migration ticket, activation, publication or data deletion is implied.
 
 ## Completed-plan reconciliation (2026-11-18)
 

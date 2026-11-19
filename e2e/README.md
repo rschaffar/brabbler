@@ -98,7 +98,7 @@ history downloads full owned metadata after native resource removal, not a patch
 bundle. Selected context is released on file unmount; retained reselection steps
 join their actual context response/body before asserting exact counts. No timeout
 increase or aggregate archive fallback is used. The
-[temporary assertion ledger](../tools/migrations/git-operation-reviews/README.md)
+[retirement and assertion ledger](../docs/git-operation-review-retirement.md)
 records the protocol-specific dispositions. Focused greens are not full acceptance.
 
 The appearance `layout-native-v3@legacy-desktop` receipt retains the previous
@@ -434,13 +434,7 @@ Mandatory ordered proofs:
    same durable session/name through HTTP. The same fixture also pauses a native synthetic-provider question before restart, verifies durable paused state/no automatic continuation afterwards, and explicitly Resumes once with the saved question context.
 5. Exercise real HTTP PTY creation/SSE output, proving TTY, UID, cwd, dimensions and
    synthetic environment. Leave its shell running for the final shutdown proof.
-6. Run all 29 original offline-converter cases plus real empty-query conversion,
-   user-xattr refusal and POSIX-ACL refusal as `t0` on a private writable filesystem.
-   A separate test-only oneshot unit owns these children; no guest Nix builder or
-   syscall-filter relaxation is used. All 32 reviewed titles must execute without
-   skips, with exact source/modules/tool bindings and complete retained TAP. Its
-   fixed 240-second bound fits within the unchanged 600-second VM ceiling.
-7. Settle clients, stop the exact service and require inactive state, MainPID zero,
+6. Settle clients, stop the exact service and require inactive state, MainPID zero,
    authenticated empty/absent cgroups and refused TCP port. Preserve diagnostics
    independently after failures; collection is not inferred from a stop command.
 
@@ -458,15 +452,14 @@ verdict gates reject failed diagnostic capsules; Nix owns their build-tree dispo
 
 Deployment prints `/tmp/pwv-*`: `run.json`, realization/driver logs, driver link,
 plan/evidence, JUnit and `artifacts/guest/brabbler-evidence/` with `journal.log`,
-`service.log`, `observations.json`, `fixtures.tar.gz`, `migration.tap`,
-`migration.stderr.log` and `migration.json`. The exact receipt binds their
+`service.log`, `observations.json` and `fixtures.tar.gz`. The exact receipt binds their
 guest-stage SHA-256 hashes computed **before** transfer. Root-owned staging rejects
 symlinks/special/cross-device entries before the driver's host copy can follow them;
 a host-only synthetic sentinel exercises the guard. Host collection independently
-checks files/hashes. Migration evidence also requires every reviewed registered/completed case, actual
-ordinary-user probe/identity and independent empty/absent converter cgroup, in
-addition to the original production-service settlement. The host revalidates
-transferred TAP/report bindings, not just a guest success flag.
+checks files/hashes. The temporary converter and its guest-only execution/evidence
+contract are retired; all five production-service checks and independent service
+settlement remain. The [retirement ledger](../docs/git-operation-review-retirement.md)
+records removed and continuing assertions.
 Private helper reports, including bounded failed HTTP bodies
 and PTY transcripts, export separately under `artifacts/guest-helpers/`; an unsafe
 helper vetoes complete collection without preventing safe journal export.

@@ -30,8 +30,6 @@ ROOT_TREES = ('app', 'components', 'hooks', 'lib', 'plugins', 'public', 'e2e', '
 # Keep this exact legacy path compatible with older Acceptance profiles;
 # the retired local skill is no longer a default input. Other agent data stays excluded.
 MAINTAINED_TREE = ('.agents', 'skills', 'writing-plans')
-# Temporary offline codec/converter only; never admit unrelated tools/private data.
-MIGRATION_TREE = ('tools', 'migrations', 'git-operation-reviews')
 REQUIRED = frozenset({'flake.nix', 'flake.lock', 'package.json',
                       'package-lock.json', 'tsconfig.json'})
 SUFFIXES = frozenset({'.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json',
@@ -251,8 +249,6 @@ def snapshot(root_fd, destination_fd=None, expected=None):
             directory(root_fd, name, name, destination_fd)
         elif name == MAINTAINED_TREE[0]:
             directory(root_fd, name, name, destination_fd, MAINTAINED_TREE[1:])
-        elif name == MIGRATION_TREE[0]:
-            directory(root_fd, name, name, destination_fd, MIGRATION_TREE[1:])
         else:
             # Names only. Never traverse/stat/open excluded root contents.
             omissions.append(name)

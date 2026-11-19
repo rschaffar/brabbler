@@ -15,8 +15,10 @@ source-identical local control adding only those denials reproduces all 18 CI
 migration failures; the ordinary 34-case file passes. This is deterministic
 capability dependence, not timing flakiness.
 
-The active [Git-backed reviews plan](../2026-10-31_git-backed-operation-reviews-plan.md)
-still owns live conversion, activation, old-state disposition and tool retirement.
+At this checkpoint the [Git-backed reviews plan](2026-10-31_git-backed-operation-reviews-plan.md)
+owned live conversion, activation, old-state disposition and tool retirement. Its
+later archived closure records migration declined, repository-only retirement
+and retained old stores/backups; this acceptance record remains historical.
 This bounded follow-up owns only metadata diagnostics and acceptance placement.
 The [test guide](../../test-writing.md) owns assertion disposition; [Testing](../../testing.md)
 owns the three acceptance levels. No operational state is selected or authorized.

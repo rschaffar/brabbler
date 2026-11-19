@@ -1,5 +1,39 @@
 # Git-backed operation reviews
 
+## Archived closure — 2026-11-19
+
+Implementation, offline converter, independent review and complete acceptance were
+delivered at `61f1f60d7befd8cff60dfc0a597d0b863f50bd60`, integrated through
+`9e7f5d093daa72b6b6fbd212275a9e7e596fafe0`. The later P4 evidence below supersedes
+earlier implementation/checkpoint prose and the former stale plan-index row.
+Local ancestry confirms integration, not historical approval provenance or rollout.
+
+The maintainer reports that new Git cards work, accepts unavailable old diffs and
+explicitly declines live old-history migration. The real-history rehearsal ran on
+and restored a private copy; it is not live-conversion evidence. Temporary converter
+retirement is a separately authorized repository-only change, not a claim that the
+original conversion-before-removal sequence occurred.
+
+| Former P5 obligation | Closure disposition / current owner |
+| --- | --- |
+| Live roots, stopped writers, backups, conversion/check, activation and representative migrated-card verification | Deliberately not pursued; migration is no longer a requirement. No live execution or independent deployment verification is claimed. |
+| Old-store cleanup and backup disposition | Retained, not required for closure. The installation maintainer owns any future separately approved exact inventory/disposition under the historical migration guide. Private evidence is retained too. |
+| Reproducible tool revision and temporary-tool retirement | Exact historical revision and fresh synthetic reproduction are recorded in the retirement ledger; current converter/tests/wiring are retired. |
+| Durable contracts and unfinished-work ownership | Metadata/API, Git plugin, historical migration/retention guide and retirement ledger are the maintained owners. No deferred migration obligation or successor ticket is needed. |
+
+See [retirement and assertion dispositions](../../git-operation-review-retirement.md),
+[historical migration and retention](../../git-operation-review-migration.md),
+[current metadata/API](../../git-operation-review-metadata.md) and
+[Git plugin contracts](../../git-workflow-plugin.md). Repository retirement retains
+its own verification and exact local integration gates; no data deletion,
+service action, old feature-resource cleanup or remote publication is included.
+
+## Historical pre-integration checkpoint
+
+The original record below is retained as candidate-specific evidence. Its unchecked
+operational boxes and integration-pending wording are historical, not an active
+queue; the closure dispositions above govern current status.
+
 **Status:** Implementation authorized. P1 reader/metadata foundation is independently
 reviewed and core-verified. P2 host/producer integration now saves metadata and v2
 references instead of new patch bundles; focused host/SDK/native/standalone checks
@@ -51,14 +85,14 @@ a bare archive repository or a new cache service.
 
 - This plan owns the Git card review source, result/proposal presentation, offline
   conversion and retirement of the old review-store path.
-- [ADR 0018](../adr/0018-size-independent-git-reviews.md) currently requires
+- [ADR 0018](../../adr/0018-size-independent-git-reviews.md) currently requires
   repository-independent immutable patch bundles. Implementation must add a new
   ADR explicitly superseding that storage/availability choice. Preserve its
   separation of approval scope from display size and its streaming/large-input
   protections. Do not quietly contradict the accepted ADR through code alone.
-- Preserve [Git plugin](../git-workflow-plugin.md) execution/receipt contracts,
-  [session contracts](../session-internals.md), and
-  [worktree diff controls](../worktrees.md#full-file-diff-review).
+- Preserve [Git plugin](../../git-workflow-plugin.md) execution/receipt contracts,
+  [session contracts](../../session-internals.md), and
+  [worktree diff controls](../../worktrees.md#full-file-diff-review).
 - Preserve ADR 0016 receipt/policy separation, ADRs 0017/0019 cleanup safety, and
   ADRs 0021/0022 standalone hosting and loss acknowledgment. This is not a redesign
   of Git authorization, cleanup eligibility or conflict resolution.
@@ -66,8 +100,8 @@ a bare archive repository or a new cache service.
   plan reuses its diff components but does not take over that queue. The active
   core-test optimization plan owns deferred performance work, not this storage
   replacement. The public-release plan retains publication/platform gates.
-- [Testing](../testing.md), [test writing](../test-writing.md) and
-  [browser acceptance](../../e2e/README.md) own verification. A new test framework,
+- [Testing](../../testing.md), [test writing](../../test-writing.md) and
+  [browser acceptance](../../../e2e/README.md) own verification. A new test framework,
   extra baseline or development-server acceptance is not part of this work.
 
 ### Visible correction to the earlier approach
@@ -562,7 +596,7 @@ Two independent reviewers closed their findings after real SDK append/barrier fa
 nested resource validation and started-wrapper deferred-event repairs. Complete
 acceptance remains open.
 
-The [exported schema/API map](../git-operation-review-metadata.md) includes explicit
+The [exported schema/API map](../../git-operation-review-metadata.md) includes explicit
 unavailable legacy comparisons, offline-admitted provenance and lossless once-only
 legacy presentation details. P3 connects those exact owned records to the
 retained full viewer/API and isolates the legacy codec/test obligations under the
@@ -589,7 +623,7 @@ notebooks and the unchanged operation authority/effect safeguards remain.
 Legacy codec/tests live only under `tools/migrations/git-operation-reviews`, behind
 one classified bridge and exact export/test fileset admission. No application
 imports them; the realized package was checked for retired codec/context names.
-The [temporary support README](../../tools/migrations/git-operation-reviews/README.md)
+The [temporary support README](../../git-operation-review-retirement.md)
 records historical assertion/input dispositions. P3 itself did not implement the converter; the P4 checkpoint below describes its
 current scope. No live conversion is claimed. The Git ADR was renumbered to 0040 because main's SSH decision owns 0039.
 
@@ -736,7 +770,7 @@ inner core identity `b47bef68e95d0b514004183abb48a60c672ea0bebb8a7ad0cbbc385834b
 Immutable reports and source-bound timing/settlement evidence remain private.
 Subsequent evidence-only documentation edits do not claim a new full-matrix run.
 
-[Migration/recovery instructions](../git-operation-review-migration.md) own the CLI,
+[Migration/recovery instructions](../../git-operation-review-migration.md) own the CLI,
 permissions, unknown/unavailable semantics and limits. Record the actual tested
 tool-containing Git revision before retirement. The committed tool/helper identity
 matches the reviewed all-mode rehearsal. Independent source/safety re-review and
@@ -758,7 +792,7 @@ new permission.
   operation/interaction receipts and existing standalone JSON are reference owners.
   Paused waiting strings are inert. The converter needs the classified bridge and
   narrow export/fileset admission described below; those edits remain P3/P4.
-- [x] Add [ADR 0040](../adr/0040-git-backed-operation-reviews.md) and link it from
+- [x] Add [ADR 0040](../../adr/0040-git-backed-operation-reviews.md) and link it from
   the owning guide, explicitly distinguishing the initial foundation from the
   unchanged running archive. The remaining cutover must implement that decision.
 - [x] Prove the standalone native comparison reader with private repositories:
@@ -837,6 +871,9 @@ large-patch admission limits. Return for a bounded design decision if these fail
   Preserve earlier failures separately and retain exact input/settlement identities.
 
 ### P5 — Separately authorized operational handoff and retirement
+
+Historical checklist; each item is dispositioned in the archived closure above.
+Unperformed live work is not checked as passed.
 
 - [ ] Obtain approval for the exact live roots, stopped-writer window and backups;
   execute conversion/check, activate the new version through its normal deployment

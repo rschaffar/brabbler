@@ -1,11 +1,11 @@
 # Operation review metadata and read API
 
-**Checkpoint:** P2 persistence/producer safeguards are retained. P3 connects the
-registered read-only provider, session/standalone GETs and existing per-file viewer.
-Focused native/mounted checks pass; installed-browser verification and independent
-P3 review are recorded in the active plan. This is not complete acceptance,
-live conversion, deployment or an authorization to delete legacy state. The
-[offline converter](git-operation-review-migration.md) remains separate from runtime.
+New Git operation cards use saved metadata and Git-backed diffs through the
+registered session/standalone reader and existing per-file viewer. Independent
+review and complete original acceptance are recorded in the archived plan.
+The temporary converter is retired after the maintainer declined old-history
+migration; [historical instructions](git-operation-review-migration.md) retain its
+tested revision. This is not a live-conversion, deployment or deletion claim.
 
 ## Generic host boundary
 
@@ -191,14 +191,13 @@ patches/notebook storage are unchanged.
 
 Legacy/unknown formats retain cards and outcomes with an unavailable overview (200);
 materialization requests return unsupported (501). The UI's v1 placeholder performs
-no bundle request. The old codec/tests now live only under
-`tools/migrations/git-operation-reviews`, admitted to tests via one classified bridge,
-not application/package inputs. Its README records continuing assertion dispositions.
-The isolated converter implements unknown legacy outcome adaptation, exact graph/
-byte preservation and private rehearsal; its [guide](git-operation-review-migration.md)
-defines the supported contract and recovery boundaries. Independent P4 review and
-full acceptance remain separate. No facts are recovered from prose or current HEAD.
+no bundle request. The temporary codec/converter and migration-only tests have been removed from
+current source; no application or test export admits them. The
+[retirement ledger](git-operation-review-retirement.md) preserves continuing
+assertion dispositions. The [historical guide](git-operation-review-migration.md)
+names the tested converter revision, supported formats and recovery boundaries.
+No facts are recovered from prose or current HEAD.
 
-See [the plan](plans/2026-10-31_git-backed-operation-reviews-plan.md) and
+See [the archived plan](plans/archived/2026-10-31_git-backed-operation-reviews-plan.md) and
 [ADR 0040](adr/0040-git-backed-operation-reviews.md). Focused native/SDK/mounted tests
 are not full browser, deployment or migration acceptance.

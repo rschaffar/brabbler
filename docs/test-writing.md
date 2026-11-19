@@ -281,7 +281,7 @@ retire old tests or constitute full candidate acceptance.
   frames until unmount completes; then cancel queued frames before realm restore.
   Cold installed/native subjects, mobile/history and physical Download remain
   distinct. Mobile's before-image is desktop Allow1280, not baseline text. P3's
-  [assertion dispositions](../tools/migrations/git-operation-reviews/README.md)
+  [assertion dispositions](git-operation-review-retirement.md)
   record obsolete aggregate/TTL-specific assertions and continuing replacements.
 - The opt-in default-chat/navigation composition reuses ONE guarded Jiti graph,
   DOM, transport and complete existing default owners. Pass the actual navigation
