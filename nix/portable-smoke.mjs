@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createRequire } from 'node:module';
-import { mkdtempSync, mkdirSync, realpathSync, readFileSync, writeFileSync, statSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, readdirSync, readFileSync, writeFileSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -191,6 +191,9 @@ export async function main(args) {
     const app = join(work, 'application'); mkdirSync(app);
     await command('tar', ['-xzf', archive, '-C', app, '--strip-components=1'], env, work);
     for (const entry of ['.next/trace', '.next/trace-build', '.next/diagnostics', '.next/cache', '.next/dev']) assert.equal(existsSync(join(app, entry)), false, `No build-only artifact: ${entry}`);
+    assert.deepEqual(readdirSync(join(app, 'docs')), ['review-notebooks.md']);
+    assert.ok(readFileSync(join(app, 'docs/review-notebooks.md')).equals(readFileSync(new URL('../docs/review-notebooks.md', import.meta.url))), 'installed notebook guide matches the reviewed source');
+    report.checks.push('installed-notebook-guide');
     const sourceInfo = JSON.parse(readFileSync(join(app, 'public/third-party/SOURCE-AVAILABILITY.json'), 'utf8'));
     const sourceArchive = resolve(args[2]);
     verifyArchive(sourceArchive, sourceInfo.sha256, '.tar.gz');

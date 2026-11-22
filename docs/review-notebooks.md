@@ -206,7 +206,7 @@ approval; a coverage summary is not new execution evidence.
 ## Guided folders
 
 The guided reader uses the same immutable evidence readers as inline stops.
-It is a walkthrough, not a review-management system. The original
+It is a walkthrough, not a review-management system. In a Brabbler source checkout, the original
 [implementation record](plans/archived/2026-10-23_guided-review-notebooks-plan.md)
 records historical candidate-specific acceptance; the completed reader/authoring
 changes and their verification are recorded in the
@@ -350,7 +350,7 @@ document previews retain their existing defaults.
 Recording, answers, findings, frozen batches and JSON-reply import have been retired.
 Existing `review-data/` files and browser recovery keys remain untouched. No private
 feedback is copied into notebooks or chat. `/api/review-data` returns HTTP 410 for
-admitted GET/POST requests without opening saved data. See the
+admitted GET/POST requests without opening saved data. In a Brabbler source checkout, see the
 [manual recovery and retirement guide](notebook-recording-retirement.md) for retained
 locations, private export steps, historical formats and assertion dispositions.
 
@@ -401,6 +401,12 @@ Ordinary read/edit tools remain usable; native inspect/update/reference-refresh
 operations below need no browser pane or original conversation.
 
 ### Native inspect and step update
+
+In a fresh coding chat the agent sees `notebook_load`, not the three notebook
+operation schemas. For a guided notebook task, call it once with `{}`. Pi makes
+the available operations callable in place of the loader on the next model
+request and records the change in this conversation. The result points to sections of this installed
+guide; read only those needed. Loading neither opens a notebook nor grants access.
 
 - `notebook_inspect({ indexPath })` reads only the explicit `index.md` and declared
   chapters and returns a compact validated outline. It does not read assets, Git
