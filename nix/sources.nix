@@ -16,7 +16,8 @@ let
       builtins.match ".*\\.(test|fixture)\\.(mjs|cjs|js|jsx|ts|tsx|mts|cts)$" file.name == null
       && !(lib.hasPrefix ".env" file.name)
     ) (root + "/${name}")) [ "app" "components" "hooks" "lib" "plugins" "public" "bin" ]));
-  application = fileset.difference applicationFiles (paths [ "lib/testing" "public/mermaid-renderer" ]);
+  applicationCode = fileset.difference applicationFiles (paths [ "lib/testing" "public/mermaid-renderer" ]);
+  application = fileset.union applicationCode (paths [ "docs/review-notebooks.md" ]);
   tests = fileset.intersection
     (fileset.difference (fileset.fileFilter (file: !(lib.hasPrefix ".env" file.name)) root)
       (paths [ "public/mermaid-renderer" ]))
@@ -31,7 +32,7 @@ let
   # or the check implementation still change its derivation.
   # Preserve the full application tree, including file-based metadata routes and
   # assets Next may inspect during genuine type generation.
-  staticInputs = fileset.union application (fileset.intersection tests (fileset.fileFilter (file:
+  staticInputs = fileset.union applicationCode (fileset.intersection tests (fileset.fileFilter (file:
     builtins.match ".*\\.(cjs|mjs|js|jsx|ts|tsx|mts|cts|json|css)$" file.name != null
   ) root));
   # Node test entrypoints and their live scheduling policy are not TS inputs.

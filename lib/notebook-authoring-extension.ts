@@ -1,8 +1,13 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { Type } from "typebox";
+import { unified } from "unified";
+import remarkParse from "remark-parse";
 import { defineTool, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import { getAllowedFileRoots } from "./file-access";
 import { inspectNotebook, updateNotebookStep } from "./notebook-authoring";
-import { filterNotebookTools } from "./notebook-tool-policy";
+import { brabblerSourceLocation } from "./brabbler-source-extension";
+import { filterNotebookTools, NOTEBOOK_OPERATIONS } from "./notebook-tool-policy";
 import { analyzeNotebookReferences, applyNotebookReferences } from "./notebook-reference-refresh";
 
 type RefreshResult = Awaited<ReturnType<typeof analyzeNotebookReferences>> | Awaited<ReturnType<typeof applyNotebookReferences>>;
@@ -16,6 +21,25 @@ export const notebookBindingSchema = Type.Object({
   chapterPath: filePath(), chapterRevision: revision(), stepId: stableId(),
 }, { additionalProperties: false });
 const result = <T>(value: T) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }], details: value });
+
+// Return a small index into the installed guide, never its body or a file from the user's project.
+function notebookGuideIndex() {
+  const source = brabblerSourceLocation();
+  if (!source) return null;
+  const path = join(source.path, "docs", "review-notebooks.md");
+  const topics = new Set(["Choose references before authoring", "Write a source stop", "Write a commit stop", "Version 1 fields and limits", "Guided folders", "Versioned authoring contract", "Revise a notebook safely", "Native inspect and step update", "Refresh pinned references after rewritten history", "Contextual authoring example"]);
+  try {
+    const markdown = readFileSync(path, "utf8"), lines = markdown.split(/\r?\n/);
+    // Parse real headings so examples inside fenced Markdown never cut a section short.
+    const headings = unified().use(remarkParse).parse(markdown).children.flatMap(node => {
+      if (node.type !== "heading" || !node.position) return [];
+      const offset = node.position.start.line;
+      return [{ heading: lines[offset - 1].replace(/^#+\s+/, ""), offset }];
+    });
+    const sections = headings.map((h, i) => ({ ...h, limit: (headings[i + 1]?.offset ?? lines.length + 1) - h.offset }));
+    return { path, sections: sections.filter(s => topics.has(s.heading)) };
+  } catch { return null; }
+}
 
 /** Trusted host roots only. Authored paths, saved results and transcript links
  * never add roots. Kept injectable for real offline SDK/native-file fixtures. */
@@ -35,7 +59,20 @@ export function createNotebookAuthoringExtension(roots: () => Promise<Set<string
     pi.on("before_agent_start", prune);
     pi.on("session_shutdown", () => { retired = true; });
     pi.registerTool(defineTool({
-      name: "notebook_inspect", label: "Inspect notebook", exposure: "direct", annotations: { readOnlyHint: true },
+      name: "notebook_load", label: "Load notebook tools", exposure: "model-only", executionMode: "sequential",
+      description: "Load tools and a guide index for authoring, inspecting or updating Brabbler guided review notebooks.",
+      parameters: Type.Object({}, { additionalProperties: false }),
+      async execute(_id, _params, signal) {
+        assertGrant("notebook_load", false, signal);
+        // Exchange the hint for the operations. Pi records the change; a repeated
+        // call cannot bring back an operation withdrawn later in the conversation.
+        const active = pi.getActiveTools().filter(name => name !== "notebook_load");
+        pi.setActiveTools(filterNotebookTools([...new Set([...active, ...NOTEBOOK_OPERATIONS])]));
+        return result({ tools: pi.getActiveTools().filter(name => NOTEBOOK_OPERATIONS.includes(name)), guide: notebookGuideIndex() });
+      },
+    }));
+    pi.registerTool(defineTool({
+      name: "notebook_inspect", label: "Inspect notebook", exposure: "direct", defaultActive: false, annotations: { readOnlyHint: true },
       description: "Inspect a guided Markdown notebook's outline, or supply inventory for target definitions in 1–32-item/48-KiB complete-response pages (continue with its revision). Supply stepId instead for complete step source and edit binding. Reads only declared index/chapters, not assets, Git or saved records. Requires read; paths grant no access.",
       parameters: Type.Object({ indexPath: filePath(), stepId: Type.Optional(stableId()), inventory: Type.Optional(Type.Object({ ...pageFields, revision: Type.Optional(revision()) }, { additionalProperties: false })) }, { additionalProperties: false }),
       async execute(_id, params, signal) {
@@ -46,7 +83,7 @@ export function createNotebookAuthoringExtension(roots: () => Promise<Set<string
       },
     }));
     pi.registerTool(defineTool({
-      name: "notebook_refresh_references", label: "Refresh notebook references", exposure: "direct", executionMode: "sequential",
+      name: "notebook_refresh_references", label: "Refresh notebook references", exposure: "direct", defaultActive: false, executionMode: "sequential",
       description: "Analyze explicit checkout-scoped one-to-one full-OID maps for named targets or targetIds:'mapped' (discover only mapped Git targets in that checkout). Optional source destinations explicitly override path/range; no rename/correspondence guessing. Analyzes the whole selection (max 512) under unchanged Git budgets; returns summary, full-selection binding and 1–32-item/48-KiB complete-response report pages. Continue with report.binding; detail:'full' shows proposals/source previews, filter:'attention' shows exceptions. Apply explicit acceptedTargets with the same mappings/binding after prose review; report is analyze-only. Read required; apply also needs edit and fresh package/repository/evidence validation. Partial saves stop without rollback/replay. No Git mutations/tests; historical claims remain pinned.",
       parameters: Type.Object({
         mode: Type.Union([Type.Literal("analyze"), Type.Literal("apply")]), indexPath: filePath(),
@@ -73,7 +110,7 @@ export function createNotebookAuthoringExtension(roots: () => Promise<Set<string
       },
     }));
     pi.registerTool(defineTool({
-      name: "notebook_update_step", label: "Update notebook step", exposure: "direct", executionMode: "sequential",
+      name: "notebook_update_step", label: "Update notebook step", exposure: "direct", defaultActive: false, executionMode: "sequential",
       description: "Replace one inspected notebook step with complete Markdown, starting with its original brabbler-step ID and retaining a separator before its neighbor. Pass the exact binding from notebook_inspect. Refuses changed manifest/chapter, malformed fences or changed neighbors; preserves outside-step bytes. Requires active read AND edit, never commits or edits saved reviewer records. Reread after uncertain results before retrying.",
       parameters: Type.Object({ indexPath: filePath(), stepId: stableId(), binding: notebookBindingSchema, source: Type.String({ maxLength: 262144 }) }, { additionalProperties: false }),
       async execute(_id, params, signal) {

@@ -29,6 +29,7 @@
     "!.next/diagnostics",
     "!.next/**/*.js.map",
     "public",
+    "docs/review-notebooks.md",
     "app/**/*.ts",
     "app/**/*.tsx",
     "app/**/*.mjs",

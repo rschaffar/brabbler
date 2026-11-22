@@ -83,7 +83,7 @@ import { parseQuestionSet } from "./question-set";
 import { createSessionReferenceExtension } from "./session-reference-extension";
 import { createBrabblerSourceExtension } from "./brabbler-source-extension";
 import { createNotebookAuthoringExtension } from "./notebook-authoring-extension";
-import { filterNotebookTools } from "./notebook-tool-policy";
+import { filterNotebookTools, NOTEBOOK_OPERATIONS } from "./notebook-tool-policy";
 import { createLocalFileLinkGuidanceExtension } from "./local-file-link-guidance";
 import { bundledPluginExtensions } from "./plugins/registry";
 import { validatePluginCard } from "./plugins/ui";
@@ -276,14 +276,21 @@ class PlainTextTheme extends Theme {
 const PLAIN_TEXT_THEME = new PlainTextTheme();
 const CUSTOM_UI_KEYBINDINGS = new TuiKeybindingsManager(TUI_KEYBINDINGS);
 
-export function withExtensionTools(session: AgentSessionLike, toolNames: string[]): string[] {
+export function withExtensionTools(session: AgentSessionLike, toolNames: string[], fresh = false): string[] {
   if (toolNames.length === 0) return [];
 
   const codingToolNames = new Set(CODING_TOOL_NAMES);
   const selectedToolNames = resolveShellTools(toolNames, session.settingsManager.getDefaultTools());
+  const active = new Set(session.getActiveToolNames());
   const extensionToolNames = session.getAllTools().filter((t) => !["hidden", "deferred", "codemode"].includes(t.exposure ?? "")).map((t) => t.name)
-    .filter((name) => !codingToolNames.has(name));
-  return filterNotebookTools([...new Set([...selectedToolNames, ...extensionToolNames])]);
+    .filter(name => !codingToolNames.has(name));
+  // Start with the hint; otherwise retain Pi's loaded tools, not all registered schemas.
+  // Newly granted read/edit access makes the loader available without granting any operation.
+  const gainedAccess = ["read", "edit"].some(name => selectedToolNames.includes(name) && !active.has(name));
+  return filterNotebookTools([...new Set([...selectedToolNames, ...extensionToolNames])].filter(name => {
+    if (name === "notebook_load") return fresh || active.has(name) || gainedAccess;
+    return !NOTEBOOK_OPERATIONS.includes(name) || (!fresh && active.has(name));
+  }));
 }
 
 // ============================================================================
@@ -3550,7 +3557,7 @@ async function startRpcSessionInternal(
     // requested builtin coding tools PLUS all extension/package tools, so installed
     // extensions stay usable in Brabbler just like in the `pi` CLI.
     if (!subagentResources && !chatOnly) {
-      inner.setActiveToolsByName(withExtensionTools(inner, selectedToolNames ?? inner.getActiveToolNames()));
+      inner.setActiveToolsByName(withExtensionTools(inner, selectedToolNames ?? inner.getActiveToolNames(), !hasExistingMessages));
     }
 
     const exactSystemPrompt = subagentResources?.exactSystemPrompt !== undefined
