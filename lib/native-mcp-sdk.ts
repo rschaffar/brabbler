@@ -22,15 +22,15 @@ interface RuntimeSdk {
 }
 const nativeImport = (file: string) => import(/* webpackIgnore: true */ pathToFileURL(file).href);
 function distribution(): string {
-  // SDK 1.5.2 exposes neither its Pi-specific validator nor credential-store constructor.
+  // SDK 1.6.0 exposes neither its Pi-specific validator nor credential-store constructor.
   // Keep this version-scoped bridge separate from host policy and native engines.
   const manifest = findPackageJSON("@earendil-works/pi-coding-agent", pathToFileURL(join(__dirname, "brabbler-native-mcp.mjs")).href);
-  if (!manifest || JSON.parse(readFileSync(manifest, "utf8")).version !== "1.5.2") throw new Error("Unsupported native MCP SDK version");
+  if (!manifest || JSON.parse(readFileSync(manifest, "utf8")).version !== "1.6.0") throw new Error("Unsupported native MCP SDK version");
   return join(dirname(manifest), "dist");
 }
 function transportEntry(dist: string): string {
   const manifest = findPackageJSON("@earendil-works/pi-mcp", pathToFileURL(join(dist, "index.js")).href);
-  if (!manifest || JSON.parse(readFileSync(manifest, "utf8")).version !== "1.5.2") throw new Error("Unsupported native MCP transport version");
+  if (!manifest || JSON.parse(readFileSync(manifest, "utf8")).version !== "1.6.0") throw new Error("Unsupported native MCP transport version");
   return join(dirname(manifest), "dist/index.js");
 }
 let configuration: Promise<ConfigurationSdk> | undefined;

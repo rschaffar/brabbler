@@ -54,6 +54,71 @@ Subsequent changes only document these results, not a new application-suite run.
 No host-service activation, publication, native macOS or live-provider verification
 is claimed.
 
+## Pi SDK 1.6.0 checkpoint (2026-11-22; verified)
+
+The four direct Pi pins and all eight coordinated resolved packages move from
+**1.5.2 to 1.6.0**. Upstream pi-ai requires `@google/genai` **2.32.0** and `openai`
+**7.59.0**; the lock solver also moves `ws` to **8.23.0**. No other resolution,
+independent demo dependency, Node/toolchain, native PTY or application version
+changes. Existing TypeBox and streaming-only cache-warming policies stay.
+
+SDK 1.6.0 itself declares Undici **8.12.4**. The coding-agent-scoped override is
+therefore removed, following the 1.5.0 precedent; the direct pin and the runtime
+guard's exact 8.12.4 requirement remain.
+
+Nine of the twelve command-environment targets are byte-identical to 1.5.2. The
+exec, grep and find modules changed for unrelated reasons (signal exit codes,
+anchored find path patterns, schema wording). All recipes still apply unchanged;
+only their original/patched hashes move. The manifest, helper version/hash and
+complete **85-entry** standalone bundle digest are requalified from the published
+archive. Both private MCP guards move to exact 1.6.0; the bridged validator and
+runtime modules are byte-identical, and pi-mcp only adds `mcpServerSummary`.
+See [SDK installation policy](sdk-command-environment.md).
+
+No public SDK symbol used by Brabbler was removed. The removed
+`resolveModelScope` and `restoreModelFromSession` exports are unused here.
+Notable upstream behavior changes: `pi.exec()` reports `128 + signal` instead of
+0 for signal-ended commands, find path patterns are relative to the search
+directory, GPT-6.2 Sol becomes the default for the OpenAI/Azure/Codex providers,
+and extension `render()` output is read-only. The new
+`AgentSessionRuntime.takeUnreportedDiagnostics()` is not yet surfaced by
+Brabbler; that would be a separate feature. No credential, settings or session
+format migration is required.
+
+Two host adaptations follow upstream behavior changes, each with a regression
+that fails against the 1.5.2-era code:
+
+- The session speed adapter mirrors the native Codex simple adapter's new
+  thinking-Off effort (`none`). Otherwise models with mid-conversation effort
+  updates would lose 1.6.0's prompt-cache fix when thinking is toggled. See
+  [model speed](model-speed.md).
+- `getLastAssistantText()` now skips text-less failed or tool-only replies. A
+  resumed subagent's failed run could therefore report the previous run's answer.
+  Subagent results now read only the current run's entries. See
+  [session contracts](session-internals.md).
+
+Complete fresh Linux acceptance passed **544 core files / 4,915 tests / 14 suites**,
+all **26 browser/terminal groups / 61 receipts**, and the genuine Home Manager VM.
+`nix run --no-write-lock-file .#test -- all --workers 4 --jobs 4` ran in **524s**,
+including in-run realization. About 35–37 GiB RAM was available, below the 43 GiB
+estimate for twelve overlapping core workers, so four core workers (requested and
+effective) overlapped four browser sandboxes. Core took 518.5s; browser took 401.9s
+(74.6s support realization, 7.0s definition publication, about 320s group-client
+window); service took 72.5s. Overlapping envelopes are not additive. Focused
+SDK/subagent/speed checks ran earlier, so this is not a cold-cache benchmark.
+
+The full-run source content/mode SHA-256 is
+`dc006387e813daf3fded70ab5b5e1a8f7a950889267436e22012a670bef3cbab`; the
+production output is `9aiymapsx021bdh3vpbysrysgmmnm2wg-brabbler-0.1.0`.
+Afterwards, only review-driven documentation wording and a stricter
+configuration-update assertion in `lib/session-model-speed-runtime.test.mjs`
+changed; that file passed again (7 tests). Application bytes and the production
+derivation are unchanged. The exact archive passed ordinary Linux x86_64 /
+Node 24.22.2 container smoke in **19s**. Independent review confirmed the
+pins, fingerprints, lock scope and both host adaptations. Native macOS archive
+verification is again owner-deferred to publication. No live-provider
+certification is claimed.
+
 ## Pi SDK 1.5.2 checkpoint (2026-11-16; verified)
 
 The four direct Pi pins and all eight coordinated resolved packages move from

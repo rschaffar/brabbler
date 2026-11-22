@@ -71,13 +71,15 @@ export function withSessionModelSpeed(
       ? "priority" : "default";
     // Match the SDK's native simple adapter, while carrying tier into its pricing
     // resolver as a real full option. Payload injection alone loses that information.
-    const clamped = options.reasoning ? clampThinkingLevel(codexModel, options.reasoning) : undefined;
+    // SDK 1.6.0 sends Off as effort "none" on reasoning models, so models with
+    // configuration_update items keep their prompt cache when thinking is toggled.
+    const clamped = options.reasoning ? clampThinkingLevel(codexModel, options.reasoning) : "off";
     let reportedTier: string | undefined;
     let reportedModel = codexModel;
     const fullOptions: OpenAICodexResponsesOptions = {
       ...buildBaseOptions(codexModel, normalizeContext(context), options),
       toolChoice: options.toolChoice,
-      reasoningEffort: clamped === "off" ? undefined : clamped,
+      reasoningEffort: clamped !== "off" ? clamped : codexModel.reasoning ? "none" : undefined,
       serviceTier,
       onPayload: async (payload, requestModel) => {
         const replacement = await options.onPayload?.(payload, requestModel);

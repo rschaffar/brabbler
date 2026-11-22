@@ -126,6 +126,26 @@ function lastAssistantStop(sessionManager: { getEntries?: () => unknown }): { ab
   return undefined;
 }
 
+/**
+ * Final text of this run only. SDK 1.6's session-wide getLastAssistantText() skips
+ * text-less failed/tool-only replies, which would let a resumed child's failed run
+ * report the previous run's answer. Apply the same rule to entries from this run.
+ */
+function runAssistantText(sessionManager: { getEntries?: () => unknown }, runStart: number): string | undefined {
+  const entries = sessionManager.getEntries?.();
+  if (!Array.isArray(entries)) return undefined;
+  for (let i = entries.length - 1; i >= runStart; i -= 1) {
+    const entry = entries[i] as { type?: unknown; message?: { role?: unknown; stopReason?: unknown; content?: unknown } };
+    if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
+    const text = Array.isArray(entry.message.content)
+      ? entry.message.content.map((part: { type?: unknown; text?: unknown }) => part?.type === "text" && typeof part.text === "string" ? part.text : "").join("").trim()
+      : "";
+    if (entry.message.stopReason !== "stop" && !text) continue;
+    return text || undefined;
+  }
+  return undefined;
+}
+
 function getSubagentRuns(): Map<string, StoredSubagentExecution> {
   if (!globalThis.__piSubagentRuns) globalThis.__piSubagentRuns = new Map();
   return globalThis.__piSubagentRuns;
@@ -274,6 +294,7 @@ export function createSubagentController(
       if (stored.abortRequested || wrapper.isPauseRequested?.()) return stopped();
       let limiter: ReturnType<typeof installSubagentTurnLimit> | undefined;
       let result: SubagentRunInfo;
+      const runStart = (() => { const entries = manager.getEntries?.(); return Array.isArray(entries) ? entries.length : 0; })();
       try {
         if (queueError) throw queueError;
         assertSubagentDirectory(wrapper.cwd);
@@ -285,14 +306,14 @@ export function createSubagentController(
         const releaseAdmission = wrapper.beginCheckoutPromptAdmission();
         try { await wrapper.inner.prompt(task, { source: "rpc", preflightResult: () => releaseAdmission() }); }
         finally { releaseAdmission(); }
-        const text = wrapper.inner.getLastAssistantText()?.trim();
+        const text = runAssistantText(manager, runStart);
         const stop = stored.abortRequested ? undefined : lastAssistantStop(manager);
         const aborted = stored.abortRequested || stop?.aborted === true;
         const error = aborted ? undefined : stop?.error ?? limiter.error();
         result = { ...initialRun, status: aborted ? "aborted" : error ? "failed" : "completed", completedAt: new Date().toISOString(),
           ...(text ? { result: text } : {}), ...(error ? { error } : {}) };
       } catch (error) {
-        const text = wrapper.inner.getLastAssistantText()?.trim();
+        const text = runAssistantText(manager, runStart);
         const aborted = stored.abortRequested;
         result = { ...initialRun, status: aborted ? "aborted" : "failed", completedAt: new Date().toISOString(),
           ...(text ? { result: text } : {}), ...(!aborted ? { error: error instanceof Error ? error.message : String(error) } : {}) };

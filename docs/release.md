@@ -9,7 +9,7 @@ this is not an upstream release.
 - Repository selected by the owner: `https://github.com/rschaffar/brabbler`.
   Selection/local remote configuration does not create or remotely verify it.
 - Initial Brabbler version: **0.1.0**; Pi SDK compatibility is recorded separately
-  as **1.5.2**, including the guarded downstream policies below.
+  as **1.6.0**, including the guarded downstream policies below.
 - The root manifest remains `private: true`. No npm registry publication or
   package-name ownership is assumed. There is no automatic update query,
   release-upload job or demo deployment.
@@ -90,9 +90,9 @@ need separate review/authorization.
 ## Guarded SDK installation
 
 The modular SDK retains the existing exact-byte child-environment patch.
-The application pins modular Undici **8.12.4**. A parent/version-scoped override
-also updates SDK 1.5.2's declared 8.12.3 dependency for the newer security fixes.
-The 1.5.2 manifest, twelve child-environment targets/helper and complete 85-entry
+The application pins modular Undici **8.12.4**, which SDK 1.6.0 now also declares;
+the earlier downstream override is no longer needed.
+The 1.6.0 manifest, twelve child-environment targets/helper and complete 85-entry
 standalone inventory are fingerprinted from actual upstream bytes. The
 owner-approved exclusion of the standalone `dist/bundle/` tree and its own `pi` CLI link remains the support
 boundary for Brabbler-owned installations, with a refreshed exact inventory. It is
@@ -109,6 +109,22 @@ Startup checks the policy read-only; it never removes or repairs dependencies.
 See [dependency dispositions](dependencies.md) for scope and remaining obligations.
 
 ## Current evidence and release gates
+
+The November 22 Pi 1.6.0 upgrade passed complete fresh Linux acceptance:
+**544 core files / 4,915 tests / 14 suites**, **26 browser/terminal groups / 61
+receipts**, and the genuine Home Manager VM in **524s**, including realization.
+The exact archive passed ordinary Linux x86_64 / Node 24.22.2 container smoke in
+**19s**, including installation/SDK policy, auth/restart/rotation, HTTP PTY and
+source/notices. [Dependency maintenance](dependencies.md) records phase timings
+and compatibility limits.
+
+Application SHA-256:
+`3c7f32bcd4e3c19bfdaea1f3b5a49737ebae1bb525e8a984c2ea4dd9a0779429`.
+Accompanying source SHA-256 (unchanged):
+`d7213b6a8a2be8c8ca196180c4e50067c8472b035276d4a13e5ac48ee56a381d`.
+The owner again explicitly deferred native macOS archive verification until
+publication; it remains mandatory before publication. No remote CI dispatch,
+publication or installed-service activation occurred.
 
 The November 16 Pi 1.5.2 upgrade passed complete fresh Linux acceptance:
 **534 core files / 4,669 tests / 14 suites**, **26 browser/terminal groups / 61

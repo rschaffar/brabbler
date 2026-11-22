@@ -44,7 +44,7 @@ Pi CLI does not implement this Brabbler metadata.
 
 ## SDK compatibility and accounting
 
-`lib/session-model-speed-runtime.ts` adapts the pinned Pi SDK **1.5.2**. Only
+`lib/session-model-speed-runtime.ts` adapts the pinned Pi SDK **1.6.0**. Only
 matching session chat streams on the native `openai-codex` /
 `openai-codex-responses` path use Standard → `default` or Fast → `priority`.
 The request must carry both the owning agent's current run signal and payload
@@ -63,6 +63,10 @@ helpers, preserving authentication, header transforms and existing callbacks.
 Payload-only injection is insufficient: native tier cost resolution also needs
 the full option. A payload hook that changes/deletes the tier fails before sending
 instead of silently mismatching request intent and accounting.
+The forwarded reasoning effort must match the native simple adapter exactly. Since
+SDK 1.6.0 it sends thinking Off as effort `none` on reasoning models. Models with
+`compat.supportsMidConvoEffort` that map Off to an effort carry it as a
+cache-preserving `configuration_update` item. A body-parity regression compares both paths.
 
 Native SDK priority accounting includes its Codex `default`-echo handling. Its
 legacy Codex adapter does not price a response explicitly reporting `fast`, so the
