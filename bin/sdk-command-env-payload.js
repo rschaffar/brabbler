@@ -1,16 +1,16 @@
 "use strict";
-/* Generated from public SDK 1.5.2 dist bytes; no SDK source vendoring. */
+/* Generated from public SDK 1.6.0 dist bytes; no SDK source vendoring. */
 module.exports = {
   "schemaVersion": 1,
-  "patchId": "brabbler-sdk-command-env-1.5.2-v2",
+  "patchId": "brabbler-sdk-command-env-1.6.0-v2",
   "packageName": "@earendil-works/pi-coding-agent",
-  "packageVersion": "1.5.2",
-  "packageJsonSha256": "18b422b7d80f2caa2551d253c0a8409e1caa54b954bfb7d18252e507bb8a0318",
+  "packageVersion": "1.6.0",
+  "packageJsonSha256": "ea92c5541390fa391ed7157f153a44e931b4aef52f811ebf25cfb0bbafcdb9bb",
   "scope": "Twelve pinned modular SDK targets, including clipboard/browser helpers and RpcClient launch; excludes interactive-UI-only direct spawns, CLI/RPC bundles and arbitrary extension Node.js.",
   "helper": {
     "path": "dist/utils/brabbler-command-env.js",
-    "content": "/** Brabbler child-command environment policy, pinned to SDK 1.5.2.\n * Install-time downstream patch; never imported from the application runtime.\n * This is hygiene, not an extension sandbox. Filter only the final child copy:\n * explicit empty environments stay empty, and SSH/account/session values survive.\n */\nexport function sdkCommandEnvironment(source = process.env, platform = process.platform) {\n    const environment = { ...source };\n    for (const key of Object.keys(environment)) {\n        const name = platform === \"win32\" ? key.toUpperCase() : key;\n        if (name === \"BRABBLER_PASSWORD\" || name === \"BRABBLER_SSH_RUNTIME\") delete environment[key];\n    }\n    return environment;\n}\n",
-    "sha256": "bd92c41da81f2af9e70fabe55aaf5c35661bfc26868d4878283c2e68c016fb52"
+    "content": "/** Brabbler child-command environment policy, pinned to SDK 1.6.0.\n * Install-time downstream patch; never imported from the application runtime.\n * This is hygiene, not an extension sandbox. Filter only the final child copy:\n * explicit empty environments stay empty, and SSH/account/session values survive.\n */\nexport function sdkCommandEnvironment(source = process.env, platform = process.platform) {\n    const environment = { ...source };\n    for (const key of Object.keys(environment)) {\n        const name = platform === \"win32\" ? key.toUpperCase() : key;\n        if (name === \"BRABBLER_PASSWORD\" || name === \"BRABBLER_SSH_RUNTIME\") delete environment[key];\n    }\n    return environment;\n}\n",
+    "sha256": "b6d409897699c8a2a31e29e9a780583d7378d7a4f0b6c167ab698aeb4f828646"
   },
   "files": [
     {
@@ -34,8 +34,8 @@ module.exports = {
     },
     {
       "path": "dist/core/exec.js",
-      "originalSha256": "b9858de5bf26a6fcf90039218f831de3ebf8bfdf4fc027d3c56be190fb0ae1e7",
-      "patchedSha256": "fed60d1eb1e60a700ded379ecacdb32ea0697632fd8fe99f0d538f391e20dcda",
+      "originalSha256": "7301c1656cc47bcadc9211c757cec2268940d9f250e51e50935795835469646b",
+      "patchedSha256": "c5155e437160339e801adbf3c1d0aa2739413f9b2730686607d5b1b3fc8728d4",
       "replacements": [
         {
           "before": "import { spawn } from \"node:child_process\";\n",
@@ -83,8 +83,8 @@ module.exports = {
     },
     {
       "path": "dist/core/tools/grep.js",
-      "originalSha256": "9f05f9b18d4edf7675395fdfaeba2050dff8e43b1e45922096c185a64a73118e",
-      "patchedSha256": "f6fef48daf742549a88a34a27d6d5a496717e8b60f50d5a736ff96a443121e29",
+      "originalSha256": "99187a58f9aeae86c70889f7beeb0e8a516d831c87fe7068def84dc068ead922",
+      "patchedSha256": "5411a6a7f92c264d423dee0379525fc5b7f6fa4bd30ea235c0d59a636b20e138",
       "replacements": [
         {
           "before": "import { spawn } from \"child_process\";\n",
@@ -98,8 +98,8 @@ module.exports = {
     },
     {
       "path": "dist/core/tools/find.js",
-      "originalSha256": "f0f0e41ca6f97b29cc7284489d3902f324e9058005ee5f66c6e38a62bc49774d",
-      "patchedSha256": "8f7874041d5165583f2e09b961df38c4fa5967a89b2972b0e54052c67137cf10",
+      "originalSha256": "97dd507d15d0cb6b789ff1edfa792a672213015af3ebf56b9e7cc6fc39571190",
+      "patchedSha256": "b235ffb6956a16969114c91545609f6bdc44d4943de3a740e920bf5403271b11",
       "replacements": [
         {
           "before": "import { spawn } from \"child_process\";\n",
