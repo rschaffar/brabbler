@@ -517,7 +517,7 @@ not model-context messages or replayable tool calls. No history is backfilled.
 Unfinished stages say **outcome unknown**; an executing-intent marker does not prove
 an effect started or completed. A failed terminal write is reported in the tool
 result without pretending the Git mutation was rolled back. Native partial effects
-and check failures remain explicit. SDK HTML export does not render these cards.
+and check failures remain explicit.
 
 ### Durable review metadata
 

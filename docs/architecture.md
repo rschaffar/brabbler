@@ -42,7 +42,6 @@ app/api/
   scratchpad/route.ts              GET/PUT Global/Project notes; selected-project resolution and legacy session compatibility
   activity/review/route.ts         POST acknowledge/import settled completions
   sessions/[id]/context/route.ts  GET ?leafId= — context for a specific leaf
-  sessions/[id]/export/route.ts   GET exported HTML for a session
   agent/new/route.ts              POST { cwd, message, toolNames?, provider?, modelId? }
   agent/[id]/route.ts             GET state | POST any command
   agent/[id]/events/route.ts      GET SSE stream

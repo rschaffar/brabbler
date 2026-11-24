@@ -533,15 +533,6 @@ export function AppShell() {
     setTerminalTabs((tabs) => tabs.map((tab) => tab.id === tabId && !tab.closing ? { ...tab, closing: "close" } : tab));
   }, []);
 
-  const handleViewFullHistory = useCallback(() => {
-    if (!selectedSession) return;
-    window.open(
-      `/api/sessions/${encodeURIComponent(selectedSession.id)}/export?inline=1`,
-      "_blank",
-      "noopener,noreferrer",
-    );
-  }, [selectedSession]);
-
   // A sidebar checkout selection must never retarget a chat action detail.
   const historyOnly = isHistoryOnlySession(selectedSession);
   const projectTrustCwd = historyOnly ? null : selectedSession?.cwd ?? effectiveNewSessionCwd;
@@ -714,7 +705,7 @@ export function AppShell() {
   const renderChatToolbarActions = (mobile: boolean) => (
     <SessionToolbarActions mobile={mobile} showChat={showChat} selectedSession={selectedSession}
       setPluginSettingsSession={setPluginSettingsSession} setSettingsSection={setSettingsSection}
-      handleViewFullHistory={handleViewFullHistory} sessionStats={sessionStats}
+      sessionStats={sessionStats}
       autoNameStatus={autoNameStatus} handleAutoName={handleAutoName}
       hasSubagentSessions={hasSubagentSessions} agentsButtonLabel={agentsButtonLabel} agentsBadge={agentsBadge}
       activeTopPanel={activeTopPanel} toggleTopPanel={toggleTopPanel} sessionHasBranches={sessionHasBranches}

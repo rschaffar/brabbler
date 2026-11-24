@@ -45,7 +45,7 @@ differ from their originals:
 | File | Why |
 | --- | --- |
 | `app/layout.tsx`, `app/page.tsx`, `app/DemoRoot.tsx` | Load the mock, no service worker or manifest |
-| `components/AppShell.tsx` | Open the README preview by default, base-path-safe `router.replace`, in-browser "Full history" |
+| `components/AppShell.tsx` | Open the README preview by default, base-path-safe `router.replace` |
 | `components/SettingsPanel.tsx`, `lib/i18n/messages/en.ts` | Resource/Built-in features notices and current labels instead of obsolete Skills/Plugins controls |
 | `components/ChatWindow.tsx`, `FileIcons.tsx`, `ProviderIcon.tsx` | Prefix static assets with the Pages base path |
 | `components/FileViewer.tsx`, `FileExplorer.tsx`, `MarkdownBody.tsx` | Load images, media and downloads from the static snapshot |
