@@ -231,12 +231,13 @@ async function prepare(input: ContextInput, importNative = true) {
       if (destination) snapshots.set(scope, readScopedPreferences(context.selection, destination));
     }
     context.assertAdmissionCurrent();
-    const revisions = Object.freeze([...snapshots].map(([scope, snapshot]) => Object.freeze({ scope, revision: snapshot.revision })));
+    // Edit revisions fence stale writes, even after a store-wide compaction.
+    // An applied selection depends on these scopes' choices, not edit counters.
+    const revision = hash([token, [...snapshots].map(([scope, snapshot]) => [scope, snapshot.choices])]);
     // Choices cannot change native membership or its captured hard ceilings.
     // Project them without another discovery; keep the independent fresh guard.
     const catalog = withResourceChoices(first, choices); await guard();
-    return Object.freeze({ context: context.selection, cwd: context.cwd, catalog,
-      revision: hash([token, revisions]), revisions, assertCurrent: guard });
+    return Object.freeze({ context: context.selection, cwd: context.cwd, catalog, revision, assertCurrent: guard });
   };
   const inventory = async () => {
     const { catalog, revision } = await selectionSnapshot();
