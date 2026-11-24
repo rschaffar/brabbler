@@ -26,7 +26,7 @@ type ToolbarProps = Pick<StatsProps, "mobile" | "showChat" | "sessionStats" | "a
   systemInfoControls?: React.ReactNode;
   setPluginSettingsSession: (session: { id: string; cwd: string }) => void;
   setSettingsSection: (section: "plugins") => void;
-  handleViewFullHistory: () => void; handleAutoName: () => void | Promise<void>;
+  handleAutoName: () => void | Promise<void>;
   autoNameStatus: { kind: "idle" | "naming" | "success" } | { kind: "error"; message: string };
   hasSubagentSessions: boolean; agentsButtonLabel: string; agentsBadge: { running: boolean; count: number };
   sessionHasBranches: boolean; branchTree: SessionTreeNode[]; branchActiveLeafId: string | null;
@@ -35,7 +35,7 @@ type ToolbarProps = Pick<StatsProps, "mobile" | "showChat" | "sessionStats" | "a
   handleSystemInfoToggle: (panel: "system" | "tools") => void;
   systemPrompt: string | null; systemTools: ToolEntry[] | null;
 };
-export function SessionToolbarActions({ autoNameControl, systemInfoControls, mobile, showChat, selectedSession, setPluginSettingsSession, setSettingsSection, handleViewFullHistory, sessionStats, autoNameStatus, handleAutoName, hasSubagentSessions, agentsButtonLabel, agentsBadge, activeTopPanel, toggleTopPanel, sessionHasBranches, branchTree, branchActiveLeafId, handleBranchLeafChange, topBarRef, systemBtnRef, handleSystemInfoToggle, systemPrompt, systemTools, translate }: ToolbarProps) {
+export function SessionToolbarActions({ autoNameControl, systemInfoControls, mobile, showChat, selectedSession, setPluginSettingsSession, setSettingsSection, sessionStats, autoNameStatus, handleAutoName, hasSubagentSessions, agentsButtonLabel, agentsBadge, activeTopPanel, toggleTopPanel, sessionHasBranches, branchTree, branchActiveLeafId, handleBranchLeafChange, topBarRef, systemBtnRef, handleSystemInfoToggle, systemPrompt, systemTools, translate }: ToolbarProps) {
     if (!mobile && !showChat) return null;
     return (
       <div style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
@@ -50,66 +50,6 @@ export function SessionToolbarActions({ autoNameControl, systemInfoControls, mob
           style={{ width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined }}>
           <SettingsSectionIcon section="plugins" />
           {!mobile && <span>{translate("common.plugins")}</span>}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            handleViewFullHistory();
-          }}
-          disabled={!selectedSession}
-          title={selectedSession ? translate("history.full") : translate("history.unsaved")}
-          aria-label={translate("history.full")}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6,
-            width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
-            height: "100%",
-            padding: mobile ? 0 : "0 12px",
-            background: "none",
-            border: "none",
-            borderTop: "2px solid transparent",
-            borderRight: "1px solid var(--border)",
-            color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
-            cursor: selectedSession ? "pointer" : "not-allowed",
-            opacity: selectedSession ? 1 : 0.45,
-            flexShrink: 0,
-            fontSize: 11,
-            whiteSpace: "nowrap",
-            transition: "color 0.1s, background 0.1s, opacity 0.1s",
-          }}
-          onMouseEnter={(event) => {
-            if (!selectedSession) return;
-            event.currentTarget.style.color = "var(--text)";
-            event.currentTarget.style.background = "var(--bg-hover)";
-          }}
-          onMouseLeave={(event) => {
-            event.currentTarget.style.color = selectedSession ? "var(--text-muted)" : "var(--text-dim)";
-            event.currentTarget.style.background = "none";
-          }}
-          data-mobile-toolbar-action={mobile ? "history" : undefined}
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{
-              color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
-              flexShrink: 0,
-            }}
-            aria-hidden="true"
-          >
-            <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-            <path d="M3 3v5h5" />
-            <path d="M12 7v5l3 2" />
-          </svg>
-          {!mobile && <span>{translate("history.label")}</span>}
         </button>
         {autoNameControl ?? <SessionAutoNameButton selectedSession={selectedSession} sessionStats={sessionStats}
           autoNameStatus={autoNameStatus} handleAutoName={() => Promise.resolve(handleAutoName())} mobile={mobile} />}

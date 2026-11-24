@@ -266,11 +266,6 @@
       "estimatedMs": 1000
     },
     {
-      "path": "app/api/sessions/[id]/export/route.test.mjs",
-      "lane": "N",
-      "reason": "Reviewed route bodies and helpers: private FS/Git/SDK-session fixtures or controlled runtime doubles; no model startup, 5-second payload check or shared listener. Preserve internal races and existing command budgets."
-    },
-    {
       "path": "app/api/sessions/bulk-move.test.mjs",
       "lane": "N",
       "reason": "Reviewed single serial case with private Git repositories, worktrees, agent storage and synthetic SDK session files; in-process routes, fake wrapper registries and refusal probes stay process-local. Git effects are awaited, cleanup targets only the owned root; no server, model request, shared-source write or host-service access."

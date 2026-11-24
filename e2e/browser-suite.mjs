@@ -1026,7 +1026,7 @@ let nativeToolsFixture;
       continue;
     }
     if (group === "history") {
-    await coverage.run(`history/${inputId === "legacy-desktop" ? "reading-branch-native-v8" : "reading-version-lower-v7"}@${inputId}`, async () => {
+    await coverage.run(`history/${inputId === "legacy-desktop" ? "reading-branch-native-v9" : "reading-version-lower-v8"}@${inputId}`, async () => {
     const finishHistoryStage = stage.start(`history/${inputId}/chain`);
     // Interception needs its own SW-blocked context. The original history/PWA
     // context below stays unchanged, and reload cannot alter its reading state.
@@ -1401,6 +1401,16 @@ let nativeToolsFixture;
 
     await page.goto(`${base}/?session=${BRANCH}`, { waitUntil: "domcontentloaded" });
     await page.getByText("Active branch answer", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Session built-in features", exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "Full history", exact: true }).count(), 0);
+    if (inputId === "legacy-desktop") {
+      const retiredExport = await page.request.get(`${base}/api/sessions/${BRANCH}/export?inline=1`, { maxRedirects: 0 });
+      try {
+        assert.equal(retiredExport.status(), 404, "the saved session's old HTML export URL is gone");
+      } finally {
+        await retiredExport.dispose();
+      }
+    }
     if (viewport.width <= 600) {
       await page.locator('.mobile-session-title').getByText("Branch root", { exact: true }).waitFor();
     }

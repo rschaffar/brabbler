@@ -20,7 +20,7 @@ This is my personal project, shaped around the way I work. It started from [Pi W
 
 ## Features
 
-- **Conversations in context.** Browse and resume sessions grouped by project, search history, star useful chats, archive old work, and export conversations. Fork into a new session or branch within an existing one.
+- **Conversations in context.** Browse and resume sessions grouped by project, search history, star useful chats, and archive old work. Fork into a new session or branch within an existing one.
 - **An overview of agent work.** See sessions that need input, are working, or are ready to review. Built-in subagents can handle focused tasks, with inspectable sessions and results. Their feature switch is off by default.
 - **Project files beside the chat.** Browse files, preview source and documents, edit writable text files, and inspect changes without leaving the workspace.
 - **Git history you can explore.** Switch between project worktrees and browse local branches, commit graphs, and split or unified diffs. The optional Git Workflow plugin is separate and disabled by default.

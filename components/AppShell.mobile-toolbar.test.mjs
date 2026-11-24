@@ -12,27 +12,27 @@ function inputs() {
   return { mobile: true, showChat: true, selectedSession: session, sessionStats: null, autoNameStatus: { kind: 'idle' },
     hasSubagentSessions: true, agentsButtonLabel: 'Agents', agentsBadge: { running: false, count: 2 }, activeTopPanel: null,
     sessionHasBranches: true, branchTree: [], branchActiveLeafId: null, topBarRef: createRef(), systemBtnRef: createRef(),
-    setPluginSettingsSession() {}, setSettingsSection() {}, handleViewFullHistory() {}, handleAutoName() {}, toggleTopPanel() {}, handleBranchLeafChange() {}, handleSystemInfoToggle() {}, systemPrompt: null, systemTools: null };
+    setPluginSettingsSession() {}, setSettingsSection() {}, handleAutoName() {}, toggleTopPanel() {}, handleBranchLeafChange() {}, handleSystemInfoToggle() {}, systemPrompt: null, systemTools: null };
 }
 
 test('actual session actions preserve order/eligibility and invoke current callbacks without toolbar theme/language controls', async t => {
   const f = composerFixture(t), p = await production(f), old = [], current = [];
-  let props = { ...inputs(), toggleTopPanel: panel => old.push(panel), handleSystemInfoToggle: panel => old.push(panel), handleViewFullHistory: () => old.push('history'), handleAutoName: () => old.push('name') };
+  let props = { ...inputs(), toggleTopPanel: panel => old.push(panel), handleSystemInfoToggle: panel => old.push(panel), handleAutoName: () => old.push('name') };
   const element = () => createElement(p.I18nProvider, null, createElement(p.ToolbarControls, props));
   const view = await f.mount(element());
-  assert.deepEqual(actions(view.container), ['history', 'name', 'agents', 'branches', 'system', 'tools']);
-  assert.equal(view.container.querySelectorAll('button').length, 7, 'policy plus exactly six session actions; no additional theme/language action');
+  assert.deepEqual(actions(view.container), ['name', 'agents', 'branches', 'system', 'tools']);
+  assert.equal(view.container.querySelectorAll('button').length, 6, 'plugin settings plus exactly five session actions; no additional theme/language action');
   assert.equal(view.container.querySelectorAll('[data-mobile-toolbar-more], [data-mobile-toolbar-actions]').length, 0);
   for (const name of ['theme', 'language']) assert.equal(view.container.querySelector(`[data-mobile-toolbar-action="${name}"]`) === null, true);
   const nodes = [...view.container.querySelectorAll('[data-mobile-toolbar-action]')];
   for (const button of nodes) await click(view, button);
-  assert.deepEqual(old, ['history', 'name', 'agents', 'branches', 'system', 'tools']);
-  props = { ...props, toggleTopPanel: panel => current.push(panel), handleSystemInfoToggle: panel => current.push(panel), handleViewFullHistory: () => current.push('history'), handleAutoName: () => current.push('name') };
+  assert.deepEqual(old, ['name', 'agents', 'branches', 'system', 'tools']);
+  props = { ...props, toggleTopPanel: panel => current.push(panel), handleSystemInfoToggle: panel => current.push(panel), handleAutoName: () => current.push('name') };
   await view.rerender(element());
   for (const button of nodes) await click(view, button);
-  assert.deepEqual(current, old); assert.equal(old.length, 6);
+  assert.deepEqual(current, old); assert.equal(old.length, 5);
   props = { ...props, hasSubagentSessions: false, sessionHasBranches: false }; await view.rerender(element());
-  assert.deepEqual(actions(view.container), ['history', 'name', 'system', 'tools']);
+  assert.deepEqual(actions(view.container), ['name', 'system', 'tools']);
   props = { ...props, selectedSession: null, showChat: false }; await view.rerender(element());
   for (const button of view.container.querySelectorAll('[data-mobile-toolbar-action]')) assert.equal(button.disabled, true);
   props = { ...props, mobile: false }; await view.rerender(element()); assert.equal(view.container.childNodes.length, 0);

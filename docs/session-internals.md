@@ -347,9 +347,6 @@ Native notebook authoring is a hidden inline extension, not an optional Git plug
 
 Extension additions cannot reintroduce built-in profile-denied names (including PowerShell before shell mapping) or reserved subagent control tools. These name-selection rules do not sandbox extension code or uninstall replacement implementations. Ordinary-session sanitized Bash remains registered with `defaultActive: false`, so native `defaultTools`, explicit presets and reload—not extension registration—own activation. Native SDK regressions cover Bash-free startup/reload and explicit positive controls.
 
-### Exported session HTML
-- `/api/sessions/[id]/export` delegates to pi's export helper, then patches recursive tree helpers in the generated HTML to iterative versions so very deep linear sessions do not overflow the browser call stack.
-
 ## Pi Session File Format
 
 Location: `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`
