@@ -449,7 +449,7 @@ export function createSubagentController(
       await getAllowedFileRoots();
       await initializeOwnSessionChoices(
         await resolveResourceContext({ cwd: parent.cwd, sessionId: parentSessionId }),
-        await resolveResourceContext({ cwd: childCwd, sessionId: sessionManager.getSessionId() }));
+        await resolveResourceContext({ cwd: childCwd, sessionId: sessionManager.getSessionId() }), sessionManager);
       const resourceRuntime = await prepareResourceRuntime({ cwd: childCwd, sessionId: sessionManager.getSessionId() });
       const settingsManager = withStreamingCacheWarmingDefault(SettingsManager.create(childCwd, agentDir));
       if (!chatOnly) initTheme();

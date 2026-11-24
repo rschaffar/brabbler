@@ -96,7 +96,7 @@ export async function ensureBtwConversation(parentSessionId: string, refresh = f
         await getAllowedFileRoots();
         await initializeOwnSessionChoices(
           await resolveResourceContext({ cwd: parent.getCwd(), sessionId: parentSessionId }),
-          await resolveResourceContext({ cwd: child.getCwd(), sessionId: child.getSessionId() }));
+          await resolveResourceContext({ cwd: child.getCwd(), sessionId: child.getSessionId() }), child);
         child.appendCustomEntry(BTW_META_TYPE, { version: 1, sessionId: child.getSessionId(), parentSessionId, sourceLeafId, createdAt: snapshot.capturedAt });
         const live = getRpcSession(parentSessionId);
         const liveTools = live?.inner.getActiveToolNames?.()
