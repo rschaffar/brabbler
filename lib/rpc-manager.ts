@@ -1607,7 +1607,7 @@ export class AgentSessionWrapper {
           await getAllowedFileRoots();
           await initializeOwnSessionChoices(
             await resolveResourceContext({ cwd: sessionManager.getCwd(), sessionId: this.sessionId }),
-            await resolveResourceContext({ cwd: destination.getCwd(), sessionId: newSessionId }));
+            await resolveResourceContext({ cwd: destination.getCwd(), sessionId: newSessionId }), destination);
         } catch (error) {
           invalidateSessionListCache();
           throw new Error(`Fork resource initialization failed; saved session retained at ${newSessionFile}. Inspect before reopening; no automatic replay`, { cause: error });
@@ -1646,7 +1646,7 @@ export class AgentSessionWrapper {
           await getAllowedFileRoots();
           await initializeOwnSessionChoices(
             await resolveResourceContext({ cwd: sessionManager.getCwd(), sessionId: this.sessionId }),
-            await resolveResourceContext({ cwd: forkedManager.getCwd(), sessionId: newSessionId }));
+            await resolveResourceContext({ cwd: forkedManager.getCwd(), sessionId: newSessionId }), forkedManager);
         } catch (error) {
           invalidateSessionListCache();
           throw new Error(`Fork resource initialization failed; saved session retained at ${forkedPath}. Inspect before reopening; no automatic replay`, { cause: error });

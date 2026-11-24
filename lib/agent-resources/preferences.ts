@@ -138,6 +138,7 @@ function receiptCopy(input: unknown, agentDir: string, target: PreferenceTarget)
   return Object.freeze({ ruleVersion: 1, evidenceDigest: digestCopy(value.evidenceDigest), fragments, decisions });
 }
 interface TargetState { target: PreferenceTarget; generation: string; choices: readonly PreferenceChoice[]; importReceipt: ImportReceipt | null }
+const hasPreferenceContent = (entry: TargetState) => entry.choices.length > 0 || entry.importReceipt !== null;
 interface Store { version: 1; id: string; targets: readonly TargetState[] }
 const uuid = (value: unknown): string => { need(typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value), "schema"); return value; };
 
@@ -256,11 +257,9 @@ export function readScopedPreferences(admittedContext: SelectionContext, request
   return snapshot(readStore(layout(context.agentDir, false)), context.agentDir, target);
 }
 
-/** Empty creation-only Session generations do not configure resource selection.
- * Still use the strict private store reader; any other retained state needs its catalog. */
+/** Legacy empty generations do not need a catalog; actual choices and import receipts do. */
 export function requiresResourceCatalog(agentDir: string): boolean {
-  return Boolean(readStore(layout(path(agentDir), false)).store?.targets.some(entry =>
-    entry.target.scope !== "session" || entry.choices.length > 0 || entry.importReceipt !== null));
+  return Boolean(readStore(layout(path(agentDir), false)).store?.targets.some(hasPreferenceContent));
 }
 
 /** Optional trusted context/catalog/membership fence, NOT store authorization.
@@ -302,22 +301,27 @@ export async function commitScopedImport(admittedContext: SelectionContext, requ
   return writeTarget(context, target, desiredRevision, { admittedImport, recheckEvidence }, assertAdmissionCurrent);
 }
 
-/** Creation only: canonical saved contexts, current OWN source read under the
- * existing store lock. An existing destination generation (even empty) wins. */
-export async function initializeOwnSessionChoices(source: ResourceContext, destination: ResourceContext): Promise<PreferenceSnapshot> {
+// The destination's fresh SDK SessionManager owns the copy, not a store row.
+// Creation never resumes against an existing ID after manager loss or restart.
+const initializedDestinations = new WeakMap<object, string>();
+
+/** Creation only: both canonical saved contexts and the original fresh destination
+ * manager are required. Current OWN source choices are read under the store lock. */
+export async function initializeOwnSessionChoices(source: ResourceContext, destination: ResourceContext,
+  destinationOwner: object): Promise<PreferenceSnapshot> {
   const from = contextCopy(source.selection), to = contextCopy(destination.selection);
   need(from.agentDir === to.agentDir && from.sessionBinding !== null && to.sessionBinding !== null
     && from.sessionBinding !== to.sessionBinding, "scope");
   const sourceTarget = admitTarget(from, { scope: "session", binding: from.sessionBinding });
   const target = admitTarget(to, { scope: "session", binding: to.sessionBinding });
-  return writeTarget(to, target, "", { sourceTarget }, () => {
+  return writeTarget(to, target, "", { sourceTarget, destinationOwner }, () => {
     source.assertAdmissionCurrent(); destination.assertAdmissionCurrent();
   });
 }
 
 type TargetWrite = { identity: SelectionIdentity; choice: SelectionChoice }
   | { admittedImport: ImportReceipt; recheckEvidence: () => string }
-  | { sourceTarget: PreferenceTarget };
+  | { sourceTarget: PreferenceTarget; destinationOwner: object };
 async function writeTarget(context: SelectionContext, target: PreferenceTarget, desiredRevision: string, operation: TargetWrite,
   assertAdmissionCurrent?: PreferencePublicationGuard): Promise<PreferenceSnapshot> {
   const paths = layout(context.agentDir, true), lock = `${paths.file}.lock`;
@@ -339,7 +343,11 @@ async function writeTarget(context: SelectionContext, target: PreferenceTarget, 
       // with an initializer that is merely waiting for its own microtask.
       assertAdmissionCurrent?.(); checkLock();
       need(readStore(paths).generation === state.generation, "generation");
-      if (state.store?.targets.some(item => targetKey(item.target) === targetKey(target))) return currentSnapshot;
+      if (initializedDestinations.get(operation.destinationOwner) === target.binding) return currentSnapshot;
+      if (state.store?.targets.some(item => targetKey(item.target) === targetKey(target))) {
+        initializedDestinations.set(operation.destinationOwner, target.binding!);
+        return currentSnapshot;
+      }
     } else {
       if ("admittedImport" in operation && currentSnapshot.importReceipt) return currentSnapshot;
       need(typeof desiredRevision === "string" && /^[a-f0-9]{64}$/.test(desiredRevision)
@@ -355,15 +363,20 @@ async function writeTarget(context: SelectionContext, target: PreferenceTarget, 
     if ("sourceTarget" in operation) assertAdmissionCurrent?.();
     else await assertAdmissionCurrent?.();
     checkLock(); checkEvidence();
-    const store = { version: 1 as const, id: state.store?.id ?? randomUUID(), targets: [...(state.store?.targets ?? [])] };
-    const previous = store.targets.findIndex(item => targetKey(item.target) === targetKey(target));
+    const sameTarget = (entry: TargetState) => targetKey(entry.target) === targetKey(target);
+    const previousTargets = state.store?.targets ?? [];
     let choices = [...currentSnapshot.choices];
     if ("sourceTarget" in operation) {
       const source = snapshot(state, context.agentDir, operation.sourceTarget);
       choices = [...copyOwnSessionChoices({ target: source.target, choices: source.choices }, context.agentDir, target.binding!).choices];
     } else if ("identity" in operation) {
-      choices = choices.filter(item => selectionKey(item.identity) !== selectionKey(operation.identity));
+      const key = selectionKey(operation.identity);
+      choices = choices.filter(item => selectionKey(item.identity) !== key);
       if (operation.choice !== "inherit") choices.push({ identity: operation.identity, value: operation.choice });
+      else if (choices.length === currentSnapshot.choices.length) {
+        need(readStore(paths).generation === state.generation, "generation");
+        return currentSnapshot;
+      }
     } else {
       const existingChoices = new Map(choices.map(item => [selectionKey(item.identity), item]));
       for (const decision of receipt!.decisions) {
@@ -372,9 +385,22 @@ async function writeTarget(context: SelectionContext, target: PreferenceTarget, 
         if (!existing) choices.push({ identity: decision.identity, value: decision.value });
       }
     }
+    // An empty copy finishes without a durable write. Never yield between the
+    // admitted snapshot and remembering completion on the creating manager.
+    if ("sourceTarget" in operation && choices.length === 0) {
+      need(readStore(paths).generation === state.generation, "generation");
+      initializedDestinations.set(operation.destinationOwner, target.binding!);
+      return currentSnapshot;
+    }
     const next: TargetState = { target, generation: randomUUID(), choices: choicesCopy(choices, context.agentDir, target), importReceipt: receipt };
-    // Retain even empty target generations to fence stale reset/ABA submissions.
-    if (previous < 0) store.targets.push(next); else store.targets[previous] = next;
+    // Reclaim legacy empty rows in the same rename as the next real write, before
+    // enforcing the store limit. Rotate the namespace on removal so an old
+    // absence revision can't become valid again after set -> reset.
+    const retainTarget = hasPreferenceContent(next);
+    const removed = previousTargets.some(entry => sameTarget(entry) ? !retainTarget : !hasPreferenceContent(entry));
+    const store = { version: 1 as const, id: removed ? randomUUID() : state.store?.id ?? randomUUID(),
+      targets: previousTargets.filter(entry => !sameTarget(entry) && hasPreferenceContent(entry)) };
+    if (retainTarget) store.targets.push(next);
     store.targets.sort((a, b) => targetKey(a.target).localeCompare(targetKey(b.target)));
     const contents = `${JSON.stringify(store)}\n`;
     parsePreferences(contents, context.agentDir); // same strict total bounds as reads
@@ -398,6 +424,7 @@ async function writeTarget(context: SelectionContext, target: PreferenceTarget, 
       need(readStore(paths).generation === state.generation, "generation");
     }
     checkLock(); renameSync(temp, paths.file);
+    if ("sourceTarget" in operation) initializedDestinations.set(operation.destinationOwner, target.binding!);
     return snapshot({ store, generation: null }, context.agentDir, target);
   } finally {
     // Failure may leave a private stage artifact. Never unlink its pathname:
